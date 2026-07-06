@@ -1,0 +1,160 @@
+// chores.js — one-off household tasks: due date, assignee, optional vendor.
+// Same interaction grammar as Focus OS tasks.
+
+import { getAll, put, remove, now, deviceName } from './store.js';
+import { el, clear, toast, openModal, todayStr, fmtDue } from './ui.js';
+
+const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+export async function getOpenChores() {
+  const chores = await getAll('chores');
+  return chores.filter((c) => !c.done).sort(byDue);
+}
+
+function byDue(a, b) {
+  return (a.dueDate || '9999') < (b.dueDate || '9999') ? -1 : 1;
+}
+
+export async function toggleChore(chore) {
+  const done = !chore.done;
+  return put('chores', { ...chore, done, doneAt: done ? now() : null, doneBy: done ? deviceName() : null });
+}
+
+// One chore row: check circle, title + meta pills (due, assignee, vendor).
+export function choreRow(chore, { onchange, showDue = true, vendorById = {} } = {}) {
+  const meta = [];
+  if (showDue && chore.dueDate) {
+    const overdue = !chore.done && chore.dueDate < todayStr();
+    meta.push(el('span', { class: 'pill' + (overdue ? ' pill-overdue' : '') }, fmtDue(chore.dueDate)));
+  }
+  if (chore.assignee) meta.push(el('span', { class: 'pill pill-accent' }, chore.assignee));
+  if (chore.vendorId && vendorById[chore.vendorId]) {
+    meta.push(el('span', { class: 'pill' }, vendorById[chore.vendorId].name));
+  }
+  if (chore.done && chore.doneBy) meta.push(el('span', { class: 'pill pill-done' }, `done · ${chore.doneBy}`));
+
+  return el('div', { class: 'task-row' + (chore.done ? ' done' : '') }, [
+    el('button', {
+      class: 'task-check',
+      'aria-label': chore.done ? 'Mark not done' : 'Mark done',
+      html: chore.done ? CHECK_SVG : '',
+      onclick: async () => {
+        await toggleChore(chore);
+        onchange?.();
+      },
+    }),
+    el('div', { class: 'task-main', onclick: () => editChoreModal(chore, onchange) }, [
+      el('span', { class: 'task-name' }, chore.title),
+      meta.length ? el('span', { class: 'task-meta' }, meta) : null,
+    ]),
+  ]);
+}
+
+// Create/edit bottom sheet. Pass no chore (or an id-less prefill) to create.
+export async function editChoreModal(chore, onchange) {
+  const isNew = !chore || !chore.id;
+  const c = chore || {};
+  const vendors = await getAll('vendors');
+
+  const title = el('input', { class: 'input', placeholder: 'What needs doing?', value: c.title || '' });
+  const due = el('input', { class: 'input', type: 'date', value: c.dueDate || '' });
+  const assignee = el('input', { class: 'input', placeholder: 'Anyone', value: c.assignee || '' });
+  const vendor = el('select', { class: 'input' }, [
+    el('option', { value: '' }, 'No vendor'),
+    ...vendors.map((v) => el('option', { value: v.id, selected: c.vendorId === v.id ? 'selected' : null }, v.name)),
+  ]);
+
+  const actions = [
+    !isNew &&
+      el('button', {
+        class: 'btn btn-danger',
+        onclick: async () => {
+          await remove('chores', c.id);
+          toast('Chore deleted');
+          m.close();
+          onchange?.();
+        },
+      }, 'Delete'),
+    el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
+    el('button', {
+      class: 'btn btn-primary',
+      onclick: async () => {
+        const name = title.value.trim();
+        if (!name) return toast('Give the chore a title', 'warn');
+        await put('chores', {
+          ...c,
+          title: name,
+          dueDate: due.value || null,
+          assignee: assignee.value.trim() || null,
+          vendorId: vendor.value || null,
+          done: c.done || false,
+        });
+        m.close();
+        onchange?.();
+      },
+    }, isNew ? 'Add chore' : 'Save'),
+  ];
+
+  const m = openModal(isNew ? 'New chore' : 'Edit chore', [
+    el('label', { class: 'field-label' }, 'Title'),
+    title,
+    el('div', { class: 'field-row' }, [
+      el('div', {}, [el('label', { class: 'field-label' }, 'Due date'), due]),
+      el('div', {}, [el('label', { class: 'field-label' }, 'Assignee'), assignee]),
+    ]),
+    el('label', { class: 'field-label' }, 'Vendor (optional)'),
+    vendor,
+  ], actions);
+  title.focus();
+}
+
+export async function renderChores(root) {
+  clear(root);
+  const [chores, vendors] = await Promise.all([getAll('chores'), getAll('vendors')]);
+  const vendorById = Object.fromEntries(vendors.map((v) => [v.id, v]));
+  const rerender = () => renderChores(root);
+
+  const today = todayStr();
+  const open = chores.filter((c) => !c.done).sort(byDue);
+  const groups = [
+    ['Overdue', open.filter((c) => c.dueDate && c.dueDate < today)],
+    ['Today', open.filter((c) => c.dueDate === today)],
+    ['Upcoming', open.filter((c) => c.dueDate && c.dueDate > today)],
+    ['Someday', open.filter((c) => !c.dueDate)],
+  ];
+  const done = chores
+    .filter((c) => c.done)
+    .sort((a, b) => ((b.doneAt || '') < (a.doneAt || '') ? -1 : 1));
+
+  root.append(
+    el('div', { class: 'view-head-row' }, [
+      el('h1', {}, 'Tasks'),
+      el('button', { class: 'btn btn-primary', onclick: () => editChoreModal(null, rerender) }, '+ New chore'),
+    ])
+  );
+
+  if (!chores.length) {
+    root.append(
+      el('div', { class: 'empty' }, [
+        el('p', {}, 'No chores yet.'),
+        el('p', { class: 'muted' }, 'One-off household tasks live here. Recurring upkeep has its own tab.'),
+      ])
+    );
+    return;
+  }
+
+  for (const [label, list] of groups) {
+    if (!list.length) continue;
+    root.append(
+      el('h4', { class: 'group-heading' }, label),
+      el('section', { class: 'panel' }, list.map((c) => choreRow(c, { onchange: rerender, vendorById })))
+    );
+  }
+
+  if (done.length) {
+    root.append(
+      el('h4', { class: 'group-heading' }, `Done (${done.length})`),
+      el('section', { class: 'panel' }, done.slice(0, 20).map((c) => choreRow(c, { onchange: rerender, vendorById })))
+    );
+  }
+}

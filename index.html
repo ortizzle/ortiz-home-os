@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#f7f9f8" />
+  <title>Ortiz Home OS</title>
+  <meta name="description" content="The Ortiz household's shared home manager — upkeep, chores, groceries, and appointments, in sync." />
+
+  <!-- PWA -->
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="app-topbar">
+      <span class="wordmark">
+        <!-- Provisional mark: gable house with chimney, family crafted-line style. -->
+        <svg class="wordmark-mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11 12 3.5l8.5 7.5"/><path d="M16 4.7v2.6"/><path d="M5.5 9.5V20h13V9.5"/><path d="M10 20v-5h4v5"/></svg>
+        Ortiz&nbsp;Home&nbsp;OS
+      </span>
+      <span class="topbar-actions">
+        <span id="header-sync" class="header-sync" title="Sync status"></span>
+        <a class="topbar-icon" href="#/settings" aria-label="Settings">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></svg>
+        </a>
+      </span>
+    </div>
+
+    <main id="view" class="view"></main>
+
+    <nav class="tabbar">
+      <a class="tab" data-tab="home" href="#/home">
+        <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg></span><span class="tab-label">Home</span>
+      </a>
+      <a class="tab" data-tab="tasks" href="#/tasks">
+        <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l1.6 1.6L8.7 5"/><path d="M11.5 6.5H20"/><path d="M4 12.5l1.6 1.6 3.1-3.1"/><path d="M11.5 12.5H20"/><path d="M4.5 18.5h3.5"/><path d="M11.5 18.5H20"/></svg></span><span class="tab-label">Tasks</span>
+      </a>
+      <a class="tab" data-tab="grocery" href="#/grocery">
+        <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 4.5H6l2.3 10.5h9.4l2.3-8.5H7"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="16.5" cy="19" r="1.5"/></svg></span><span class="tab-label">Grocery</span>
+      </a>
+      <a class="tab" data-tab="calendar" href="#/calendar">
+        <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="15" rx="2.5"/><path d="M3.5 10.5h17"/><path d="M8 3.25v3.5M16 3.25v3.5"/></svg></span><span class="tab-label">Calendar</span>
+      </a>
+      <a class="tab" data-tab="upkeep" href="#/upkeep">
+        <span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.8 7.2a4.4 4.4 0 0 1-5.9 4.2l-6.6 6.6a2 2 0 0 1-2.9-2.9l6.6-6.6a4.4 4.4 0 0 1 5.6-5.4L13.9 5.8l.6 2.3 2.3.6 2.7-2.7c.2.4.3.8.3 1.2z"/></svg></span><span class="tab-label">Upkeep</span>
+      </a>
+    </nav>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

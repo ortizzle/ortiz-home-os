@@ -1,0 +1,25 @@
+{
+  "name": "Ortiz Home OS",
+  "short_name": "Home OS",
+  "description": "The Ortiz household's shared home manager — upkeep, chores, groceries, and appointments, in sync.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f9f8",
+  "theme_color": "#f7f9f8",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
