@@ -157,6 +157,11 @@ export async function eventsForRange(start, end, { force = false } = {}) {
   const timeMin = new Date(`${start}T00:00:00`).toISOString();
   const timeMax = new Date(`${end}T00:00:00`).toISOString();
   const out = [];
+  // De-dupe the same event appearing on multiple selected calendars (e.g. a
+  // family event that's also on your personal calendar as an attendee). Key on
+  // Google's stable iCalUID PLUS the instance start, so cross-calendar copies
+  // collapse while distinct events and each day of a recurring series survive.
+  const seen = new Set();
   for (const cal of getSelectedCalendars()) {
     try {
       const data = await apiGet(
@@ -166,7 +171,11 @@ export async function eventsForRange(start, end, { force = false } = {}) {
       );
       for (const ev of data.items || []) {
         const a = toAppt(ev);
-        if (a) out.push(a);
+        if (!a) continue;
+        const dedupeKey = `${ev.iCalUID || ev.id}|${a.date}|${a.startTime || ''}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        out.push(a);
       }
     } catch (err) {
       if (err.code === 'expired' || err.code === 'not-connected') throw err;
