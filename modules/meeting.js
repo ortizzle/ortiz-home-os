@@ -7,7 +7,8 @@ import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtD
 import { getMaintenance, nextDue } from './maintenance.js';
 import { appointmentsFor } from './calendar.js';
 import { errandWindow } from './suggest.js';
-import { hasApiKey, reviewFamilyMeeting, AIError } from './ai.js';
+import { hasApiKey, reviewFamilyMeeting, draftMeeting, AIError } from './ai.js';
+import { DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -194,11 +195,47 @@ export async function renderMeeting(root) {
     ])
   );
 
-  // ----- Claude review -----
-  root.append(el('div', { class: 'panel-head' }, [el('h4', {}, 'Claude review')]));
+  // ----- Claude: draft the meeting / review the agenda -----
+  root.append(el('div', { class: 'panel-head' }, [el('h4', {}, 'Plan with Claude')]));
   const resultHost = el('div', {});
-  const reviewBtn = el('button', {
+
+  const draftBtn = el('button', {
     class: 'btn btn-primary full',
+    onclick: async () => {
+      if (!hasApiKey()) {
+        toast('Add a Claude API key in Settings first', 'warn');
+        return navigate('#/settings');
+      }
+      draftBtn.disabled = 'disabled';
+      draftBtn.textContent = 'Drafting…';
+      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claude is drafting your meeting…')]));
+      try {
+        const plan = await getAll('plan');
+        const openItems = [
+          ...week.dueChores.map((c) => `- ${c.title} (due ${fmtDay(c.dueDate)})`),
+          ...plan.filter((p) => !p.done).map((p) => `- ${p.title || p.text}`),
+        ].join('\n');
+        const currentAgenda = agenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
+        const out = await draftMeeting({
+          family: familyMembers(),
+          notes: getSettings().householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+          meetingDate: fmtDay(meetingDate),
+          weekAhead: week.summary,
+          openItems,
+          currentAgenda,
+        });
+        renderDraft(resultHost, out, rerender);
+      } catch (err) {
+        clear(resultHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
+      } finally {
+        draftBtn.disabled = null;
+        draftBtn.textContent = 'Draft the meeting';
+      }
+    },
+  }, 'Draft the meeting');
+
+  const reviewBtn = el('button', {
+    class: 'btn full',
     onclick: async () => {
       if (!hasApiKey()) {
         toast('Add a Claude API key in Settings first', 'warn');
@@ -228,12 +265,63 @@ export async function renderMeeting(root) {
     el('section', { class: 'panel' }, [
       el('p', { class: 'muted small', style: 'margin-top:0' },
         hasApiKey()
-          ? 'Claude reads the agenda and the week ahead, then says what you’ve covered, what still needs discussion, and how to structure the meeting.'
-          : 'Optional: add a Claude API key in Settings to have Claude help structure the meeting. Everything above works without it.'),
-      reviewBtn,
+          ? 'Draft the meeting: Claude proposes an agenda from this week, plus icebreakers and activities to add with one tap. Review: it checks what you’ve covered and what’s still open.'
+          : 'Optional: add a Claude API key in Settings to have Claude draft and review the meeting. Everything above works without it.'),
+      draftBtn,
+      hasApiKey() ? reviewBtn : null,
       resultHost,
     ])
   );
+}
+
+// A "+ Agenda" chip that drops a drafted line onto the running agenda. It
+// flips to "Added ✓" in place rather than re-rendering, so the whole draft
+// stays on screen while you cherry-pick from it.
+function agendaAddBtn(text) {
+  const btn = el('button', {
+    class: 'btn seg-btn hm-add',
+    onclick: async () => {
+      await put('agenda', { text, reviewed: false });
+      btn.disabled = 'disabled';
+      btn.textContent = 'Added ✓';
+      toast('Added to agenda', 'success');
+    },
+  }, '+ Agenda');
+  return el('div', { class: 'hm-actions' }, [btn]);
+}
+
+function renderDraft(host, out, _rerender) {
+  clear(host);
+  const section = (title, node) => el('div', { class: 'meeting-section' }, [el('h5', {}, title), node]);
+
+  if (out.draftAgenda?.length) {
+    host.append(section('Proposed agenda', el('div', {}, out.draftAgenda.map((s) =>
+      el('div', { class: 'idea' }, [
+        el('div', { class: 'idea-title' }, s.topic),
+        s.why ? el('p', { class: 'idea-detail' }, s.why) : null,
+        agendaAddBtn(s.topic),
+      ])
+    ))));
+  }
+  if (out.icebreakers?.length) {
+    host.append(section('Icebreakers', el('div', {}, out.icebreakers.map((t) =>
+      el('div', { class: 'idea' }, [
+        el('div', { class: 'idea-title' }, t),
+        agendaAddBtn(`Icebreaker: ${t}`),
+      ])
+    ))));
+  }
+  if (out.activities?.length) {
+    host.append(section('Activities', el('div', {}, out.activities.map((t) =>
+      el('div', { class: 'idea' }, [
+        el('div', { class: 'idea-title' }, t),
+        agendaAddBtn(`Activity: ${t}`),
+      ])
+    ))));
+  }
+  if (!host.children.length) {
+    host.append(el('p', { class: 'muted small' }, 'Claude didn’t have a draft to add — try jotting a few week notes above.'));
+  }
 }
 
 function bulletList(items) {

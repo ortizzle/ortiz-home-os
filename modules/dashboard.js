@@ -7,7 +7,7 @@ import { getAll, put, getSettings } from './store.js';
 import { el, clear, navigate, todayStr, addDays, fmtDay } from './ui.js';
 import { choreRow } from './chores.js';
 import { addGroceryItem } from './grocery.js';
-import { getMaintenance, dueState } from './maintenance.js';
+import { getMaintenance } from './maintenance.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
 import { gatherContext, DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
@@ -32,10 +32,10 @@ export async function renderDashboard(root) {
   const settings = getSettings();
 
   const tomorrow = addDays(today, 1);
-  const [chores, groceries, appts2day, maintenance, vendors] = await Promise.all([
+  const [chores, groceries, apptsWeek, maintenance, vendors] = await Promise.all([
     getAll('chores'),
     getAll('groceries'),
-    appointmentsFor(today, addDays(today, 2)), // today + tomorrow (live + stored)
+    appointmentsFor(today, addDays(today, 7)), // next 7 days (live + stored)
     getMaintenance(),
     getAll('vendors'),
   ]);
@@ -45,25 +45,24 @@ export async function renderDashboard(root) {
   const openGroceries = groceries.filter((g) => !g.gotAt);
   const dueToday = chores.filter((c) => c.dueDate === today && !c.done);
   const overdue = chores.filter((c) => c.dueDate && c.dueDate < today && !c.done);
-  const todayAppts = appts2day.filter((a) => a.date === today).sort(byTime);
-  const tomorrowAppts = appts2day.filter((a) => a.date === tomorrow).sort(byTime);
-  const overdueUpkeep = maintenance.filter((m) => dueState(m) === 'overdue');
+  const todayAppts = apptsWeek.filter((a) => a.date === today).sort(byTime);
+  const tomorrowAppts = apptsWeek.filter((a) => a.date === tomorrow).sort(byTime);
 
-  // ----- header + stats -----
+  // ----- header + stats: tasks due · grocery items · upcoming events -----
   root.append(
     el('p', { class: 'greeting' }, greeting()),
     el('div', { class: 'stat-row' }, [
+      el('button', { class: 'stat stat-btn', onclick: () => navigate('#/tasks') }, [
+        el('div', { class: 'stat-value' }, dueToday.length + overdue.length),
+        el('div', { class: 'stat-label' }, 'tasks due'),
+      ]),
       el('button', { class: 'stat stat-btn', onclick: () => navigate('#/grocery') }, [
         el('div', { class: 'stat-value' }, openGroceries.length),
         el('div', { class: 'stat-label' }, 'grocery items'),
       ]),
-      el('button', { class: 'stat stat-btn', onclick: () => navigate('#/tasks') }, [
-        el('div', { class: 'stat-value' }, dueToday.length + overdue.length),
-        el('div', { class: 'stat-label' }, 'chores due'),
-      ]),
-      el('button', { class: 'stat stat-btn', onclick: () => navigate('#/manager') }, [
-        el('div', { class: 'stat-value' }, overdueUpkeep.length),
-        el('div', { class: 'stat-label' }, 'upkeep overdue'),
+      el('button', { class: 'stat stat-btn', onclick: () => navigate('#/calendar') }, [
+        el('div', { class: 'stat-value' }, apptsWeek.length),
+        el('div', { class: 'stat-label' }, 'upcoming events'),
       ]),
     ])
   );
@@ -87,7 +86,7 @@ export async function renderDashboard(root) {
   }
 
   // ----- suggestions (instant, rule-based) -----
-  const suggestions = buildSuggestions({ maintenance, chores, groceries, appointments: appts2day, settings })
+  const suggestions = buildSuggestions({ maintenance, chores, groceries, appointments: apptsWeek, settings })
     // the banner already covers the errand rule when it fires
     .filter((s) => !(win && s.hash === '#/grocery'));
   if (suggestions.length) {

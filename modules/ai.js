@@ -128,6 +128,37 @@ Keep the suggested agenda to a realistic 20-30 minute family meeting (4-6 topics
   return generateJSON({ system, prompt, maxTokens: 1800 });
 }
 
+// Drafts a full family-meeting plan from the week — a proposed agenda drawn
+// from real events and open items, plus fun icebreakers and togetherness
+// activities that get everyone (including the kids) participating.
+export async function draftMeeting({ family = [], notes = '', meetingDate, weekAhead = '', openItems = '', currentAgenda = '' } = {}) {
+  const system = `You help the Ortiz family run a warm, fun weekly family meeting. Family: ${family.join(', ') || 'the family'} (Sedona and River are kids). Draft an agenda drawn from the week's real events and open items — never invent events, people, or commitments. Make it feel like a family moment, not a status meeting: include quick icebreakers the kids will enjoy and short activities that build participation and togetherness. Keep everything concrete and kid-friendly. Respond with JSON only — no markdown, no fences.`;
+
+  const prompt = `Draft this week's family meeting${meetingDate ? ` for ${meetingDate}` : ''}.
+
+FAMILY NOTES / PREFERENCES:
+${notes || '(none)'}
+
+THE WEEK AHEAD (real calendar + household):
+${weekAhead || '(nothing logged)'}
+
+OPEN ITEMS FROM DURING THE WEEK (tasks, plans worth raising):
+${openItems || '(none)'}
+
+ALREADY ON THE AGENDA (do not repeat):
+${currentAgenda || '(nothing yet)'}
+
+Return JSON with exactly this shape:
+{
+  "draftAgenda": [ { "topic": "short agenda topic", "why": "one line: why it's worth 2 minutes this week" } ],
+  "icebreakers": ["a quick, fun question the whole family (kids included) can answer in a sentence"],
+  "activities": ["a short togetherness activity or ritual to do during the meeting"]
+}
+Give 4-6 agenda topics (most drawn from the week's real items), 2 icebreakers, and 2 activities. Empty arrays are fine.`;
+
+  return generateJSON({ system, prompt, maxTokens: 1800 });
+}
+
 // ---------- House manager ----------
 
 const HM_ROLE = (family) =>
