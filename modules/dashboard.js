@@ -207,7 +207,7 @@ function dailyBriefSection(rerender, { today, settings }) {
 
   const cached = readBrief();
   if (cached && cached.date === today) {
-    renderBrief(host, cached.data, rerender);
+    renderBrief(host, cached.data, rerender, new Set(cached.added || []));
   } else if (hasApiKey()) {
     runBrief(host, rerender, { today, settings }); // auto-generate for the day
   } else {
@@ -243,7 +243,7 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
     });
     logShownSuggestions(out.suggestions, 'brief').catch(() => {});
     writeBrief(today, out);
-    renderBrief(host, out, rerender);
+    renderBrief(host, out, rerender, new Set());
   } catch (err) {
     clear(host).append(
       el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Couldn't generate today's brief: ${err.message}`),
@@ -265,7 +265,7 @@ function pinNodes(today, rerender) {
   );
 }
 
-function renderBrief(host, out, rerender) {
+function renderBrief(host, out, rerender, addedSet = new Set()) {
   clear(host);
   host.append(...pinNodes(todayStr(), rerender));
   if (out.headline) host.append(el('p', { class: 'brief-headline' }, out.headline));
@@ -275,7 +275,14 @@ function renderBrief(host, out, rerender) {
       el('div', { class: 'idea' }, [
         el('div', { class: 'idea-title' }, [s.title, s.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, s.who) : null]),
         s.detail ? el('p', { class: 'idea-detail' }, s.detail) : null,
-        addButtons(s, { today: todayStr(), includePlan: false, onAdded: rerender }),
+        addButtons(s, {
+          today: todayStr(),
+          includePlan: false,
+          alreadyAdded: addedSet.has(s.title),
+          // Persist the Added ✓ state so the re-render (which refreshes the
+          // Today list below) restores it instead of re-arming the button.
+          onAdded: () => { markBriefAdded(s.title); rerender(); },
+        }),
       ])
     );
   }
@@ -283,4 +290,10 @@ function renderBrief(host, out, rerender) {
 }
 
 function readBrief() { try { return JSON.parse(localStorage.getItem(BRIEF_KEY)); } catch { return null; } }
-function writeBrief(date, data) { localStorage.setItem(BRIEF_KEY, JSON.stringify({ date, data })); }
+function writeBrief(date, data) { localStorage.setItem(BRIEF_KEY, JSON.stringify({ date, data, added: [] })); }
+function markBriefAdded(title) {
+  const b = readBrief();
+  if (!b) return;
+  b.added = [...new Set([...(b.added || []), title])];
+  localStorage.setItem(BRIEF_KEY, JSON.stringify(b));
+}

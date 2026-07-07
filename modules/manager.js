@@ -24,8 +24,14 @@ export async function applyAdd(type, { title, date, detail, store, who } = {}, t
 }
 
 // The add buttons for an AI suggestion. `includePlan` adds a "+ Plan" option
-// (used in the weekly review, not the daily brief).
-export function addButtons(sugg, { today, includePlan = false, onAdded } = {}) {
+// (used in the weekly review, not the daily brief). `alreadyAdded` renders the
+// restored "Added ✓" state when a persisted result is re-rendered.
+export function addButtons(sugg, { today, includePlan = false, onAdded, alreadyAdded = false } = {}) {
+  if (alreadyAdded) {
+    const done = el('button', { class: 'btn seg-btn hm-add' }, 'Added ✓');
+    done.disabled = true;
+    return el('div', { class: 'hm-actions' }, [done]);
+  }
   const mk = (type, label) => {
     const b = el('button', {
       class: 'btn seg-btn hm-add',
@@ -54,6 +60,28 @@ export function addButtons(sugg, { today, includePlan = false, onAdded } = {}) {
   else if (t === 'task') out.push(mk('task', '+ Task'));
   else if (!includePlan) out.push(mk('task', '+ Task'));
   return el('div', { class: 'hm-actions' }, out);
+}
+
+// ---------- weekly review persistence ----------
+// The review result survives re-renders (adding an item re-renders the view
+// to update the plan list — that must NOT wipe the rest of the review) and
+// page reloads, cached for the day like the Home brief. Per-device.
+
+const REVIEW_KEY = 'ohos.weekReview';
+function readReview() {
+  try {
+    const r = JSON.parse(localStorage.getItem(REVIEW_KEY));
+    return r && r.date === todayStr() ? r : null;
+  } catch { return null; }
+}
+function writeReview(data) {
+  localStorage.setItem(REVIEW_KEY, JSON.stringify({ date: todayStr(), data, added: [] }));
+}
+function markReviewAdded(title) {
+  const r = readReview();
+  if (!r) return;
+  r.added = [...new Set([...(r.added || []), title])];
+  localStorage.setItem(REVIEW_KEY, JSON.stringify(r));
 }
 
 function planRow(p, rerender) {
@@ -330,7 +358,8 @@ export async function renderManager(root) {
           follow,
         });
         logShownSuggestions(out.planItems, 'review').catch(() => {});
-        renderReview(host, out, rerender);
+        writeReview(out); // survives re-renders and reloads for the day
+        renderReview(host, out, rerender, new Set());
       } catch (err) {
         clear(host).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
       } finally {
@@ -339,6 +368,10 @@ export async function renderManager(root) {
       }
     },
   }, 'Review the week');
+  // Restore today's review (if any) so adding items — which re-renders the
+  // whole view to update the plan list — never loses the rest of the list.
+  const cachedReview = readReview();
+  if (cachedReview) renderReview(host, cachedReview.data, rerender, new Set(cachedReview.added || []));
   root.append(
     el('div', { class: 'panel-head' }, [el('h4', {}, 'Weekly review')]),
     el('section', { class: 'panel' }, [
@@ -363,7 +396,7 @@ export async function renderManager(root) {
   );
 }
 
-function renderAnswer(host, out, rerender) {
+function renderAnswer(host, out, _rerender) {
   clear(host);
   if (out.answer) host.append(el('p', { class: 'hm-overview' }, out.answer));
   for (const s of out.suggestions || []) {
@@ -371,7 +404,9 @@ function renderAnswer(host, out, rerender) {
       el('div', { class: 'idea' }, [
         el('div', { class: 'idea-title' }, s.title),
         s.detail ? el('p', { class: 'idea-detail' }, s.detail) : null,
-        addButtons(s, { today: todayStr(), includePlan: false, onAdded: rerender }),
+        // No onAdded re-render: what Ask adds (tasks/calendar/grocery) isn't
+        // shown on this screen, and a re-render would wipe the answer.
+        addButtons(s, { today: todayStr(), includePlan: false }),
       ])
     );
   }
@@ -392,7 +427,7 @@ function renderAnswer(host, out, rerender) {
   if (!out.answer) host.append(el('p', { class: 'muted small' }, 'No answer came back — try rephrasing.'));
 }
 
-function renderReview(host, out, rerender) {
+function renderReview(host, out, rerender, addedSet = new Set()) {
   clear(host);
   if (out.overview) host.append(el('p', { class: 'hm-overview' }, out.overview));
   for (const item of out.planItems || []) {
@@ -400,7 +435,14 @@ function renderReview(host, out, rerender) {
       el('div', { class: 'idea' }, [
         el('div', { class: 'idea-title' }, [item.title, item.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, item.who) : null]),
         item.detail ? el('p', { class: 'idea-detail' }, item.detail) : null,
-        addButtons(item, { today: todayStr(), includePlan: true, onAdded: rerender }),
+        addButtons(item, {
+          today: todayStr(),
+          includePlan: true,
+          alreadyAdded: addedSet.has(item.title),
+          // Record the add BEFORE re-rendering, so the restored review shows
+          // this item as Added ✓ and keeps every other item on screen.
+          onAdded: () => { markReviewAdded(item.title); rerender(); },
+        }),
       ])
     );
   }
