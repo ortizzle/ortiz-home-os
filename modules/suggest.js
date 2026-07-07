@@ -39,8 +39,8 @@ export function buildSuggestions({ maintenance = [], chores = [], groceries = []
     out.push({
       urgent: true,
       text: `${it.title} is ${days} day${days === 1 ? '' : 's'} overdue`,
-      hash: '#/upkeep',
-      go: 'Upkeep',
+      hash: '#/manager',
+      go: 'Manager',
     });
   }
 
@@ -49,8 +49,8 @@ export function buildSuggestions({ maintenance = [], chores = [], groceries = []
     out.push({
       urgent: false,
       text: `${it.title} due ${fmtDue(nextDue(it))}`,
-      hash: '#/upkeep',
-      go: 'Upkeep',
+      hash: '#/manager',
+      go: 'Manager',
     });
   }
 

@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v10';
+const CACHE = 'ohos-shell-v11';
 const SHELL = [
   './',
   './index.html',
@@ -23,6 +23,8 @@ const SHELL = [
   './modules/meeting.js',
   './modules/ai.js',
   './modules/gcal.js',
+  './modules/hmcontext.js',
+  './modules/manager.js',
 ];
 
 self.addEventListener('install', (e) => {

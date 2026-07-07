@@ -128,17 +128,50 @@ Keep the suggested agenda to a realistic 20-30 minute family meeting (4-6 topics
   return generateJSON({ system, prompt, maxTokens: 1800 });
 }
 
-// ---------- House-manager review ----------
+// ---------- House manager ----------
 
-// Reviews the upcoming calendar + household state and returns proactive,
-// at-a-glance ideas a good house manager would surface — birthdays/events
-// that need a card, gift, RSVP or reservation; appointments needing prep;
-// good windows for errands given the family's shopping habits; overdue
-// upkeep. It can also ask clarifying questions.
-export async function reviewHousehold({ family = [], notes = '', today, events = '', chores = '', upkeep = '', groceries = '' } = {}) {
-  const system = `You are the Ortiz family's proactive house manager. Family: ${family.join(', ') || 'the family'}. Be genuinely helpful and specific — anticipate what a thoughtful, organized person running this household would flag this week. Look especially for things with lead time: birthdays and anniversaries (suggest a card AND a gift, ordered in time), events needing an RSVP / reservation / outfit / travel, appointments that need preparation, and good windows to run errands or book vendors. Ground every idea in the data provided — never invent events, people, dates, or commitments. If something genuinely needs the family's input to advise well, put it under "questions" (ask at most 3, only when it would change your advice). Respond with JSON only — no markdown, no fences.`;
+const HM_ROLE = (family) =>
+  `You are the Ortiz family's house manager — thoughtful, organized, and genuinely helpful. Family: ${family.join(', ') || 'the family'}. Ground everything in the data provided: never invent events, people, dates, chores, or commitments. Be specific and warm, not generic. Respond with JSON only — no markdown, no fences.`;
 
-  const prompt = `Today is ${today}. Review what's coming up and give us helpful ideas at a glance.
+// Daily brief for the Home page — a short read on TODAY plus a few concrete,
+// one-tap-addable suggestions. Each suggestion is typed so the app can turn it
+// into a task, appointment, or grocery item.
+export async function analyzeDay({ family = [], notes = '', today, weekday = '', events = '', chores = '', upkeep = '', groceries = '' } = {}) {
+  const system = HM_ROLE(family) + ' This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee.';
+  const prompt = `Good morning. Today is ${weekday} ${today}. Give the family a short read on the day.
+
+HOUSEHOLD NOTES / PREFERENCES:
+${notes || '(none provided)'}
+
+TODAY & TOMORROW ON THE CALENDAR:
+${events || '(no calendar events available)'}
+
+OPEN CHORES:
+${chores || '(none)'}
+
+UPKEEP DUE / OVERDUE:
+${upkeep || '(none)'}
+
+GROCERY LIST (by store):
+${groceries || '(empty)'}
+
+Return JSON with exactly this shape:
+{
+  "headline": "one warm sentence reading the shape of the day",
+  "notes": ["1-3 short lines: what matters today, timing to watch, a heads-up"],
+  "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative, e.g. 'Prep gym bag for River'", "date": "YYYY-MM-DD (optional; for a task due date or appointment date)", "detail": "one short clause on why" } ]
+}
+Give 0-4 suggestions, only genuinely useful ones for today or the next day. Empty arrays are fine.`;
+
+  return generateJSON({ system, prompt, maxTokens: 1400 });
+}
+
+// Weekly review for the House Manager tab — proposes a concrete plan of items
+// to complete for the rest of the week. Each item is typed so it can be added
+// to the living weekly plan (or straight to tasks/calendar/grocery).
+export async function reviewWeek({ family = [], notes = '', today, events = '', chores = '', upkeep = '', groceries = '', plan = '' } = {}) {
+  const system = HM_ROLE(family) + ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, appointments needing prep, and good windows to run errands or book vendors given the family\'s habits.';
+  const prompt = `Today is ${today}. Propose a plan of what's worth getting done for the rest of this week.
 
 HOUSEHOLD NOTES / PREFERENCES:
 ${notes || '(none provided)'}
@@ -155,13 +188,16 @@ ${upkeep || '(none)'}
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
 
+ALREADY ON THE WEEKLY PLAN (do not repeat these):
+${plan || '(nothing planned yet)'}
+
 Return JSON with exactly this shape:
 {
-  "ideas": [ { "title": "short headline of the idea", "detail": "1-2 sentences on what and why, with the specific date/person", "actions": ["a concrete next step", "..."] } ],
-  "questions": ["a short question whose answer would sharpen your advice"]
+  "overview": "2-3 sentences reading the week and what to prioritize",
+  "planItems": [ { "title": "short imperative plan item", "detail": "one sentence: what, why, and roughly when", "suggestedType": "plan" | "task" | "appointment" | "grocery", "day": "YYYY-MM-DD (optional)" } ],
+  "questions": ["a short question whose answer would sharpen the plan"]
 }
-
-Give 3-6 ideas, most time-sensitive first. Keep it concrete and warm, not generic. If a section has nothing, return an empty array.`;
+Give 4-8 plan items, most time-sensitive first. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 2200 });
 }

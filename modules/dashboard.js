@@ -5,20 +5,18 @@
 
 import { getAll, put, getSettings } from './store.js';
 import { el, clear, navigate, todayStr, addDays, fmtDay } from './ui.js';
-import { choreRow, editChoreModal, toggleChore } from './chores.js';
-import { addGroceryItem, STORES } from './grocery.js';
-import { getMaintenance, nextDue, dueState } from './maintenance.js';
+import { choreRow } from './chores.js';
+import { addGroceryItem } from './grocery.js';
+import { getMaintenance, dueState } from './maintenance.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
-import { isConnected, eventsForRange } from './gcal.js';
-import { reviewHousehold, hasApiKey, AIError } from './ai.js';
+import { analyzeDay, hasApiKey, AIError } from './ai.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
+import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
 
 const CART_SVG = '<svg viewBox="0 0 24 24"><path d="M3.5 4.5H6l2.3 10.5h9.4l2.3-8.5H7"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="16.5" cy="19" r="1.5"/></svg>';
-
-// The family's shopping habits etc., fed to the house-manager AI. Editable in
-// Settings → "Notes for the assistant"; this is the default seed.
-export const DEFAULT_HOUSEHOLD_NOTES =
-  "Shopping habits: Costco — go during executive hours right when it opens (weekend mornings). Trader Joe's — quick, local runs for a few items. Walmart — usually home delivery, for items we don't want in Costco bulk sizes.";
+const BRIEF_KEY = 'ohos.dayBrief';
+let briefInFlight = false;
 
 function greeting() {
   const h = new Date().getHours();
@@ -63,7 +61,7 @@ export async function renderDashboard(root) {
         el('div', { class: 'stat-value' }, dueToday.length + overdue.length),
         el('div', { class: 'stat-label' }, 'chores due'),
       ]),
-      el('button', { class: 'stat stat-btn', onclick: () => navigate('#/upkeep') }, [
+      el('button', { class: 'stat stat-btn', onclick: () => navigate('#/manager') }, [
         el('div', { class: 'stat-value' }, overdueUpkeep.length),
         el('div', { class: 'stat-label' }, 'upkeep overdue'),
       ]),
@@ -103,8 +101,8 @@ export async function renderDashboard(root) {
     );
   }
 
-  // ----- house manager (Claude) -----
-  root.append(...houseManagerSection(rerender, { today, family: (settings.familyMembers || 'Chris, Kat, Sedona, River'), notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES, chores, maintenance, groceries }));
+  // ----- daily brief (Claude, auto once each morning) -----
+  root.append(...dailyBriefSection(rerender, { today, settings }));
 
   // ----- quick capture -----
   let kind = 'chore';
@@ -201,81 +199,72 @@ function apptRow(a, rerender) {
   ]);
 }
 
-// The Claude house-manager panel: on demand, reviews the coming ~2 weeks of
-// calendar + household state and surfaces proactive ideas.
-function houseManagerSection(rerender, ctx) {
+// The Home daily brief: a short read on TODAY that generates automatically on
+// the first open of the day (cached until tomorrow), with a Refresh, and
+// suggestions you can add with one tap.
+function dailyBriefSection(rerender, { today, settings }) {
   const host = el('div', {});
-  const btn = el('button', {
-    class: 'btn btn-primary full',
-    style: 'margin-bottom: 6px',
-    onclick: async () => {
-      if (!hasApiKey()) { navigate('#/settings'); return; }
-      btn.disabled = 'disabled';
-      btn.textContent = 'Thinking…';
-      clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Reviewing your week…')]));
-      try {
-        const events = isConnected() ? await eventsForRange(ctx.today, addDays(ctx.today, 14)).catch(() => []) : [];
-        const eventsText = events
-          .sort((a, b) => (a.date + (a.startTime || '') < b.date + (b.startTime || '') ? -1 : 1))
-          .map((e) => `- ${fmtDay(e.date)}${e.startTime ? ' ' + to12(e.startTime) : ' (all day)'}: ${e.title}`)
-          .join('\n');
-        const choresText = ctx.chores.filter((c) => !c.done).map((c) => `- ${c.title}${c.dueDate ? ` (due ${c.dueDate})` : ''}`).join('\n');
-        const upkeepText = ctx.maintenance.filter((m) => dueState(m) !== 'ok').map((m) => `- ${m.title} (due ${nextDue(m)})`).join('\n');
-        const byStore = {};
-        for (const g of ctx.groceries.filter((x) => !x.gotAt)) { const s = g.store || STORES[0]; (byStore[s] ||= []).push(g.name); }
-        const groceriesText = Object.entries(byStore).map(([s, names]) => `${s}: ${names.join(', ')}`).join('\n');
+  const refresh = el('button', { class: 'link', onclick: () => runBrief(host, rerender, { today, settings, force: true }) }, 'Refresh');
 
-        const out = await reviewHousehold({
-          family: ctx.family.split(',').map((s) => s.trim()).filter(Boolean),
-          notes: ctx.notes,
-          today: ctx.today,
-          events: eventsText,
-          chores: choresText,
-          upkeep: upkeepText,
-          groceries: groceriesText,
-        });
-        renderHouseIdeas(host, out);
-      } catch (err) {
-        clear(host).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
-      } finally {
-        btn.disabled = null;
-        btn.textContent = 'Review the week';
-      }
-    },
-  }, 'Review the week');
-
-  const hint = !hasApiKey()
-    ? 'Add a Claude API key in Settings to get proactive ideas from your week — birthdays to prep for, appointments to get ahead of, good times to run errands.'
-    : (isConnected() ? 'Claude reviews your calendar and lists and flags what to get ahead of.' : 'Connect Google Calendar in Settings so Claude can see the week, then review.');
+  const cached = readBrief();
+  if (cached && cached.date === today) {
+    renderBrief(host, cached.data, rerender);
+  } else if (hasApiKey()) {
+    runBrief(host, rerender, { today, settings }); // auto-generate for the day
+  } else {
+    host.append(el('p', { class: 'muted small' }, 'Add a Claude API key in Settings for a morning read on your day — what matters, what to prep, and one-tap add-to-list suggestions.'));
+  }
 
   return [
-    el('div', { class: 'panel-head' }, [el('h4', {}, 'House manager')]),
-    el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top:0' }, hint),
-      btn,
-      host,
-    ]),
+    el('div', { class: 'panel-head' }, [el('h4', {}, "Today's brief"), hasApiKey() ? refresh : null]),
+    el('section', { class: 'panel' }, [host]),
   ];
 }
 
-function renderHouseIdeas(host, out) {
+async function runBrief(host, rerender, { today, settings, force = false }) {
+  if (briefInFlight) return;
+  briefInFlight = true;
+  clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Reading your day…')]));
+  try {
+    const ctx = await gatherContext({ start: today, days: 2 });
+    const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long' });
+    const out = await analyzeDay({
+      family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
+      notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+      today,
+      weekday,
+      events: ctx.eventsText,
+      chores: ctx.choresText,
+      upkeep: ctx.upkeepText,
+      groceries: ctx.groceriesText,
+    });
+    writeBrief(today, out);
+    renderBrief(host, out, rerender);
+  } catch (err) {
+    clear(host).append(
+      el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Couldn't generate today's brief: ${err.message}`),
+      el('button', { class: 'btn', style: 'margin-top: 8px', onclick: () => runBrief(host, rerender, { today, settings, force: true }) }, 'Try again')
+    );
+  } finally {
+    briefInFlight = false;
+  }
+}
+
+function renderBrief(host, out, rerender) {
   clear(host);
-  for (const i of out.ideas || []) {
+  if (out.headline) host.append(el('p', { class: 'brief-headline' }, out.headline));
+  if (out.notes?.length) host.append(el('ul', { class: 'brief-notes' }, out.notes.map((n) => el('li', {}, n))));
+  for (const s of out.suggestions || []) {
     host.append(
       el('div', { class: 'idea' }, [
-        el('div', { class: 'idea-title' }, i.title),
-        i.detail ? el('p', { class: 'idea-detail' }, i.detail) : null,
-        i.actions?.length ? el('ul', { class: 'idea-actions' }, i.actions.map((a) => el('li', {}, a))) : null,
+        el('div', { class: 'idea-title' }, s.title),
+        s.detail ? el('p', { class: 'idea-detail' }, s.detail) : null,
+        addButtons(s, { today: todayStr(), includePlan: false, onAdded: rerender }),
       ])
     );
   }
-  if (out.questions?.length) {
-    host.append(
-      el('div', { class: 'idea-questions' }, [
-        el('h5', {}, 'Claude wants to know'),
-        el('ul', { class: 'idea-actions' }, out.questions.map((q) => el('li', {}, q))),
-      ])
-    );
-  }
-  if (!host.children.length) host.append(el('p', { class: 'muted small' }, 'Nothing pressing came up for the week ahead.'));
+  if (!out.headline && !out.notes?.length && !out.suggestions?.length) host.append(el('p', { class: 'muted small' }, 'Nothing pressing today — enjoy it.'));
 }
+
+function readBrief() { try { return JSON.parse(localStorage.getItem(BRIEF_KEY)); } catch { return null; } }
+function writeBrief(date, data) { localStorage.setItem(BRIEF_KEY, JSON.stringify({ date, data })); }

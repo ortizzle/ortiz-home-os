@@ -11,12 +11,13 @@ import {
   onSyncStatus,
   exportSnapshot,
 } from './modules/store.js';
-import { renderDashboard, DEFAULT_HOUSEHOLD_NOTES } from './modules/dashboard.js';
+import { renderDashboard } from './modules/dashboard.js';
 import { renderChores } from './modules/chores.js';
 import { renderGrocery } from './modules/grocery.js';
 import { renderCalendar } from './modules/calendar.js';
-import { renderUpkeep } from './modules/maintenance.js';
+import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
+import { DEFAULT_HOUSEHOLD_NOTES } from './modules/hmcontext.js';
 import { isConnected as gcalConnected, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { el, clear, toast, navigate, openModal, todayStr } from './modules/ui.js';
@@ -25,7 +26,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v10';
+const APP_VERSION = 'v11';
 
 // ---------- theme ----------
 
@@ -54,7 +55,8 @@ const routes = [
   { re: /^#\/grocery$/, tab: 'grocery', fn: () => renderGrocery(view) },
   { re: /^#\/calendar$/, tab: 'calendar', fn: () => renderCalendar(view, { mode: 'day', date: todayStr() }) },
   { re: /^#\/calendar\/(day|week)\/(\d{4}-\d{2}-\d{2})$/, tab: 'calendar', fn: (m) => renderCalendar(view, { mode: m[1], date: m[2] }) },
-  { re: /^#\/upkeep$/, tab: 'upkeep', fn: () => renderUpkeep(view) },
+  { re: /^#\/manager$/, tab: 'manager', fn: () => renderManager(view) },
+  { re: /^#\/upkeep$/, tab: 'manager', fn: () => renderManager(view) }, // legacy alias
   { re: /^#\/meeting$/, tab: 'meeting', fn: () => renderMeeting(view) },
   { re: /^#\/settings$/, tab: 'settings', fn: () => renderSettings(view) },
 ];

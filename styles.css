@@ -349,6 +349,15 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .idea-questions { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border-strong); }
 .idea-questions h5 { margin: 0 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); }
 
+/* daily brief + one-tap add buttons */
+.brief-headline { margin: 2px 0 8px; font-size: 15px; font-weight: 600; line-height: 1.45; }
+.brief-notes { margin: 0 0 6px; padding-left: 18px; }
+.brief-notes li { font-size: 13px; margin: 3px 0; line-height: 1.45; color: var(--text-2); }
+.hm-overview { margin: 2px 0 10px; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+.hm-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.hm-add { flex: 0 0 auto; padding: 5px 12px; font-size: 12px; }
+.hm-add:disabled { opacity: 1; color: var(--good); border-color: var(--good); background: var(--good-soft); }
+
 /* ---------- upkeep ---------- */
 .upkeep-row {
   display: flex; align-items: center; gap: 12px;
