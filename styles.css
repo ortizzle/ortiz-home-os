@@ -422,6 +422,14 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .week-items { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .week-item { font-size: 12.5px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .week-item.is-event { color: var(--accent); font-weight: 500; }
+.week-item.all-day {
+  align-self: flex-start;
+  max-width: 100%;
+  background: var(--accent-soft);
+  font-weight: 600;
+  border-radius: 5px;
+  padding: 1px 7px;
+}
 .week-more { font-size: 11px; color: var(--text-3); }
 
 /* all-day events stand out: filled accent chip instead of a plain timed row */

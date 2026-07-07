@@ -287,7 +287,7 @@ async function renderWeek(root, date) {
         .sort((a, b) => ((a.startTime || '') < (b.startTime || '') ? -1 : 1));
       const dayChores = chores.filter((c) => c.dueDate === day && !c.done);
       const items = [
-        ...dayAppts.map((a) => el('span', { class: 'week-item is-event' }, `${a.allDay || !a.startTime ? '' : fmtTime(a.startTime) + ' · '}${a.title}`)),
+        ...dayAppts.map((a) => el('span', { class: 'week-item is-event' + (a.allDay ? ' all-day' : '') }, `${a.allDay || !a.startTime ? '' : fmtTime(a.startTime) + ' · '}${a.title}`)),
         ...dayChores.map((c) => el('span', { class: 'week-item' }, `○ ${c.title}`)),
       ];
       const shown = items.slice(0, 3);
