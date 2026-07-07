@@ -3,7 +3,7 @@
 // item carries its intended store but you can check it off anywhere.
 
 import { getAll, put, remove, now } from './store.js';
-import { el, clear, toast, todayStr } from './ui.js';
+import { el, clear, toast, todayStr, tableOfContents } from './ui.js';
 import { dinnersSection } from './meals.js';
 
 export const STORES = ['Costco', 'Walmart', "Trader Joe's"];
@@ -177,4 +177,10 @@ export async function renderGrocery(root) {
       el('p', { class: 'muted small' }, 'Keep has no API for personal accounts, so this paste box is the bridge. Voice-added items land in Keep; paste them over before a store run.'),
     ])
   );
+
+  tableOfContents(root, [
+    { label: 'Dinners', at: "This week's dinners" },
+    { label: 'List', at: 'List' },
+    { label: 'Import', at: 'Import from Keep' },
+  ]);
 }

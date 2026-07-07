@@ -4,7 +4,7 @@
 // schedule + vendors (the old Upkeep tab, folded in here).
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, addDays, fmtDay, openModal } from './ui.js';
+import { el, clear, toast, todayStr, addDays, fmtDay, openModal, tableOfContents } from './ui.js';
 import { getMaintenance, maintenanceRow, editMaintenanceModal } from './maintenance.js';
 import { vendorsSection } from './vendors.js';
 import { addGroceryItem, STORES } from './grocery.js';
@@ -284,6 +284,15 @@ export async function renderManager(root) {
     ),
     ...(await vendorsSection(rerender))
   );
+
+  // jump-to menu for this long tab
+  tableOfContents(root, [
+    { label: 'Ask', at: 'Ask Claudia' },
+    { label: 'Plan week', at: 'Plan the week' },
+    { label: 'Checklist', at: "This week's plan" },
+    { label: 'Meeting', at: 'Family meeting' },
+    { label: 'Maintenance', at: 'Maintenance' },
+  ]);
 }
 
 function renderAnswer(host, out) {

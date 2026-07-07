@@ -87,6 +87,35 @@ export function openModal(title, body, actions = []) {
   return { close };
 }
 
+// A small sticky "table of contents" for long views: a scrollable row of
+// chips that jump to sections. `entries` is [{ label, at }] where `at` is the
+// heading text to find (prefix match, case-insensitive); label is the chip.
+// Tags the matched headings with ids + a scroll-margin class, then inserts the
+// chip row right after the view's header. No-ops if fewer than 2 sections
+// resolve (a TOC for one section is just clutter).
+export function tableOfContents(root, entries) {
+  const heads = [...root.querySelectorAll('h4, .view-head-row h1')];
+  const norm = (s) => (s || '').trim().toLowerCase();
+  const chips = [];
+  entries.forEach((e, i) => {
+    const needle = norm(e.at || e.label);
+    const target = heads.find((h) => norm(h.textContent).startsWith(needle));
+    if (!target) return;
+    if (!target.id) target.id = `toc-${i}-${needle.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24)}`;
+    target.classList.add('toc-anchor');
+    const id = target.id;
+    chips.push(el('button', {
+      class: 'toc-chip',
+      onclick: () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    }, e.label));
+  });
+  if (chips.length < 2) return;
+  const toc = el('nav', { class: 'toc', 'aria-label': 'On this page' }, chips);
+  const head = root.querySelector('.view-head, .view-head-row');
+  if (head) head.after(toc);
+  else root.prepend(toc);
+}
+
 // Share text via the native share sheet (Android/Chrome), falling back to
 // the clipboard on platforms without navigator.share.
 export async function shareText({ title, text }) {
