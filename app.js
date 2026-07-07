@@ -26,7 +26,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v15';
+const APP_VERSION = 'v16';
 
 // ---------- theme ----------
 
@@ -162,7 +162,7 @@ function renderSettings(root) {
     ]),
 
     el('section', { class: 'panel' }, [
-      el('h4', {}, 'Claude AI (optional)'),
+      el('h4', {}, 'Claudia — AI house manager (optional)'),
       el('label', { class: 'field-label' }, 'Claude API key (stored only on this device)'),
       apiKey,
       el('label', { class: 'field-label' }, 'Notes for the assistant (habits, preferences)'),
@@ -175,7 +175,7 @@ function renderSettings(root) {
       foodNotes,
       el('label', { class: 'field-label' }, 'Kids & ages — for age-fit chore ideas'),
       kidsInput,
-      el('p', { class: 'muted small' }, 'Powers the daily brief, weekly review, meeting draft, and Ask. Notes are background context so ideas fit your family; interests + city let the weekly review and Ask search the web for real nearby things — a movie you’d love this week, local events — with actual dates and times. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
+      el('p', { class: 'muted small' }, 'Claudia (powered by Claude) runs the daily brief, weekly review, dinner plans, meeting drafts, and Ask. Notes are background context so her ideas fit your family; interests + city let her search the web for real nearby things — a movie you’d love this week, local events — with actual dates and times. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
     ]),
 
     el('section', { class: 'panel' }, [
@@ -185,7 +185,7 @@ function renderSettings(root) {
         el('span', { class: 'muted' }, gcalConnected() ? (gcalCanEmail() ? 'Connected — calendar + email (read-only)' : 'Connected — calendar only') : 'Not connected'),
       ]),
       gcalConnected() && !gcalCanEmail()
-        ? el('p', { class: 'muted small', style: 'color: var(--accent)' }, 'Reconnect to grant Gmail read access so the house manager can factor recent email into your brief and answers.')
+        ? el('p', { class: 'muted small', style: 'color: var(--accent)' }, 'Reconnect to grant Gmail read access so Claudia can factor recent email into your brief and answers.')
         : null,
       gcalConnected()
         ? el('div', { class: 'settings-actions' }, [
@@ -219,7 +219,7 @@ function renderSettings(root) {
               }
             },
           }, 'Connect Google Calendar'),
-      el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs, plus read-only access to recent Gmail so the house manager can factor email into your morning brief and answers. The app can only read — it never changes your calendar or sends mail. Sign in again occasionally (Google access expires ~hourly).'),
+      el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs, plus read-only access to recent Gmail so Claudia can factor email into your morning brief and answers. The app can only read — it never changes your calendar or sends mail. Sign in again occasionally (Google access expires ~hourly).'),
     ]),
 
     el('section', { class: 'panel' }, [

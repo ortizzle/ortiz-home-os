@@ -196,7 +196,7 @@ export async function renderMeeting(root) {
   );
 
   // ----- Claude: draft the meeting / review the agenda -----
-  root.append(el('div', { class: 'panel-head' }, [el('h4', {}, 'Plan with Claude')]));
+  root.append(el('div', { class: 'panel-head' }, [el('h4', {}, 'Plan with Claudia')]));
   const resultHost = el('div', {});
 
   const draftBtn = el('button', {
@@ -208,7 +208,7 @@ export async function renderMeeting(root) {
       }
       draftBtn.disabled = 'disabled';
       draftBtn.textContent = 'Drafting…';
-      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claude is drafting your meeting…')]));
+      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is drafting your meeting…')]));
       try {
         const plan = await getAll('plan');
         const openItems = [
@@ -243,7 +243,7 @@ export async function renderMeeting(root) {
       }
       reviewBtn.disabled = 'disabled';
       reviewBtn.textContent = 'Reviewing…';
-      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claude is reviewing the agenda…')]));
+      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reviewing the agenda…')]));
       try {
         const out = await reviewFamilyMeeting({
           family: familyMembers(),
@@ -265,8 +265,8 @@ export async function renderMeeting(root) {
     el('section', { class: 'panel' }, [
       el('p', { class: 'muted small', style: 'margin-top:0' },
         hasApiKey()
-          ? 'Draft the meeting: Claude proposes an agenda from this week, plus icebreakers and activities to add with one tap. Review: it checks what you’ve covered and what’s still open.'
-          : 'Optional: add a Claude API key in Settings to have Claude draft and review the meeting. Everything above works without it.'),
+          ? 'Draft the meeting: Claudia proposes an agenda from this week, plus icebreakers and activities to add with one tap. Review: she checks what you’ve covered and what’s still open.'
+          : 'Optional: add a Claude API key in Settings to have Claudia draft and review the meeting. Everything above works without it.'),
       draftBtn,
       hasApiKey() ? reviewBtn : null,
       resultHost,
@@ -320,7 +320,7 @@ function renderDraft(host, out, _rerender) {
     ))));
   }
   if (!host.children.length) {
-    host.append(el('p', { class: 'muted small' }, 'Claude didn’t have a draft to add — try jotting a few week notes above.'));
+    host.append(el('p', { class: 'muted small' }, 'Claudia didn’t have a draft to add — try jotting a few week notes above.'));
   }
 }
 
@@ -347,6 +347,6 @@ function renderReview(host, out) {
     host.append(section('Tips', bulletList(out.tips)));
   }
   if (!host.children.length) {
-    host.append(el('p', { class: 'muted small' }, 'Claude didn’t have much to add — your agenda looks in good shape.'));
+    host.append(el('p', { class: 'muted small' }, 'Claudia didn’t have much to add — your agenda looks in good shape.'));
   }
 }

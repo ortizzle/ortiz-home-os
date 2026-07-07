@@ -212,11 +212,11 @@ function dailyBriefSection(rerender, { today, settings }) {
     runBrief(host, rerender, { today, settings }); // auto-generate for the day
   } else {
     host.append(...pinNodes(today, rerender));
-    host.append(el('p', { class: 'muted small' }, 'Add a Claude API key in Settings for a morning read on your day — what matters, what to prep, and one-tap add-to-list suggestions.'));
+    host.append(el('p', { class: 'muted small' }, 'Add a Claude API key in Settings and Claudia will read your day each morning — what matters, what to prep, and one-tap add-to-list suggestions.'));
   }
 
   return [
-    el('div', { class: 'panel-head' }, [el('h4', {}, "Today's brief"), hasApiKey() ? refresh : null]),
+    el('div', { class: 'panel-head' }, [el('h4', {}, "Claudia's brief"), hasApiKey() ? refresh : null]),
     el('section', { class: 'panel' }, [host]),
   ];
 }
@@ -224,7 +224,7 @@ function dailyBriefSection(rerender, { today, settings }) {
 async function runBrief(host, rerender, { today, settings, force = false }) {
   if (briefInFlight) return;
   briefInFlight = true;
-  clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Reading your day…')]));
+  clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reading your day…')]));
   try {
     const ctx = await gatherContext({ start: today, days: 2, email: true });
     const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long' });

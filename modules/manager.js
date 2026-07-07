@@ -109,7 +109,7 @@ function dinnersSection(meals, rerender) {
       if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
       planBtn.disabled = 'disabled';
       planBtn.textContent = 'Planning…';
-      clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Planning dinners around your week…')]));
+      clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is planning dinners around your week…')]));
       try {
         const settings = getSettings();
         const ctx = await gatherContext({ start: today, days: 7 });
@@ -127,10 +127,10 @@ function dinnersSection(meals, rerender) {
         clear(host).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
       } finally {
         planBtn.disabled = null;
-        planBtn.textContent = 'Plan dinners with Claude';
+        planBtn.textContent = 'Plan dinners with Claudia';
       }
     },
-  }, 'Plan dinners with Claude');
+  }, 'Plan dinners with Claudia');
 
   return [
     el('div', { class: 'panel-head' }, [el('h4', {}, "This week's dinners")]),
@@ -215,7 +215,10 @@ export async function renderManager(root) {
   const openPlan = plan.filter((p) => !p.done).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const donePlan = plan.filter((p) => p.done);
 
-  root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'House Manager')]));
+  root.append(el('div', { class: 'view-head' }, [
+    el('h1', {}, 'Claudia'),
+    el('p', { class: 'muted' }, 'your house manager'),
+  ]));
 
   // ----- ask the house manager (Q&A over calendar + email + lists) -----
   const askInput = el('input', { class: 'input', placeholder: 'Ask about your week, email, plans…' });
@@ -227,7 +230,7 @@ export async function renderManager(root) {
     if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
     askBtn.disabled = 'disabled';
     askBtn.textContent = 'Thinking…';
-    clear(askHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Looking through your week…')]));
+    clear(askHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is looking through your week…')]));
     try {
       const settings = getSettings();
       const ctx = await gatherContext({ start: todayStr(), days: 14, email: true });
@@ -257,12 +260,12 @@ export async function renderManager(root) {
   }
   askInput.addEventListener('keydown', (e) => e.key === 'Enter' && runAsk());
   const askHint = !hasApiKey()
-    ? 'Add a Claude API key in Settings to ask the house manager.'
+    ? 'Add a Claude API key in Settings to ask Claudia.'
     : isConnected() && canReadEmail()
       ? 'Ask about your calendar, email, tasks, and plans — then pin any answer to tomorrow’s morning brief.'
       : 'Ask about your calendar, tasks, and plans. Connect Google in Settings (and reconnect to grant email) so it can read recent mail too.';
   root.append(
-    el('div', { class: 'panel-head' }, [el('h4', {}, 'Ask the house manager')]),
+    el('div', { class: 'panel-head' }, [el('h4', {}, 'Ask Claudia')]),
     el('section', { class: 'panel' }, [
       el('p', { class: 'muted small', style: 'margin-top:0' }, askHint),
       el('div', { class: 'grocery-add' }, [askInput, askBtn]),
@@ -305,7 +308,7 @@ export async function renderManager(root) {
       if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
       reviewBtn.disabled = 'disabled';
       reviewBtn.textContent = 'Thinking…';
-      clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Reviewing the week & checking what’s on nearby…')]));
+      clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reviewing the week & checking what’s on nearby…')]));
       try {
         const settings = getSettings();
         const [ctx, follow] = await Promise.all([
@@ -339,7 +342,7 @@ export async function renderManager(root) {
   root.append(
     el('div', { class: 'panel-head' }, [el('h4', {}, 'Weekly review')]),
     el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claude reviews your calendar + lists, searches for fun things nearby that match your interests (set them in Settings), and proposes a plan. Add the ones you want with one tap.' : 'Add a Claude API key in Settings to get a weekly plan from Claude.'),
+      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reviews your calendar + lists, searches for fun things nearby that match your interests (set them in Settings), and proposes a plan. Add the ones you want with one tap.' : 'Add a Claude API key in Settings to get a weekly plan from Claudia.'),
       reviewBtn,
       host,
     ])
@@ -404,7 +407,7 @@ function renderReview(host, out, rerender) {
   if (out.questions?.length) {
     host.append(
       el('div', { class: 'idea-questions' }, [
-        el('h5', {}, 'Claude wants to know'),
+        el('h5', {}, 'Claudia wants to know'),
         el('ul', { class: 'idea-actions' }, out.questions.map((q) => el('li', {}, q))),
       ])
     );
