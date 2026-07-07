@@ -105,6 +105,7 @@ export async function renderManager(root) {
       const out = await askManager({
         family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
         notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+        interests: settings.familyInterests || '',
         today: todayStr(),
         weekday: new Date().toLocaleDateString(undefined, { weekday: 'long' }),
         question: q,
@@ -170,13 +171,14 @@ export async function renderManager(root) {
       if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
       reviewBtn.disabled = 'disabled';
       reviewBtn.textContent = 'Thinking…';
-      clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Reviewing the week…')]));
+      clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Reviewing the week & checking what’s on nearby…')]));
       try {
         const settings = getSettings();
         const ctx = await gatherContext({ start: todayStr(), days: 14 });
         const out = await reviewWeek({
           family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
           notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+          interests: settings.familyInterests || '',
           today: todayStr(),
           events: ctx.eventsText,
           chores: ctx.choresText,
@@ -196,7 +198,7 @@ export async function renderManager(root) {
   root.append(
     el('div', { class: 'panel-head' }, [el('h4', {}, 'Weekly review')]),
     el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claude reviews your calendar + lists and proposes a plan for the rest of the week. Add the ones you want with one tap.' : 'Add a Claude API key in Settings to get a weekly plan from Claude.'),
+      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claude reviews your calendar + lists, searches for fun things nearby that match your interests (set them in Settings), and proposes a plan. Add the ones you want with one tap.' : 'Add a Claude API key in Settings to get a weekly plan from Claude.'),
       reviewBtn,
       host,
     ])

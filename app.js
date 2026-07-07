@@ -26,7 +26,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v13';
+const APP_VERSION = 'v14';
 
 // ---------- theme ----------
 
@@ -110,6 +110,8 @@ function renderSettings(root) {
   ));
   const apiKey = el('input', { class: 'input', type: 'password', placeholder: 'sk-ant-...', value: s.apiKey || '' });
   const householdNotes = el('textarea', { class: 'input', rows: 4 }, s.householdNotes ?? DEFAULT_HOUSEHOLD_NOTES);
+  const interestsInput = el('input', { class: 'input', placeholder: 'e.g. movies, hiking, board games, live music', value: s.familyInterests || '' });
+  const cityInput = el('input', { class: 'input', placeholder: 'e.g. Phoenix, AZ', value: s.homeCity || '' });
   const gistToken = el('input', { class: 'input', type: 'password', placeholder: 'GitHub token (gist scope)', value: s.gistToken || '' });
   const gistId = el('input', { class: 'input', placeholder: 'Gist ID', value: s.gistId || '' });
 
@@ -163,7 +165,11 @@ function renderSettings(root) {
       apiKey,
       el('label', { class: 'field-label' }, 'Notes for the assistant (habits, preferences)'),
       householdNotes,
-      el('p', { class: 'muted small' }, 'Powers the family-meeting review and the Home "House manager" review. The notes above give Claude context (e.g. your shopping habits) so its ideas fit your family. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
+      el('label', { class: 'field-label' }, 'Family interests — for fun ideas (movies, events…)'),
+      interestsInput,
+      el('label', { class: 'field-label' }, 'City / area — for finding what’s on nearby'),
+      cityInput,
+      el('p', { class: 'muted small' }, 'Powers the daily brief, weekly review, meeting draft, and Ask. Notes are background context so ideas fit your family; interests + city let the weekly review and Ask search the web for real nearby things — a movie you’d love this week, local events — with actual dates and times. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
     ]),
 
     el('section', { class: 'panel' }, [
@@ -258,6 +264,8 @@ function renderSettings(root) {
       meetingDay: Number(meetingDaySel.value),
       apiKey: apiKey.value.trim(),
       householdNotes: householdNotes.value.trim(),
+      familyInterests: interestsInput.value.trim(),
+      homeCity: cityInput.value.trim(),
       gistToken: gistToken.value.trim(),
       gistId: gistId.value.trim(),
     });

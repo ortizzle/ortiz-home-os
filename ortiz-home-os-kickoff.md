@@ -33,9 +33,15 @@ Learning OS and Focus OS are single-user. Home OS is **two people, one dataset**
 
 ## Phases
 
-- **v1 — the foundation (build now):** everything in scope above. Shared Gist, rules-based nudges, manual appointments.
-- **v1.5 — calendar-aware:** Google Calendar read overlay (pick calendars in settings); appointment entry mostly replaced by overlay; nudges get calendar triggers — event titled "Costco" → grocery surfacing; free weekend morning + overdue outdoor maintenance → "good window to schedule the landscaper."
-- **v2 — the advisor (decide later):** the "make suggestions from our goals and push us" layer, powered by Claude. Two candidate shapes, both with precedent: in-app calls with an API key (Learning OS pattern) doing a weekly household review, or a scheduled Claude routine that reads the synced snapshot + calendars and emails a morning digest. Choose after living with v1.5's rule engine — it may get 80% of the way there.
+- **v1 — the foundation (SHIPPED):** everything in scope above. Shared Gist, rules-based nudges, manual appointments.
+- **v1.5 — calendar-aware (SHIPPED):** Google Calendar read overlay with a per-device calendar picker, plus write-back ("Save to" a Google calendar from the appointment modal). Live events replace the mirrored snapshot when connected.
+- **v2 — the advisor (SHIPPED):** in-app Claude (Sonnet 5, BYO key — the Learning OS pattern). Home gets an auto morning **daily brief**; the Manager tab gets a **weekly review** feeding a living shared plan; the Meeting tab gets an AI **meeting draft** (agenda from the week + icebreakers + activities); an **Ask the house manager** box answers questions from calendar + email (Gmail read-only) + lists, and can pin answers to the next morning's brief. Every suggestion is one-tap actionable.
+- **v2.5 — the worldly manager (current):** suggestions must clear a quality bar. Standing rules, learned the hard way:
+  - **Household notes are background, never content.** The AI reads habits (Costco hours, delivery preferences) to *inform* judgment — it must never recite them back as advice ("do your Walmart delivery"). The family knows their own routines.
+  - **No filler.** A suggestion needs a concrete trigger — an item, a date, an opportunity. Fewer, better items beat a padded list.
+  - **Look outward, not just inward.** The weekly review and Ask use Anthropic's **web search tool** (server-side, capped at 3 searches/call, ~1¢ each) to find *real, current* things the family would enjoy — a movie they'd love playing nearby this week, a local event, a seasonal activity — matched to **Family interests** and anchored to **City/area** (both in Settings). Only verified findings with real dates/times/venues get suggested; nothing good on = say nothing.
+  - The daily brief stays search-free (it auto-runs every morning on both phones — keep it fast and cheap); worldly ideas belong in the weekly review and on-demand Ask.
+  - Long-term direction: the manager should know the family well enough (interests, rhythms, ages) that its suggestions feel like a great human house manager's — anticipating, not transcribing.
 
 ## Out of scope for v1 (do not build)
 

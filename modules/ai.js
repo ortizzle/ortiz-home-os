@@ -21,48 +21,70 @@ export function hasApiKey() {
   return Boolean(getSettings().apiKey);
 }
 
+// Anthropic's server-side web search tool. Lets the weekly review and the
+// Ask box find real, current things — movie showtimes, local events — instead
+// of guessing. Searches run on Anthropic's side (~1¢ each); max_uses caps cost.
+function webSearchTool() {
+  const city = (getSettings().homeCity || '').trim();
+  const t = { type: 'web_search_20250305', name: 'web_search', max_uses: 3 };
+  t.user_location = { type: 'approximate', timezone: 'America/Phoenix', country: 'US', ...(city ? { city } : {}) };
+  return t;
+}
+
 // The single transport seam. To move to a proxy later, change only this fn.
-async function callClaude({ system, messages, maxTokens = 2048 }) {
+// When `tools` includes web search, the API may pause mid-turn between
+// searches (stop_reason 'pause_turn') — we loop, feeding the partial turn
+// back, until Claude finishes.
+async function callClaude({ system, messages, maxTokens = 2048, tools }) {
   const { apiKey } = getSettings();
   if (!apiKey) {
     throw new AIError('No Claude API key set. Add one in Settings.');
   }
 
-  const body = { model: MODEL, max_tokens: maxTokens, messages, thinking: { type: 'disabled' } };
-  if (system) body.system = system;
+  let convo = messages;
+  for (let hop = 0; hop < 5; hop++) {
+    const body = { model: MODEL, max_tokens: maxTokens, messages: convo, thinking: { type: 'disabled' } };
+    if (system) body.system = system;
+    if (tools?.length) body.tools = tools;
 
-  let res;
-  try {
-    res = await fetch(API_URL, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        // Required for direct browser access. Remove when moving to a proxy.
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    throw new AIError(`Network error reaching Claude: ${err.message}`);
-  }
-
-  if (!res.ok) {
-    let detail = '';
+    let res;
     try {
-      detail = (await res.json())?.error?.message || '';
-    } catch {
-      /* ignore */
+      res = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          // Required for direct browser access. Remove when moving to a proxy.
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new AIError(`Network error reaching Claude: ${err.message}`);
     }
-    throw new AIError(`Claude API ${res.status}: ${detail || res.statusText}`);
-  }
 
-  const json = await res.json();
-  return (json.content || [])
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
+    if (!res.ok) {
+      let detail = '';
+      try {
+        detail = (await res.json())?.error?.message || '';
+      } catch {
+        /* ignore */
+      }
+      throw new AIError(`Claude API ${res.status}: ${detail || res.statusText}`);
+    }
+
+    const json = await res.json();
+    if (json.stop_reason === 'pause_turn') {
+      convo = [...convo, { role: 'assistant', content: json.content }];
+      continue;
+    }
+    return (json.content || [])
+      .filter((b) => b.type === 'text')
+      .map((b) => b.text)
+      .join('');
+  }
+  throw new AIError('Claude paused too many times — try again.');
 }
 
 // Strip accidental markdown fences before JSON.parse.
@@ -74,14 +96,29 @@ function stripFences(text) {
     .trim();
 }
 
-async function generateJSON({ system, prompt, maxTokens }) {
+// Parse the JSON out of a response. Web-searching turns sometimes wrap the
+// JSON in a sentence, so fall back to the outermost {...} before giving up.
+function parseJSON(raw) {
+  const text = stripFences(raw);
+  try {
+    return JSON.parse(text);
+  } catch {
+    const a = text.indexOf('{');
+    const b = text.lastIndexOf('}');
+    if (a >= 0 && b > a) return JSON.parse(text.slice(a, b + 1));
+    throw new SyntaxError('No JSON object found');
+  }
+}
+
+async function generateJSON({ system, prompt, maxTokens, tools }) {
   const attempt = async (extra) => {
     const raw = await callClaude({
       system,
       maxTokens,
+      tools,
       messages: [{ role: 'user', content: prompt + (extra || '') }],
     });
-    return JSON.parse(stripFences(raw));
+    return parseJSON(raw);
   };
   try {
     return await attempt('');
@@ -162,7 +199,7 @@ Give 4-6 agenda topics (most drawn from the week's real items), 2 icebreakers, a
 // ---------- House manager ----------
 
 const HM_ROLE = (family) =>
-  `You are the Ortiz family's house manager — thoughtful, organized, and genuinely helpful. Family: ${family.join(', ') || 'the family'}. Ground everything in the data provided: never invent events, people, dates, chores, or commitments. Be specific and warm, not generic. Respond with JSON only — no markdown, no fences.`;
+  `You are the Ortiz family's house manager — thoughtful, organized, and genuinely helpful. Family: ${family.join(', ') || 'the family'}. Ground everything in the data provided: never invent events, people, dates, chores, or commitments. Be specific and warm, not generic. The household notes are BACKGROUND preference context to inform your judgment — never recite them back as suggestions (e.g. don't tell them which store to shop at or when; they already know their own habits). Skip filler: only suggest something if it's tied to a concrete item, date, or opportunity. Respond with JSON only — no markdown, no fences.`;
 
 // Daily brief for the Home page — a short read on TODAY plus a few concrete,
 // one-tap-addable suggestions. Each suggestion is typed so the app can turn it
@@ -203,12 +240,17 @@ Give 0-4 suggestions, only genuinely useful ones for today or the next day. Empt
 // Weekly review for the House Manager tab — proposes a concrete plan of items
 // to complete for the rest of the week. Each item is typed so it can be added
 // to the living weekly plan (or straight to tasks/calendar/grocery).
-export async function reviewWeek({ family = [], notes = '', today, events = '', chores = '', upkeep = '', groceries = '', plan = '' } = {}) {
-  const system = HM_ROLE(family) + ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, appointments needing prep, and good windows to run errands or book vendors given the family\'s habits.';
-  const prompt = `Today is ${today}. Propose a plan of what's worth getting done for the rest of this week.
+export async function reviewWeek({ family = [], notes = '', interests = '', today, events = '', chores = '', upkeep = '', groceries = '', plan = '' } = {}) {
+  const system = HM_ROLE(family) +
+    ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
+    ' Also look OUTWARD: use web search to find 1-2 timely, real things this family would genuinely enjoy this week — a movie they\'d love playing nearby, a local event, a seasonal activity — matched to their interests and their open evenings. Include the real date, time, and venue from the search results, and only suggest what you actually verified. If nothing good is on, say nothing rather than padding.';
+  const prompt = `Today is ${today}. Propose a plan of what's worth getting done for the rest of this week — and anything fun worth planning around.
 
-HOUSEHOLD NOTES / PREFERENCES:
+HOUSEHOLD NOTES / PREFERENCES (background only — do not repeat back):
 ${notes || '(none provided)'}
+
+FAMILY INTERESTS (for fun / outing ideas):
+${interests || '(none listed — skip outing ideas)'}
 
 UPCOMING CALENDAR (next ~2 weeks):
 ${events || '(no calendar events available — Google Calendar may not be connected)'}
@@ -231,20 +273,23 @@ Return JSON with exactly this shape:
   "planItems": [ { "title": "short imperative plan item", "detail": "one sentence: what, why, and roughly when", "suggestedType": "plan" | "task" | "appointment" | "grocery", "day": "YYYY-MM-DD (optional)" } ],
   "questions": ["a short question whose answer would sharpen the plan"]
 }
-Give 4-8 plan items, most time-sensitive first. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.`;
+Give 3-8 plan items, most time-sensitive first — quality over quantity; never pad with generic errands. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.`;
 
-  return generateJSON({ system, prompt, maxTokens: 2200 });
+  return generateJSON({ system, prompt, maxTokens: 3000, tools: [webSearchTool()] });
 }
 
 // Free-form Q&A for the Manager tab — answers a question grounded in the
 // family's calendar, email, tasks, plan, and groceries. Returns a short
 // answer plus any concrete one-tap actions it wants to offer. `briefNote`
 // is a one-line version the family can pin to tomorrow's morning brief.
-export async function askManager({ family = [], notes = '', today, weekday = '', question, events = '', email = '', chores = '', upkeep = '', groceries = '', plan = '' } = {}) {
-  const system = HM_ROLE(family) + ' Answer the question directly and concretely using ONLY the data below. If the data doesn\'t contain the answer, say so plainly rather than guessing. Keep the answer to a few sentences.';
+export async function askManager({ family = [], notes = '', interests = '', today, weekday = '', question, events = '', email = '', chores = '', upkeep = '', groceries = '', plan = '' } = {}) {
+  const system = HM_ROLE(family) + ' Answer the question directly and concretely from the family data below. If the question needs current outside information (showtimes, local events, hours, weather, news), use web search and cite real dates/times/venues from what you find. If neither the data nor a search answers it, say so plainly rather than guessing. Keep the answer to a few sentences.';
   const prompt = `Today is ${weekday} ${today}. Answer this question for the family:
 
 "${question}"
+
+FAMILY INTERESTS:
+${interests || '(none listed)'}
 
 CALENDAR (upcoming):
 ${events || '(no calendar events available)'}
@@ -272,5 +317,5 @@ Return JSON with exactly this shape:
 }
 Offer 0-3 suggestions, only genuinely useful ones. Empty arrays/strings are fine.`;
 
-  return generateJSON({ system, prompt, maxTokens: 1600 });
+  return generateJSON({ system, prompt, maxTokens: 2400, tools: [webSearchTool()] });
 }
