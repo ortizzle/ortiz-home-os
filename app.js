@@ -17,9 +17,9 @@ import { renderGrocery } from './modules/grocery.js';
 import { renderCalendar } from './modules/calendar.js';
 import { renderUpkeep } from './modules/maintenance.js';
 import { renderMeeting } from './modules/meeting.js';
-import { isConnected as gcalConnected, connect as gcalConnect, disconnect as gcalDisconnect, GcalError } from './modules/gcal.js';
+import { isConnected as gcalConnected, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
-import { el, clear, toast, navigate, todayStr } from './modules/ui.js';
+import { el, clear, toast, navigate, openModal, todayStr } from './modules/ui.js';
 
 const view = document.getElementById('view');
 
@@ -164,7 +164,10 @@ function renderSettings(root) {
         el('span', { class: 'muted' }, gcalConnected() ? 'Connected — read-only' : 'Not connected'),
       ]),
       gcalConnected()
-        ? el('button', { class: 'btn', onclick: () => { gcalDisconnect(); toast('Disconnected'); renderSettings(root); } }, 'Disconnect')
+        ? el('div', { class: 'settings-actions' }, [
+            el('button', { class: 'btn btn-primary', onclick: () => chooseCalendars(() => renderSettings(root)) }, 'Choose calendars'),
+            el('button', { class: 'btn', onclick: () => { gcalDisconnect(); toast('Disconnected'); renderSettings(root); } }, 'Disconnect'),
+          ])
         : el('button', {
             class: 'btn btn-primary',
             onclick: async (e) => {
@@ -253,6 +256,43 @@ function renderSettings(root) {
     a.click();
     URL.revokeObjectURL(url);
   }
+}
+
+// Calendar picker — fetches this account's Google calendars and lets the user
+// choose which overlay on the app (stored per device).
+async function chooseCalendars(afterSave) {
+  toast('Loading your calendars…');
+  let cals;
+  try {
+    cals = await listCalendars();
+  } catch (err) {
+    return toast('Could not load your calendars', 'error');
+  }
+  if (!cals.length) return toast('No calendars found', 'warn');
+
+  const selected = new Set(getSelectedCalendars());
+  const rows = cals.map((c) => {
+    const cb = el('input', { type: 'checkbox', checked: selected.has(c.id) ? 'checked' : null });
+    cb.dataset.calId = c.id;
+    return el('label', { class: 'check-label' }, [cb, c.summary + (c.primary ? ' (primary)' : '')]);
+  });
+
+  const m = openModal('Calendars to show', [
+    el('p', { class: 'muted small', style: 'margin-top:0' }, 'Pick which Google calendars overlay on the Calendar and Meeting tabs. Choice is per device.'),
+    ...rows,
+  ], [
+    el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
+    el('button', {
+      class: 'btn btn-primary',
+      onclick: () => {
+        const chosen = rows.map((r) => r.querySelector('input')).filter((cb) => cb.checked).map((cb) => cb.dataset.calId);
+        setSelectedCalendars(chosen);
+        toast('Calendars updated', 'success');
+        m.close();
+        afterSave?.();
+      },
+    }, 'Save'),
+  ]);
 }
 
 // ---------- boot ----------

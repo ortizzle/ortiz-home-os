@@ -11,13 +11,25 @@ const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
 const GSI_SRC = 'https://accounts.google.com/gsi/client';
 const TOKEN_KEY = 'ohos.gcalToken';
 
-// Default calendars to overlay: the family's shared calendars. Each account
-// reads these by ID as long as it's subscribed; any it can't access is
-// skipped silently. Configurable later via a picker.
+// Which calendars to overlay. Default to the family's shared calendars until
+// the user picks their own set via the Settings picker (stored per device).
 const DEFAULT_CALENDARS = [
   'family04161634646034573603@group.calendar.google.com', // Family
   '02vd7e4t7q4jgffv7aqefcl27g@group.calendar.google.com', // Personal Schedule (GOAT)
 ];
+const CALS_KEY = 'ohos.gcalCalendars';
+
+export function getSelectedCalendars() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CALS_KEY));
+    if (Array.isArray(c)) return c; // may be [] = "show none"
+  } catch {}
+  return DEFAULT_CALENDARS;
+}
+export function setSelectedCalendars(ids) {
+  localStorage.setItem(CALS_KEY, JSON.stringify(ids));
+  clearCache();
+}
 
 export class GcalError extends Error {
   constructor(message, code) { super(message); this.code = code; }
@@ -125,6 +137,16 @@ async function apiGet(url) {
   return res.json();
 }
 
+// The calendars this account can read (for the Settings picker).
+export async function listCalendars() {
+  const data = await apiGet('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader&maxResults=250');
+  return (data.items || []).map((c) => ({
+    id: c.id,
+    summary: c.summaryOverride || c.summary || c.id,
+    primary: Boolean(c.primary),
+  }));
+}
+
 // Overlay events for [start, end) (local YYYY-MM-DD). Cached per session.
 // Returns [] when not connected, so callers can always await it safely.
 export async function eventsForRange(start, end, { force = false } = {}) {
@@ -135,7 +157,7 @@ export async function eventsForRange(start, end, { force = false } = {}) {
   const timeMin = new Date(`${start}T00:00:00`).toISOString();
   const timeMax = new Date(`${end}T00:00:00`).toISOString();
   const out = [];
-  for (const cal of DEFAULT_CALENDARS) {
+  for (const cal of getSelectedCalendars()) {
     try {
       const data = await apiGet(
         `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal)}/events` +
