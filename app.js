@@ -11,7 +11,7 @@ import {
   onSyncStatus,
   exportSnapshot,
 } from './modules/store.js';
-import { renderDashboard } from './modules/dashboard.js';
+import { renderDashboard, DEFAULT_HOUSEHOLD_NOTES } from './modules/dashboard.js';
 import { renderChores } from './modules/chores.js';
 import { renderGrocery } from './modules/grocery.js';
 import { renderCalendar } from './modules/calendar.js';
@@ -103,6 +103,7 @@ function renderSettings(root) {
     el('option', { value: i, selected: Number(s.meetingDay ?? 3) === i ? 'selected' : null }, FULL_DAYS[i])
   ));
   const apiKey = el('input', { class: 'input', type: 'password', placeholder: 'sk-ant-...', value: s.apiKey || '' });
+  const householdNotes = el('textarea', { class: 'input', rows: 4 }, s.householdNotes ?? DEFAULT_HOUSEHOLD_NOTES);
   const gistToken = el('input', { class: 'input', type: 'password', placeholder: 'GitHub token (gist scope)', value: s.gistToken || '' });
   const gistId = el('input', { class: 'input', placeholder: 'Gist ID', value: s.gistId || '' });
 
@@ -154,7 +155,9 @@ function renderSettings(root) {
       el('h4', {}, 'Claude AI (optional)'),
       el('label', { class: 'field-label' }, 'Claude API key (stored only on this device)'),
       apiKey,
-      el('p', { class: 'muted small' }, 'Powers the family-meeting review. Used for direct browser calls to Anthropic; sends the agenda + week ahead to Claude, and never leaves your device except to Anthropic.'),
+      el('label', { class: 'field-label' }, 'Notes for the assistant (habits, preferences)'),
+      householdNotes,
+      el('p', { class: 'muted small' }, 'Powers the family-meeting review and the Home "House manager" review. The notes above give Claude context (e.g. your shopping habits) so its ideas fit your family. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
     ]),
 
     el('section', { class: 'panel' }, [
@@ -233,6 +236,7 @@ function renderSettings(root) {
       familyMembers: familyInput.value.trim(),
       meetingDay: Number(meetingDaySel.value),
       apiKey: apiKey.value.trim(),
+      householdNotes: householdNotes.value.trim(),
       gistToken: gistToken.value.trim(),
       gistId: gistId.value.trim(),
     });

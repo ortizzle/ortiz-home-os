@@ -65,15 +65,5 @@ export function buildSuggestions({ maintenance = [], chores = [], groceries = []
     });
   }
 
-  // 5. Tomorrow's appointments → no surprises.
-  for (const a of appointments.filter((x) => x.date === addDays(today, 1)).slice(0, 2)) {
-    out.push({
-      urgent: false,
-      text: `Tomorrow: ${a.title}${a.startTime ? ` at ${a.startTime}` : ''}${a.who ? ` (${a.who})` : ''}`,
-      hash: `#/calendar/day/${a.date}`,
-      go: 'Calendar',
-    });
-  }
-
   return out.slice(0, 4);
 }

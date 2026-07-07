@@ -127,3 +127,41 @@ Keep the suggested agenda to a realistic 20-30 minute family meeting (4-6 topics
 
   return generateJSON({ system, prompt, maxTokens: 1800 });
 }
+
+// ---------- House-manager review ----------
+
+// Reviews the upcoming calendar + household state and returns proactive,
+// at-a-glance ideas a good house manager would surface — birthdays/events
+// that need a card, gift, RSVP or reservation; appointments needing prep;
+// good windows for errands given the family's shopping habits; overdue
+// upkeep. It can also ask clarifying questions.
+export async function reviewHousehold({ family = [], notes = '', today, events = '', chores = '', upkeep = '', groceries = '' } = {}) {
+  const system = `You are the Ortiz family's proactive house manager. Family: ${family.join(', ') || 'the family'}. Be genuinely helpful and specific — anticipate what a thoughtful, organized person running this household would flag this week. Look especially for things with lead time: birthdays and anniversaries (suggest a card AND a gift, ordered in time), events needing an RSVP / reservation / outfit / travel, appointments that need preparation, and good windows to run errands or book vendors. Ground every idea in the data provided — never invent events, people, dates, or commitments. If something genuinely needs the family's input to advise well, put it under "questions" (ask at most 3, only when it would change your advice). Respond with JSON only — no markdown, no fences.`;
+
+  const prompt = `Today is ${today}. Review what's coming up and give us helpful ideas at a glance.
+
+HOUSEHOLD NOTES / PREFERENCES:
+${notes || '(none provided)'}
+
+UPCOMING CALENDAR (next ~2 weeks):
+${events || '(no calendar events available — Google Calendar may not be connected)'}
+
+OPEN CHORES:
+${chores || '(none)'}
+
+UPKEEP DUE / OVERDUE:
+${upkeep || '(none)'}
+
+GROCERY LIST (by store):
+${groceries || '(empty)'}
+
+Return JSON with exactly this shape:
+{
+  "ideas": [ { "title": "short headline of the idea", "detail": "1-2 sentences on what and why, with the specific date/person", "actions": ["a concrete next step", "..."] } ],
+  "questions": ["a short question whose answer would sharpen your advice"]
+}
+
+Give 3-6 ideas, most time-sensitive first. Keep it concrete and warm, not generic. If a section has nothing, return an empty array.`;
+
+  return generateJSON({ system, prompt, maxTokens: 2200 });
+}

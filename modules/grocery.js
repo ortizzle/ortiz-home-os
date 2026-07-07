@@ -1,12 +1,15 @@
 // grocery.js — the household list the app OWNS (Google Keep has no consumer
-// API — see kickoff). Per-store lists, fast add, check-off, and a Keep
-// paste-import.
+// API — see kickoff). One flat list you can optionally group by store; each
+// item carries its intended store but you can check it off anywhere.
 
 import { getAll, put, remove, now } from './store.js';
 import { el, clear, toast, todayStr } from './ui.js';
 
-// The stores the family shops. Items keep a `store`; the list groups by it.
 export const STORES = ['Costco', 'Walmart', "Trader Joe's"];
+const SORT_KEY = 'ohos.grocerySort';
+
+function getSort() { return localStorage.getItem(SORT_KEY) === 'store' ? 'store' : 'all'; }
+function setSort(v) { localStorage.setItem(SORT_KEY, v); }
 
 export async function getOpenGroceries() {
   const items = await getAll('groceries');
@@ -34,7 +37,7 @@ export function parseImport(text) {
     .filter(Boolean);
 }
 
-function groceryRow(g, rerender) {
+function groceryRow(g, rerender, { showStore = true } = {}) {
   return el('div', { class: 'grocery-row' + (g.gotAt ? ' got' : '') }, [
     el('button', {
       class: 'task-check',
@@ -47,6 +50,7 @@ function groceryRow(g, rerender) {
       },
     }),
     el('span', { class: 'grocery-name' }, g.name),
+    showStore ? el('span', { class: 'pill grocery-store' }, g.store || STORES[0]) : null,
     g.by ? el('span', { class: 'grocery-by' }, g.by) : null,
     el('button', {
       class: 'link',
@@ -60,8 +64,7 @@ function groceryRow(g, rerender) {
   ]);
 }
 
-// A horizontal store selector; returns { row, get() } where get() is the
-// currently-chosen store.
+// Horizontal store selector for adding/importing. Returns { row, get() }.
 function storePicker(initial) {
   let store = initial;
   const btns = STORES.map((s) =>
@@ -83,6 +86,7 @@ export async function renderGrocery(root) {
 
   const open = items.filter((g) => !g.gotAt).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const got = items.filter(gotToday);
+  const sort = getSort();
 
   root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'Grocery')]));
 
@@ -105,25 +109,41 @@ export async function renderGrocery(root) {
     ])
   );
 
-  // ----- per-store lists -----
-  // Known stores in order, then any legacy/other store values still in use.
-  const extras = [...new Set(open.map((g) => g.store).filter((s) => s && !STORES.includes(s)))].sort();
-  const storeOrder = [...STORES, ...extras];
+  // ----- sort toggle + list -----
+  if (open.length) {
+    const sortBtn = (v, label) =>
+      el('button', {
+        class: 'btn seg-btn' + (sort === v ? ' active' : ''),
+        onclick: () => { setSort(v); rerender(); },
+      }, label);
+    root.append(
+      el('div', { class: 'grocery-head' }, [
+        el('h4', {}, `List (${open.length})`),
+        el('div', { class: 'seg grocery-sort' }, [sortBtn('all', 'All'), sortBtn('store', 'By store')]),
+      ])
+    );
 
-  if (!open.length) {
-    root.append(el('section', { class: 'panel' }, [el('p', { class: 'muted small' }, 'Lists are empty. Add items above, or paste from Keep below.')]));
-  } else {
-    for (const s of storeOrder) {
-      const list = open.filter((g) => (g.store || STORES[0]) === s);
-      if (!list.length) continue;
-      root.append(
-        el('h4', { class: 'group-heading' }, `${s} (${list.length})`),
-        el('section', { class: 'panel' }, list.map((g) => groceryRow(g, rerender)))
-      );
+    if (sort === 'store') {
+      const extras = [...new Set(open.map((g) => g.store).filter((s) => s && !STORES.includes(s)))].sort();
+      for (const s of [...STORES, ...extras]) {
+        const list = open.filter((g) => (g.store || STORES[0]) === s);
+        if (!list.length) continue;
+        root.append(
+          el('h4', { class: 'group-heading store-heading' }, `${s} (${list.length})`),
+          el('section', { class: 'panel' }, list.map((g) => groceryRow(g, rerender, { showStore: false })))
+        );
+      }
+    } else {
+      root.append(el('section', { class: 'panel' }, open.map((g) => groceryRow(g, rerender))));
     }
+  } else {
+    root.append(
+      el('h4', { class: 'group-heading' }, 'List'),
+      el('section', { class: 'panel' }, [el('p', { class: 'muted small' }, 'List is empty. Add items above, or paste from Keep below.')])
+    );
   }
 
-  // ----- got today (combined) -----
+  // ----- got today -----
   if (got.length) {
     root.append(
       el('h4', { class: 'group-heading' }, `In the cart today (${got.length})`),

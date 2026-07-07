@@ -332,6 +332,22 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .grocery-by { font-size: 11px; color: var(--text-3); }
 .import-box { margin-top: 6px; }
 .import-box textarea { min-height: 90px; }
+.grocery-store { font-size: 11px; padding: 2px 8px; flex-shrink: 0; }
+.grocery-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 20px 0 6px; }
+.grocery-head h4 { margin: 0; }
+.grocery-sort { margin: 0; width: auto; }
+.grocery-sort .seg-btn { padding: 5px 12px; font-size: 12px; }
+.store-heading { margin-top: 14px; }
+
+/* ---------- house-manager ideas ---------- */
+.idea { padding: 12px 0; border-top: 1px solid var(--border); }
+.idea:first-child { border-top: none; padding-top: 2px; }
+.idea-title { font-size: 15px; font-weight: 600; }
+.idea-detail { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+.idea-actions { margin: 8px 0 0; padding-left: 18px; }
+.idea-actions li { font-size: 13px; margin: 3px 0; line-height: 1.4; }
+.idea-questions { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border-strong); }
+.idea-questions h5 { margin: 0 0 6px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent); }
 
 /* ---------- upkeep ---------- */
 .upkeep-row {
