@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v2';
+const CACHE = 'ohos-shell-v3';
 const SHELL = [
   './',
   './index.html',
@@ -22,6 +22,7 @@ const SHELL = [
   './modules/dashboard.js',
   './modules/meeting.js',
   './modules/ai.js',
+  './modules/gcal.js',
 ];
 
 self.addEventListener('install', (e) => {
@@ -40,8 +41,14 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  // Never intercept Gist sync traffic.
-  if (url.hostname.endsWith('github.com') || url.hostname.endsWith('githubusercontent.com')) {
+  // Never intercept Gist sync traffic or Google sign-in / Calendar API traffic.
+  if (
+    url.hostname.endsWith('github.com') ||
+    url.hostname.endsWith('githubusercontent.com') ||
+    url.hostname.endsWith('google.com') ||
+    url.hostname.endsWith('googleapis.com') ||
+    url.hostname.endsWith('gstatic.com')
+  ) {
     return;
   }
   if (e.request.method !== 'GET') return;

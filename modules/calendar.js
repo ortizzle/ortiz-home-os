@@ -7,6 +7,43 @@ import { getAll, put, remove } from './store.js';
 import { el, clear, toast, navigate, openModal, todayStr, addDays, parseDate, dateStr, fmtDay } from './ui.js';
 import { choreRow, editChoreModal } from './chores.js';
 import { getMaintenance, nextDue, maintenanceRow } from './maintenance.js';
+import { isConnected, connect, eventsForRange, GcalError } from './gcal.js';
+
+// A "Connect Google Calendar" prompt, shown when not yet connected. Tapping it
+// pops Google's read-only consent, then re-renders so live events appear.
+function gcalConnectBar(rerender) {
+  const btn = el('button', {
+    class: 'btn btn-primary full',
+    onclick: async () => {
+      btn.disabled = 'disabled';
+      btn.textContent = 'Connecting…';
+      try {
+        await connect();
+        toast('Google Calendar connected', 'success');
+        rerender();
+      } catch (err) {
+        toast(err instanceof GcalError ? `Couldn't connect: ${err.message}` : 'Connection cancelled', 'warn');
+        btn.disabled = null;
+        btn.textContent = 'Connect Google Calendar';
+      }
+    },
+  }, 'Connect Google Calendar');
+  return el('div', {}, [btn, el('p', { class: 'muted small', style: 'margin-top:-8px' }, 'Read-only — overlays your family Google Calendar events here. The app can never change your calendar.')]);
+}
+
+// Merge stored appointments with live Google events for a range. When
+// connected, live events replace the old persisted gcal mirror (so they don't
+// double up); when NOT connected, the mirror stays visible as a fallback so
+// nobody loses their calendar before they've tapped Connect.
+export async function appointmentsFor(start, end) {
+  const connected = isConnected();
+  const [stored, live] = await Promise.all([
+    getAll('appointments'),
+    connected ? eventsForRange(start, end).catch(() => []) : Promise.resolve([]),
+  ]);
+  const base = connected ? stored.filter((a) => a.source !== 'gcal') : stored;
+  return [...base, ...live];
+}
 
 function fmtTime(t) {
   // "14:30" → "2:30 PM"
@@ -112,6 +149,7 @@ function calNav(title, { onPrev, onNext, showToday, mode, date }) {
 export async function renderCalendar(root, { mode = 'day', date = todayStr() } = {}) {
   clear(root);
   root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'Calendar')]), segToggle(mode, date));
+  if (!isConnected()) root.append(gcalConnectBar(() => renderCalendar(root, { mode, date })));
   if (mode === 'week') return renderWeek(root, date);
   return renderDay(root, date);
 }
@@ -121,7 +159,7 @@ async function renderDay(root, date) {
   const rerender = () => renderCalendar(root, { mode: 'day', date });
   const [chores, appointments, maintenance, vendors] = await Promise.all([
     getAll('chores'),
-    getAll('appointments'),
+    appointmentsFor(date, addDays(date, 1)),
     getMaintenance(),
     getAll('vendors'),
   ]);
@@ -180,8 +218,6 @@ async function renderDay(root, date) {
 }
 
 async function renderWeek(root, date) {
-  const [chores, appointments] = await Promise.all([getAll('chores'), getAll('appointments')]);
-
   // Week starts Monday.
   const d = parseDate(date);
   const monday = new Date(d);
@@ -191,6 +227,11 @@ async function renderWeek(root, date) {
     day.setDate(monday.getDate() + i);
     return dateStr(day);
   });
+
+  const [chores, appointments] = await Promise.all([
+    getAll('chores'),
+    appointmentsFor(days[0], addDays(days[6], 1)),
+  ]);
 
   root.append(
     calNav(`Week of ${fmtDay(days[0])}`, {

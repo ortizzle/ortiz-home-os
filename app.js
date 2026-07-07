@@ -17,6 +17,7 @@ import { renderGrocery } from './modules/grocery.js';
 import { renderCalendar } from './modules/calendar.js';
 import { renderUpkeep } from './modules/maintenance.js';
 import { renderMeeting } from './modules/meeting.js';
+import { isConnected as gcalConnected, connect as gcalConnect, disconnect as gcalDisconnect, GcalError } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { el, clear, toast, navigate, todayStr } from './modules/ui.js';
 
@@ -154,6 +155,34 @@ function renderSettings(root) {
       el('label', { class: 'field-label' }, 'Claude API key (stored only on this device)'),
       apiKey,
       el('p', { class: 'muted small' }, 'Powers the family-meeting review. Used for direct browser calls to Anthropic; sends the agenda + week ahead to Claude, and never leaves your device except to Anthropic.'),
+    ]),
+
+    el('section', { class: 'panel' }, [
+      el('h4', {}, 'Google Calendar (optional)'),
+      el('div', { class: 'sync-status' }, [
+        el('span', { class: 'sync-dot ' + (gcalConnected() ? 'on' : 'off') }),
+        el('span', { class: 'muted' }, gcalConnected() ? 'Connected — read-only' : 'Not connected'),
+      ]),
+      gcalConnected()
+        ? el('button', { class: 'btn', onclick: () => { gcalDisconnect(); toast('Disconnected'); renderSettings(root); } }, 'Disconnect')
+        : el('button', {
+            class: 'btn btn-primary',
+            onclick: async (e) => {
+              const b = e.currentTarget;
+              b.disabled = 'disabled';
+              b.textContent = 'Connecting…';
+              try {
+                await gcalConnect();
+                toast('Google Calendar connected', 'success');
+                renderSettings(root);
+              } catch (err) {
+                toast(err instanceof GcalError ? `Couldn't connect: ${err.message}` : 'Connection cancelled', 'warn');
+                b.disabled = null;
+                b.textContent = 'Connect Google Calendar';
+              }
+            },
+          }, 'Connect Google Calendar'),
+      el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs. The app can only see your calendar — never change it. Sign in again occasionally (Google access expires ~hourly).'),
     ]),
 
     el('section', { class: 'panel' }, [

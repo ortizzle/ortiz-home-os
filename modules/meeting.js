@@ -5,6 +5,7 @@
 import { getAll, put, remove, getSettings, deviceName } from './store.js';
 import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtDay } from './ui.js';
 import { getMaintenance, nextDue } from './maintenance.js';
+import { appointmentsFor } from './calendar.js';
 import { errandWindow } from './suggest.js';
 import { hasApiKey, reviewFamilyMeeting, AIError } from './ai.js';
 
@@ -69,7 +70,7 @@ async function gatherWeekAhead() {
   const today = todayStr();
   const end = addDays(today, 7);
   const [appointments, chores, maintenance, groceries] = await Promise.all([
-    getAll('appointments'),
+    appointmentsFor(today, end),
     getAll('chores'),
     getMaintenance(),
     getAll('groceries'),
