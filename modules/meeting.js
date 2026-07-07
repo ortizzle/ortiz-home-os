@@ -139,20 +139,25 @@ function agendaRow(item, rerender) {
   ]);
 }
 
-export async function renderMeeting(root) {
-  clear(root);
-  const rerender = () => renderMeeting(root);
+// The full family-meeting experience as embeddable nodes — hosted on the
+// Claudia tab (embedded) and still reachable standalone at #/meeting.
+export async function meetingSection(rerender, { embedded = true } = {}) {
+  const nodes = [];
+  const root = { append: (...n) => nodes.push(...n.filter(Boolean)) }; // collect instead of mount
   const agenda = (await getAll('agenda')).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const week = await gatherWeekAhead();
   const meetingDate = nextMeetingDate();
   const isToday = meetingDate === todayStr();
 
-  root.append(
-    el('div', { class: 'view-head' }, [
-      el('h1', {}, 'Family Meeting'),
-      el('p', { class: 'muted' }, `${isToday ? 'Today' : DAY_NAMES[meetingDay()]} · ${fmtDay(meetingDate)} — ${familyMembers().join(', ')}`),
-    ])
-  );
+  const meta = `${isToday ? 'Today' : DAY_NAMES[meetingDay()]} · ${fmtDay(meetingDate)} — ${familyMembers().join(', ')}`;
+  if (embedded) {
+    root.append(
+      el('div', { class: 'panel-head', style: 'margin-top: 20px' }, [el('h4', {}, 'Family meeting')]),
+      el('p', { class: 'muted small', style: 'margin: -4px 0 8px' }, meta)
+    );
+  } else {
+    root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'Family Meeting'), el('p', { class: 'muted' }, meta)]));
+  }
 
   // ----- the week ahead (deterministic; no API key needed) -----
   // One-offs are what the family actually needs to talk about; daily-recurring
@@ -272,6 +277,14 @@ export async function renderMeeting(root) {
       resultHost,
     ])
   );
+
+  return nodes;
+}
+
+// Standalone page for the legacy #/meeting route.
+export async function renderMeeting(root) {
+  clear(root);
+  root.append(...(await meetingSection(() => renderMeeting(root), { embedded: false })));
 }
 
 // A "+ Agenda" chip that drops a drafted line onto the running agenda. It

@@ -290,7 +290,7 @@ async function renderWeek(root, date) {
         ...dayAppts.map((a) => el('span', { class: 'week-item is-event' + (a.allDay ? ' all-day' : '') }, `${a.allDay || !a.startTime ? '' : fmtTime(a.startTime) + ' · '}${a.title}`)),
         ...dayChores.map((c) => el('span', { class: 'week-item' }, `○ ${c.title}`)),
       ];
-      const shown = items.slice(0, 3);
+      const shown = items.slice(0, 6);
       const extra = items.length - shown.length;
       const dd = parseDate(day);
       return el('button', { class: 'week-row' + (day === today ? ' today' : ''), onclick: () => navigate(`#/calendar/day/${day}`) }, [

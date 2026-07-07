@@ -26,7 +26,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v17';
+const APP_VERSION = 'v18';
 
 // ---------- theme ----------
 

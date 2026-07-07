@@ -73,6 +73,28 @@ export async function logSuggestionAdded(title, targetStore, targetId) {
   if (entry) await put('suggLog', { ...entry, addedAt: todayStr(), targetStore, targetId: targetId || null });
 }
 
+// Record that the family dismissed (✕) a suggestion — declined for good.
+// Claudia's prompts treat these as off the table permanently.
+export async function logSuggestionDismissed(title) {
+  const key = normKey(title);
+  if (!key) return;
+  const log = await getAll('suggLog');
+  const entry = log.find((r) => r.key === key);
+  if (entry) await put('suggLog', { ...entry, dismissedAt: todayStr() });
+  else await put('suggLog', { key, title, type: 'task', source: 'review', firstShownAt: todayStr(), lastShownAt: todayStr(), shownCount: 1, dismissedAt: todayStr() });
+}
+
+// Record the family's answer to one of Claudia's questions (or a plain
+// "resolved") so she builds on it instead of re-asking.
+export async function logQuestionResolved(question, answer = '') {
+  const key = normKey(question);
+  if (!key) return;
+  const log = await getAll('suggLog');
+  const entry = log.find((r) => r.key === key);
+  const base = entry || { key, title: question, source: 'review', firstShownAt: todayStr(), lastShownAt: todayStr(), shownCount: 1 };
+  await put('suggLog', { ...base, type: 'question', resolvedAt: todayStr(), answer: answer.trim() || null });
+}
+
 // Did the record a suggestion turned into actually get done?
 async function targetDone(store, id) {
   if (!store || !id) return false;
@@ -91,6 +113,16 @@ export async function followUpText() {
   const cutoff = addDays(todayStr(), -35);
   const lines = [];
   for (const r of log) {
+    // Declined suggestions and answered questions are kept indefinitely —
+    // "gone for good" only works if the memory outlives the prune window.
+    if (r.dismissedAt) {
+      lines.push(`- "${r.title}" — DECLINED by the family (${fmtDay(r.dismissedAt)}); never suggest this again`);
+      continue;
+    }
+    if (r.type === 'question' && r.resolvedAt) {
+      lines.push(`- You asked: "${r.title}" — ${r.answer ? `family answered: "${r.answer}"` : 'resolved, no longer an issue'}`);
+      continue;
+    }
     if ((r.lastShownAt || '') < cutoff) { await removeRec('suggLog', r.id); continue; }
     if (r.addedAt) {
       const done = await targetDone(r.targetStore, r.targetId);

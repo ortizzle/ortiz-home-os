@@ -1,16 +1,17 @@
-// manager.js — the House Manager tab. A living weekly plan (shared checklist),
-// an on-demand Claude weekly review whose suggestions turn into plan items /
-// tasks / appointments / groceries with one tap, and the household's recurring
-// maintenance schedule + vendors (the old Upkeep tab, folded in here).
+// manager.js — the Claudia tab: ask her anything, have her plan the week
+// (a persistent review whose items add/dismiss with one tap), the family's
+// shared weekly checklist, the family meeting, and the recurring maintenance
+// schedule + vendors (the old Upkeep tab, folded in here).
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, addDays, fmtDay, openModal, parseDate } from './ui.js';
+import { el, clear, toast, todayStr, addDays, fmtDay, openModal } from './ui.js';
 import { getMaintenance, maintenanceRow, editMaintenanceModal } from './maintenance.js';
 import { vendorsSection } from './vendors.js';
 import { addGroceryItem, STORES } from './grocery.js';
-import { reviewWeek, askManager, planMeals, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, pinToBrief, logShownSuggestions, logSuggestionAdded, followUpText } from './hmcontext.js';
+import { reviewWeek, askManager, hasApiKey, AIError } from './ai.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinToBrief, logShownSuggestions, logSuggestionAdded, logSuggestionDismissed, logQuestionResolved, followUpText } from './hmcontext.js';
 import { isConnected, canReadEmail } from './gcal.js';
+import { meetingSection } from './meeting.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
@@ -63,25 +64,39 @@ export function addButtons(sugg, { today, includePlan = false, onAdded, alreadyA
 }
 
 // ---------- weekly review persistence ----------
-// The review result survives re-renders (adding an item re-renders the view
-// to update the plan list — that must NOT wipe the rest of the review) and
-// page reloads, cached for the day like the Home brief. Per-device.
+// The review persists until the family runs a fresh one (Chris's ~2x/week
+// rhythm, on his schedule) — surviving re-renders and reloads. Accepted items
+// show Added ✓, dismissed ones stay gone, resolved questions stay resolved.
+// Per-device, like the Home brief.
 
 const REVIEW_KEY = 'ohos.weekReview';
 function readReview() {
   try {
     const r = JSON.parse(localStorage.getItem(REVIEW_KEY));
-    return r && r.date === todayStr() ? r : null;
+    return r && r.data ? r : null; // no expiry — lives until re-run
   } catch { return null; }
 }
 function writeReview(data) {
-  localStorage.setItem(REVIEW_KEY, JSON.stringify({ date: todayStr(), data, added: [] }));
+  localStorage.setItem(REVIEW_KEY, JSON.stringify({ reviewedAt: todayStr(), data, added: [], dismissed: [], resolved: {} }));
 }
-function markReviewAdded(title) {
+function patchReview(fn) {
   const r = readReview();
   if (!r) return;
-  r.added = [...new Set([...(r.added || []), title])];
+  fn(r);
   localStorage.setItem(REVIEW_KEY, JSON.stringify(r));
+}
+const markReviewAdded = (title) => patchReview((r) => { r.added = [...new Set([...(r.added || []), title])]; });
+const markReviewDismissed = (title) => patchReview((r) => { r.dismissed = [...new Set([...(r.dismissed || []), title])]; });
+const markQuestionResolved = (q, answer) => patchReview((r) => { r.resolved = { ...(r.resolved || {}), [q]: answer || true }; });
+
+// The per-render view of the persisted state.
+function reviewState(r) {
+  return {
+    reviewedAt: r.reviewedAt || null,
+    added: new Set(r.added || []),
+    dismissed: new Set(r.dismissed || []),
+    resolved: r.resolved || {},
+  };
 }
 
 function planRow(p, rerender) {
@@ -109,136 +124,10 @@ function planRow(p, rerender) {
   ]);
 }
 
-// ---------- dinners ----------
-
-// One row per night for the next 7 days: planned meal or a tap-to-add slot.
-function dinnersSection(meals, rerender) {
-  const today = todayStr();
-  const mealByDate = {};
-  for (const m of meals) mealByDate[m.date] = m; // one dinner per night
-  const nights = Array.from({ length: 7 }, (_, i) => addDays(today, i));
-
-  const rows = nights.map((date) => {
-    const m = mealByDate[date];
-    const dayLabel = date === today ? 'Tonight' : parseDate(date).toLocaleDateString(undefined, { weekday: 'short' });
-    return el('div', { class: 'event-row', onclick: () => editMealModal(m || null, date, rerender) }, [
-      el('span', { class: 'event-time' }, dayLabel),
-      m
-        ? el('span', { class: 'event-title' }, [m.title, m.by ? el('span', { class: 'event-who' }, `· ${m.by}`) : null])
-        : el('span', { class: 'event-title muted' }, '+ plan dinner'),
-    ]);
-  });
-
-  // AI: fill the empty nights.
-  const host = el('div', {});
-  const planBtn = el('button', {
-    class: 'btn btn-primary full', style: 'margin-top: 10px',
-    onclick: async () => {
-      if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
-      planBtn.disabled = 'disabled';
-      planBtn.textContent = 'Planning…';
-      clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is planning dinners around your week…')]));
-      try {
-        const settings = getSettings();
-        const ctx = await gatherContext({ start: today, days: 7 });
-        const out = await planMeals({
-          family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
-          foodNotes: settings.foodNotes || DEFAULT_FOOD_NOTES,
-          kids: settings.kidsAges || DEFAULT_KIDS,
-          today,
-          events: ctx.eventsText,
-          existingMeals: ctx.mealsText,
-          groceries: ctx.groceriesText,
-        });
-        renderMealPlan(host, out, mealByDate, rerender);
-      } catch (err) {
-        clear(host).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
-      } finally {
-        planBtn.disabled = null;
-        planBtn.textContent = 'Plan dinners with Claudia';
-      }
-    },
-  }, 'Plan dinners with Claudia');
-
-  return [
-    el('div', { class: 'panel-head' }, [el('h4', {}, "This week's dinners")]),
-    el('section', { class: 'panel' }, [...rows, hasApiKey() ? planBtn : null, host]),
-  ];
-}
-
-// Proposed dinners: each adds to its night with one tap, and its ingredients
-// (minus what's already on the list) can be pushed to grocery with another.
-function renderMealPlan(host, out, mealByDate, rerender) {
-  clear(host);
-  if (out.note) host.append(el('p', { class: 'hm-overview', style: 'margin-top: 10px' }, out.note));
-  const proposals = (out.meals || []).filter((m) => m.date && m.title && !mealByDate[m.date]);
-  for (const m of proposals) {
-    const addBtn = el('button', {
-      class: 'btn seg-btn hm-add',
-      onclick: async () => {
-        addBtn.disabled = 'disabled';
-        await put('meals', { date: m.date, title: m.title, detail: m.detail || null, ingredients: m.ingredients || [] });
-        addBtn.textContent = 'Added ✓';
-        toast(`${fmtDay(m.date)}: ${m.title}`, 'success');
-      },
-    }, '+ Add');
-    const grocBtn = (m.ingredients || []).length
-      ? el('button', {
-          class: 'btn seg-btn hm-add',
-          onclick: async () => {
-            grocBtn.disabled = 'disabled';
-            const existing = new Set((await getAll('groceries')).filter((g) => !g.gotAt).map((g) => g.name.toLowerCase()));
-            let added = 0;
-            for (const ing of m.ingredients) {
-              if (!existing.has(ing.toLowerCase())) { await addGroceryItem(ing); added++; }
-            }
-            grocBtn.textContent = added ? `${added} to grocery ✓` : 'All on the list ✓';
-          },
-        }, '+ Groceries')
-      : null;
-    host.append(
-      el('div', { class: 'idea' }, [
-        el('div', { class: 'idea-title' }, `${fmtDay(m.date)} — ${m.title}`),
-        m.detail ? el('p', { class: 'idea-detail' }, m.detail) : null,
-        (m.ingredients || []).length ? el('p', { class: 'idea-detail' }, `Needs: ${m.ingredients.join(', ')}`) : null,
-        el('div', { class: 'hm-actions' }, [addBtn, grocBtn]),
-      ])
-    );
-  }
-  if (!proposals.length) host.append(el('p', { class: 'muted small', style: 'margin-top: 10px' }, 'Every night already has a dinner planned. Nice.'));
-  else host.append(el('div', { class: 'hm-actions', style: 'margin-top: 4px' }, [
-    el('button', { class: 'btn seg-btn', onclick: rerender }, 'Done — refresh the week'),
-  ]));
-}
-
-// Add/edit a single night's dinner.
-function editMealModal(meal, date, rerender) {
-  const title = el('input', { class: 'input', placeholder: "e.g. Sheet-pan chicken & broccoli", value: meal?.title || '' });
-  const detail = el('textarea', { class: 'input', rows: 3, placeholder: 'Recipe notes (optional)' }, meal?.detail || '');
-  const m = openModal(`Dinner — ${fmtDay(date)}`, [
-    el('div', {}, [el('label', { class: 'field-label' }, 'What are we making?'), title]),
-    el('div', {}, [el('label', { class: 'field-label' }, 'Notes'), detail]),
-  ], [
-    meal ? el('button', { class: 'btn', onclick: async () => { await remove('meals', meal.id); m.close(); rerender(); } }, 'Remove') : null,
-    el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
-    el('button', {
-      class: 'btn btn-primary',
-      onclick: async () => {
-        const t = title.value.trim();
-        if (!t) return toast('Give it a name', 'warn');
-        await put('meals', { ...(meal || {}), date, title: t, detail: detail.value.trim() || null });
-        m.close();
-        rerender();
-      },
-    }, 'Save'),
-  ]);
-  title.focus();
-}
-
 export async function renderManager(root) {
   clear(root);
   const rerender = () => renderManager(root);
-  const [plan, maintenance, vendors, meals] = await Promise.all([getAll('plan'), getMaintenance(), getAll('vendors'), getAll('meals')]);
+  const [plan, maintenance, vendors] = await Promise.all([getAll('plan'), getMaintenance(), getAll('vendors')]);
   const vendorById = Object.fromEntries(vendors.map((v) => [v.id, v]));
   const openPlan = plan.filter((p) => !p.done).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const donePlan = plan.filter((p) => p.done);
@@ -248,7 +137,7 @@ export async function renderManager(root) {
     el('p', { class: 'muted' }, 'your house manager'),
   ]));
 
-  // ----- ask the house manager (Q&A over calendar + email + lists) -----
+  // ----- ask Claudia (Q&A over calendar + email + lists) -----
   const askInput = el('input', { class: 'input', placeholder: 'Ask about your week, email, plans…' });
   const askHost = el('div', {});
   const askBtn = el('button', { class: 'btn btn-primary', onclick: runAsk }, 'Ask');
@@ -278,7 +167,7 @@ export async function renderManager(root) {
         meals: ctx.mealsText,
       });
       logShownSuggestions(out.suggestions, 'ask').catch(() => {});
-      renderAnswer(askHost, out, rerender);
+      renderAnswer(askHost, out);
     } catch (err) {
       clear(askHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
     } finally {
@@ -291,7 +180,7 @@ export async function renderManager(root) {
     ? 'Add a Claude API key in Settings to ask Claudia.'
     : isConnected() && canReadEmail()
       ? 'Ask about your calendar, email, tasks, and plans — then pin any answer to tomorrow’s morning brief.'
-      : 'Ask about your calendar, tasks, and plans. Connect Google in Settings (and reconnect to grant email) so it can read recent mail too.';
+      : 'Ask about your calendar, tasks, and plans. Connect Google in Settings (and reconnect to grant email) so she can read recent mail too.';
   root.append(
     el('div', { class: 'panel-head' }, [el('h4', {}, 'Ask Claudia')]),
     el('section', { class: 'panel' }, [
@@ -301,34 +190,7 @@ export async function renderManager(root) {
     ])
   );
 
-  // ----- this week's plan (living checklist) -----
-  const planInput = el('input', { class: 'input', placeholder: 'Add a plan item…' });
-  async function addPlan() {
-    if (!planInput.value.trim()) return;
-    await put('plan', { title: planInput.value.trim(), done: false });
-    planInput.value = '';
-    planInput.focus();
-    rerender();
-  }
-  planInput.addEventListener('keydown', (e) => e.key === 'Enter' && addPlan());
-  root.append(
-    el('div', { class: 'panel-head' }, [el('h4', {}, `This week's plan (${openPlan.length})`)]),
-    el('section', { class: 'panel' }, [
-      ...(openPlan.length ? openPlan.map((p) => planRow(p, rerender)) : [el('p', { class: 'muted small' }, 'Nothing planned yet. Add items below, or use the review to build a plan.')]),
-      el('div', { class: 'grocery-add', style: 'margin-top: 10px' }, [planInput, el('button', { class: 'btn btn-primary', onclick: addPlan }, 'Add')]),
-    ])
-  );
-  if (donePlan.length) {
-    root.append(
-      el('h4', { class: 'group-heading' }, `Done this week (${donePlan.length})`),
-      el('section', { class: 'panel' }, donePlan.slice(0, 20).map((p) => planRow(p, rerender)))
-    );
-  }
-
-  // ----- this week's dinners -----
-  root.append(...dinnersSection(meals, rerender));
-
-  // ----- Claude weekly review -----
+  // ----- plan the week with Claudia (the persistent review, near the top) -----
   const host = el('div', {});
   const reviewBtn = el('button', {
     class: 'btn btn-primary full', style: 'margin-bottom: 6px',
@@ -358,8 +220,8 @@ export async function renderManager(root) {
           follow,
         });
         logShownSuggestions(out.planItems, 'review').catch(() => {});
-        writeReview(out); // survives re-renders and reloads for the day
-        renderReview(host, out, rerender, new Set());
+        writeReview(out); // persists until the next run
+        renderReview(host, out, rerender, reviewState(readReview()));
       } catch (err) {
         clear(host).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
       } finally {
@@ -368,18 +230,46 @@ export async function renderManager(root) {
       }
     },
   }, 'Review the week');
-  // Restore today's review (if any) so adding items — which re-renders the
-  // whole view to update the plan list — never loses the rest of the list.
+  // Restore the persisted review so adds/dismisses (which re-render the view)
+  // and even reloads never lose the rest of the list.
   const cachedReview = readReview();
-  if (cachedReview) renderReview(host, cachedReview.data, rerender, new Set(cachedReview.added || []));
+  if (cachedReview) renderReview(host, cachedReview.data, rerender, reviewState(cachedReview));
   root.append(
-    el('div', { class: 'panel-head' }, [el('h4', {}, 'Weekly review')]),
+    el('div', { class: 'panel-head' }, [el('h4', {}, 'Plan the week with Claudia')]),
     el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reviews your calendar + lists, searches for fun things nearby that match your interests (set them in Settings), and proposes a plan. Add the ones you want with one tap.' : 'Add a Claude API key in Settings to get a weekly plan from Claudia.'),
+      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reviews your calendar + lists, searches for fun things nearby that match your interests, and proposes what to plan. Add what you want with one tap, dismiss (✕) what you don’t — she remembers both. Refresh a couple times a week.' : 'Add a Claude API key in Settings and Claudia will propose what to plan each week.'),
       reviewBtn,
       host,
     ])
   );
+
+  // ----- this week's plan (the shared checklist review items land in) -----
+  const planInput = el('input', { class: 'input', placeholder: 'Add a plan item…' });
+  async function addPlan() {
+    if (!planInput.value.trim()) return;
+    await put('plan', { title: planInput.value.trim(), done: false });
+    planInput.value = '';
+    planInput.focus();
+    rerender();
+  }
+  planInput.addEventListener('keydown', (e) => e.key === 'Enter' && addPlan());
+  root.append(
+    el('div', { class: 'panel-head' }, [el('h4', {}, `This week's plan (${openPlan.length})`)]),
+    el('section', { class: 'panel' }, [
+      el('p', { class: 'muted small', style: 'margin-top: 0' }, 'The family’s shared checklist — what we’re getting done this week, on both phones. Claudia’s review adds to it; unfinished items carry forward.'),
+      ...(openPlan.length ? openPlan.map((p) => planRow(p, rerender)) : [el('p', { class: 'muted small' }, 'Nothing planned yet. Add items below, or have Claudia review the week above.')]),
+      el('div', { class: 'grocery-add', style: 'margin-top: 10px' }, [planInput, el('button', { class: 'btn btn-primary', onclick: addPlan }, 'Add')]),
+    ])
+  );
+  if (donePlan.length) {
+    root.append(
+      el('h4', { class: 'group-heading' }, `Done this week (${donePlan.length})`),
+      el('section', { class: 'panel' }, donePlan.slice(0, 20).map((p) => planRow(p, rerender)))
+    );
+  }
+
+  // ----- family meeting (moved from its own tab) -----
+  root.append(...(await meetingSection(rerender)));
 
   // ----- maintenance schedule (the old Upkeep) -----
   root.append(
@@ -396,7 +286,7 @@ export async function renderManager(root) {
   );
 }
 
-function renderAnswer(host, out, _rerender) {
+function renderAnswer(host, out) {
   clear(host);
   if (out.answer) host.append(el('p', { class: 'hm-overview' }, out.answer));
   for (const s of out.suggestions || []) {
@@ -427,32 +317,103 @@ function renderAnswer(host, out, _rerender) {
   if (!out.answer) host.append(el('p', { class: 'muted small' }, 'No answer came back — try rephrasing.'));
 }
 
-function renderReview(host, out, rerender, addedSet = new Set()) {
-  clear(host);
-  if (out.overview) host.append(el('p', { class: 'hm-overview' }, out.overview));
-  for (const item of out.planItems || []) {
-    host.append(
-      el('div', { class: 'idea' }, [
-        el('div', { class: 'idea-title' }, [item.title, item.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, item.who) : null]),
-        item.detail ? el('p', { class: 'idea-detail' }, item.detail) : null,
-        addButtons(item, {
-          today: todayStr(),
-          includePlan: true,
-          alreadyAdded: addedSet.has(item.title),
-          // Record the add BEFORE re-rendering, so the restored review shows
-          // this item as Added ✓ and keeps every other item on screen.
-          onAdded: () => { markReviewAdded(item.title); rerender(); },
-        }),
-      ])
-    );
+// One review suggestion: add buttons plus a dismiss (✕) that declines it for
+// good — Claudia logs it and never suggests it again.
+function reviewIdea(item, rerender, state) {
+  const actions = addButtons(item, {
+    today: todayStr(),
+    includePlan: true,
+    alreadyAdded: state.added.has(item.title),
+    // Record the add BEFORE re-rendering, so the restored review shows this
+    // item as Added ✓ and keeps every other item on screen.
+    onAdded: () => { markReviewAdded(item.title); rerender(); },
+  });
+  if (!state.added.has(item.title)) {
+    const dismissBtn = el('button', {
+      class: 'btn seg-btn hm-add',
+      'aria-label': 'Dismiss — don’t suggest again',
+      onclick: () => {
+        markReviewDismissed(item.title);
+        logSuggestionDismissed(item.title).catch(() => {});
+        toast('Got it — Claudia won’t suggest that again');
+        rerender();
+      },
+    }, '✕ No thanks');
+    actions.append(dismissBtn);
   }
+  return el('div', { class: 'idea' }, [
+    el('div', { class: 'idea-title' }, [item.title, item.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, item.who) : null]),
+    item.detail ? el('p', { class: 'idea-detail' }, item.detail) : null,
+    actions,
+  ]);
+}
+
+// One of Claudia's questions: answer it into her memory, or turn it into a task.
+function questionRow(q, rerender, state) {
+  const resolved = state.resolved[q];
+  if (resolved) {
+    return el('li', { class: 'muted' }, [
+      `${q} `,
+      el('span', { style: 'color: var(--good)' }, typeof resolved === 'string' ? `✓ ${resolved}` : '✓ resolved'),
+    ]);
+  }
+  const taskBtn = el('button', {
+    class: 'btn seg-btn hm-add',
+    onclick: async () => {
+      taskBtn.disabled = 'disabled';
+      const { store, rec } = await applyAdd('task', { title: q });
+      logSuggestionAdded(q, store, rec?.id).catch(() => {});
+      markQuestionResolved(q, 'turned into a task');
+      toast('Added as a task', 'success');
+      rerender();
+    },
+  }, '+ Task');
+  const resolveBtn = el('button', {
+    class: 'btn seg-btn hm-add',
+    onclick: () => {
+      const answer = el('input', { class: 'input', placeholder: 'Optional answer Claudia should remember…' });
+      const m = openModal('Resolve', [
+        el('p', { class: 'muted small', style: 'margin-top: 0' }, q),
+        answer,
+      ], [
+        el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
+        el('button', {
+          class: 'btn btn-primary',
+          onclick: async () => {
+            const a = answer.value.trim();
+            markQuestionResolved(q, a || true);
+            logQuestionResolved(q, a).catch(() => {});
+            m.close();
+            toast(a ? 'Claudia will remember that' : 'Resolved', 'success');
+            rerender();
+          },
+        }, 'Resolve'),
+      ]);
+      answer.focus();
+    },
+  }, '✓ Resolve');
+  return el('li', {}, [
+    el('span', {}, q),
+    el('div', { class: 'hm-actions', style: 'margin: 6px 0 2px' }, [taskBtn, resolveBtn]),
+  ]);
+}
+
+function renderReview(host, out, rerender, state) {
+  clear(host);
+  if (state.reviewedAt) {
+    host.append(el('p', { class: 'muted small', style: 'margin: 0 0 8px' },
+      `Reviewed ${state.reviewedAt === todayStr() ? 'today' : fmtDay(state.reviewedAt)} — tap Review the week for a fresh look.`));
+  }
+  if (out.overview) host.append(el('p', { class: 'hm-overview' }, out.overview));
+  const items = (out.planItems || []).filter((item) => !state.dismissed.has(item.title));
+  for (const item of items) host.append(reviewIdea(item, rerender, state));
   if (out.questions?.length) {
     host.append(
       el('div', { class: 'idea-questions' }, [
         el('h5', {}, 'Claudia wants to know'),
-        el('ul', { class: 'idea-actions' }, out.questions.map((q) => el('li', {}, q))),
+        el('ul', { class: 'idea-actions' }, out.questions.map((q) => questionRow(q, rerender, state))),
       ])
     );
   }
-  if (!out.planItems?.length && !out.questions?.length) host.append(el('p', { class: 'muted small' }, 'Nothing pressing for the rest of the week.'));
+  if (!items.length && !out.questions?.length) host.append(el('p', { class: 'muted small' }, 'Nothing pressing for the rest of the week.'));
 }

@@ -4,6 +4,7 @@
 
 import { getAll, put, remove, now } from './store.js';
 import { el, clear, toast, todayStr } from './ui.js';
+import { dinnersSection } from './meals.js';
 
 export const STORES = ['Costco', 'Walmart', "Trader Joe's"];
 const SORT_KEY = 'ohos.grocerySort';
@@ -81,7 +82,7 @@ function storePicker(initial) {
 
 export async function renderGrocery(root) {
   clear(root);
-  const items = await getAll('groceries');
+  const [items, meals] = await Promise.all([getAll('groceries'), getAll('meals')]);
   const rerender = () => renderGrocery(root);
 
   const open = items.filter((g) => !g.gotAt).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
@@ -89,6 +90,9 @@ export async function renderGrocery(root) {
   const sort = getSort();
 
   root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'Grocery')]));
+
+  // ----- the week's dinners (meals drive the list) -----
+  root.append(...dinnersSection(meals, rerender));
 
   // ----- fast add (with store) -----
   const picker = storePicker(STORES[0]);
