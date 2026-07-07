@@ -87,16 +87,16 @@ export function openModal(title, body, actions = []) {
   return { close };
 }
 
-// A small sticky "table of contents" for long views: a scrollable row of
-// chips that jump to sections. `entries` is [{ label, at }] where `at` is the
-// heading text to find (prefix match, case-insensitive); label is the chip.
-// Tags the matched headings with ids + a scroll-margin class, then inserts the
-// chip row right after the view's header. No-ops if fewer than 2 sections
-// resolve (a TOC for one section is just clutter).
+// A small sticky "table of contents" for long views: a short inline list of
+// hyperlinks that jump to sections. `entries` is [{ label, at }] where `at`
+// is the heading text to find (prefix match, case-insensitive); label is the
+// link text. Tags the matched headings with ids + a scroll-margin class,
+// then inserts the link row right after the view's header. No-ops if fewer
+// than 2 sections resolve (a TOC for one section is just clutter).
 export function tableOfContents(root, entries) {
   const heads = [...root.querySelectorAll('h4, .view-head-row h1')];
   const norm = (s) => (s || '').trim().toLowerCase();
-  const chips = [];
+  const links = [];
   entries.forEach((e, i) => {
     const needle = norm(e.at || e.label);
     const target = heads.find((h) => norm(h.textContent).startsWith(needle));
@@ -104,13 +104,19 @@ export function tableOfContents(root, entries) {
     if (!target.id) target.id = `toc-${i}-${needle.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24)}`;
     target.classList.add('toc-anchor');
     const id = target.id;
-    chips.push(el('button', {
-      class: 'toc-chip',
-      onclick: () => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+    links.push(el('a', {
+      class: 'toc-link',
+      href: `#${id}`,
+      onclick: (ev) => {
+        ev.preventDefault();
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      },
     }, e.label));
   });
-  if (chips.length < 2) return;
-  const toc = el('nav', { class: 'toc', 'aria-label': 'On this page' }, chips);
+  if (links.length < 2) return;
+  // Interleave middot separators between the links.
+  const items = links.flatMap((a, i) => (i ? [el('span', { class: 'toc-sep', 'aria-hidden': 'true' }, '·'), a] : [a]));
+  const toc = el('nav', { class: 'toc', 'aria-label': 'On this page' }, items);
   const head = root.querySelector('.view-head, .view-head-row');
   if (head) head.after(toc);
   else root.prepend(toc);
