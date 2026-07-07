@@ -49,7 +49,7 @@ function collapseAppts(appts) {
 }
 
 function familyMembers() {
-  const raw = (getSettings().familyMembers || 'Chris, Cat, Sedona, River');
+  const raw = (getSettings().familyMembers || 'Chris, Kat, Sedona, River');
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 

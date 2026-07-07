@@ -26,7 +26,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v19';
+const APP_VERSION = 'v20';
 
 // ---------- theme ----------
 
@@ -104,7 +104,7 @@ function renderSettings(root) {
   const s = getSettings();
 
   const deviceNameInput = el('input', { class: 'input', placeholder: 'e.g. Chris', value: s.deviceName || '' });
-  const familyInput = el('input', { class: 'input', placeholder: 'Chris, Cat, Sedona, River', value: s.familyMembers || 'Chris, Cat, Sedona, River' });
+  const familyInput = el('input', { class: 'input', placeholder: 'Chris, Kat, Sedona, River', value: s.familyMembers || 'Chris, Kat, Sedona, River' });
   const meetingDaySel = el('select', { class: 'input' }, DAY_LABELS.map((_, i) =>
     el('option', { value: i, selected: Number(s.meetingDay ?? 3) === i ? 'selected' : null }, FULL_DAYS[i])
   ));
