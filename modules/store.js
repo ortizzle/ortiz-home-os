@@ -229,6 +229,12 @@ async function gistFetch(path, options = {}) {
   return res.json();
 }
 
+// The remote data from the most recent pull. Pushes spread this UNDER the
+// local export so any store this code version doesn't know about (added by a
+// newer version running on the other phone) survives the full-file replace —
+// a stale-code phone must never strip newer shared data from the Gist.
+let lastRemoteData = null;
+
 export async function pullFromGist() {
   if (!syncConfigured()) return;
   const { gistId } = getSettings();
@@ -237,7 +243,9 @@ export async function pullFromGist() {
     const gist = await gistFetch(`/gists/${gistId}`);
     const file = gist.files && gist.files[GIST_FILENAME];
     if (file && file.content) {
-      await mergeSnapshot(JSON.parse(file.content));
+      const snapshot = JSON.parse(file.content);
+      lastRemoteData = snapshot.data || null;
+      await mergeSnapshot(snapshot);
     }
     emitSync('synced');
   } catch (err) {
@@ -255,6 +263,8 @@ export async function pushToGist() {
     // hasn't seen (e.g. items the other phone added an hour ago).
     await pullFromGist();
     const snapshot = await exportSnapshot();
+    // Preserve remote stores this code version doesn't know about.
+    if (lastRemoteData) snapshot.data = { ...lastRemoteData, ...snapshot.data };
     await gistFetch(`/gists/${gistId}`, {
       method: 'PATCH',
       body: JSON.stringify({

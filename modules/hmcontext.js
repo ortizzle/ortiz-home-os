@@ -58,17 +58,45 @@ export async function markBriefAdded(date, title) {
 // same resolved questions.
 
 const REVIEW_ID = 'current';
+// Belt-and-braces: every review write is mirrored to localStorage. Reviews
+// are user-curated (added/dismissed/answered) and expensive to lose — this
+// mirror rescues them if the synced record ever goes missing (a mixed-version
+// session during an app update, a stale-code phone rewriting the sync file,
+// or the original pre-v21 localStorage copy that was never migrated).
+const REVIEW_MIRROR_KEY = 'ohos.weekReview';
+function mirrorReview(rec) {
+  try { localStorage.setItem(REVIEW_MIRROR_KEY, JSON.stringify(rec)); } catch {}
+}
 export async function getReview() {
-  return get('reviews', REVIEW_ID);
+  const r = await get('reviews', REVIEW_ID);
+  if (r) return r;
+  // Rescue: restore from the mirror (also covers pre-v21 legacy reviews,
+  // which used this same key with a compatible shape).
+  try {
+    const m = JSON.parse(localStorage.getItem(REVIEW_MIRROR_KEY));
+    if (m?.data) {
+      return await put('reviews', {
+        id: REVIEW_ID,
+        reviewedAt: m.reviewedAt || todayStr(),
+        data: m.data,
+        added: m.added || [],
+        dismissed: m.dismissed || [],
+        resolved: m.resolved || {},
+      });
+    }
+  } catch {}
+  return null;
 }
 export async function saveReview(data) {
-  await put('reviews', { id: REVIEW_ID, reviewedAt: todayStr(), data, added: [], dismissed: [], resolved: {} });
+  const rec = await put('reviews', { id: REVIEW_ID, reviewedAt: todayStr(), data, added: [], dismissed: [], resolved: {} });
+  mirrorReview(rec);
 }
 async function patchReview(fn) {
   const r = await get('reviews', REVIEW_ID);
   if (!r) return;
   fn(r);
-  await put('reviews', r);
+  const rec = await put('reviews', r);
+  mirrorReview(rec);
 }
 export const markReviewAdded = (title) => patchReview((r) => { r.added = [...new Set([...(r.added || []), title])]; });
 export const markReviewDismissed = (title) => patchReview((r) => { r.dismissed = [...new Set([...(r.dismissed || []), title])]; });
