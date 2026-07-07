@@ -178,7 +178,7 @@ export async function renderManager(root) {
       try {
         const settings = getSettings();
         const [ctx, follow] = await Promise.all([
-          gatherContext({ start: todayStr(), days: 14 }),
+          gatherContext({ start: todayStr(), days: 14, email: true }),
           followUpText(),
         ]);
         const out = await reviewWeek({
@@ -193,6 +193,7 @@ export async function renderManager(root) {
           groceries: ctx.groceriesText,
           plan: ctx.planText,
           meals: ctx.mealsText,
+          email: ctx.emailsText,
           follow,
         });
         logShownSuggestions(out.planItems, 'review').catch(() => {});

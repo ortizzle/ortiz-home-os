@@ -243,9 +243,10 @@ Give 0-4 suggestions, only genuinely useful ones for today or the next day. Empt
 // Weekly review for the House Manager tab — proposes a concrete plan of items
 // to complete for the rest of the week. Each item is typed so it can be added
 // to the living weekly plan (or straight to tasks/calendar/grocery).
-export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', upkeep = '', groceries = '', plan = '', meals = '', follow = '' } = {}) {
+export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', upkeep = '', groceries = '', plan = '', meals = '', email = '', follow = '' } = {}) {
   const system = HM_ROLE(family) +
     ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
+    ' If recent email surfaces something worth planning around (an RSVP, a bill due, a school notice, an invite), fold it into the plan — only when it\'s genuinely actionable, not just noise.' +
     ' Also look OUTWARD: use web search to find 1-2 timely, real things this family would genuinely enjoy this week — a movie they\'d love playing nearby, a local event, a seasonal activity — matched to their interests and their open evenings. Include the real date, time, and venue from the search results, and only suggest what you actually verified. If nothing good is on, say nothing rather than padding.' +
     ` Kids (${kids || 'none listed'}) don't use the app — when a chore genuinely fits one of them (age-appropriate: dishes, trash, room care, packing their own bags), suggest it with their name in "who" so the parents can assign it. One kid chore per review at most; this is help, not a chore chart.` +
     ' FOLLOW-THROUGH: you get a log of your own past suggestions. Anything marked DECLINED is off the table permanently — never suggest it again, in any wording. Never re-ask a question the family already answered; build on their answer instead. Follow up ONCE, gently, on something that was added but never finished ("still want to get to X?"). Don\'t re-suggest something ignored twice — let it go unless it becomes genuinely urgent. Briefly acknowledge a win if something you suggested got done. No nagging, no guilt, no scorekeeping.';
@@ -274,6 +275,9 @@ ${upkeep || '(none)'}
 
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
+
+RECENT EMAIL (sender — subject: snippet; may be noise, use judgment):
+${email || '(no email available)'}
 
 ALREADY ON THE WEEKLY PLAN (do not repeat these):
 ${plan || '(nothing planned yet)'}
