@@ -8,7 +8,13 @@
 
 const CLIENT_ID = '305346848345-0q6ojf9t6eqhguh4pb3f2gm5p7rhhmtq.apps.googleusercontent.com';
 // readonly: read events + list calendars. events: create/edit events (write).
-const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
+// gmail.readonly: read message metadata + snippets so the house manager can
+// factor recent email into the morning brief and answer questions about it.
+// (A restricted scope — fine for our two test users; the app never sends mail.)
+const SCOPE =
+  'https://www.googleapis.com/auth/calendar.readonly ' +
+  'https://www.googleapis.com/auth/calendar.events ' +
+  'https://www.googleapis.com/auth/gmail.readonly';
 const GSI_SRC = 'https://accounts.google.com/gsi/client';
 const TOKEN_KEY = 'ohos.gcalToken';
 const WRITE_CAL_KEY = 'ohos.gcalWriteCal';
@@ -55,6 +61,12 @@ export function isConnected() { return !!readToken(); }
 export function canWrite() {
   const t = readToken();
   return !!t && /calendar\.events|auth\/calendar(\s|$)/.test(t.scope || '');
+}
+// Whether the granted token includes Gmail read access. False for tokens
+// minted before the gmail scope was added — a reconnect grants it.
+export function canReadEmail() {
+  const t = readToken();
+  return !!t && /gmail\.readonly|gmail\.metadata/.test(t.scope || '');
 }
 export function disconnect() { localStorage.removeItem(TOKEN_KEY); clearCache(); writableCache = null; }
 
@@ -249,5 +261,49 @@ export async function eventsForRange(start, end, { force = false } = {}) {
     }
   }
   cache.set(key, out);
+  return out;
+}
+
+// ---------- Gmail (read-only: metadata + snippet, never bodies) ----------
+
+async function gmailGet(url) {
+  const t = readToken();
+  if (!t) throw new GcalError('Not connected to Google', 'not-connected');
+  const res = await fetch(url, { headers: { Authorization: 'Bearer ' + t.accessToken } });
+  if (res.status === 401) { disconnect(); throw new GcalError('Google sign-in expired', 'expired'); }
+  if (res.status === 403) throw new GcalError('No Gmail access — disconnect and reconnect to grant it', 'no-gmail');
+  if (!res.ok) throw new GcalError(`Gmail API ${res.status}`, 'api');
+  return res.json();
+}
+
+// Recent inbox mail, trimmed to what the house manager needs: sender, subject,
+// date, and Gmail's own snippet. We fetch metadata only (never the full body)
+// and skip Promotions/Social so the AI sees the mail that actually matters.
+// Returns [] when not connected or the gmail scope wasn't granted.
+export async function gmailRecent({ days = 7, max = 12 } = {}) {
+  if (!readToken() || !canReadEmail()) return [];
+  const q = `newer_than:${days}d in:inbox -category:promotions -category:social`;
+  const list = await gmailGet(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${max}`);
+  const ids = (list.messages || []).map((m) => m.id);
+  const out = [];
+  for (const id of ids) {
+    try {
+      const msg = await gmailGet(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}` +
+        `?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`
+      );
+      const h = Object.fromEntries((msg.payload?.headers || []).map((x) => [x.name.toLowerCase(), x.value]));
+      out.push({
+        from: (h.from || '').replace(/\s*<[^>]+>\s*/, '').replace(/"/g, '').trim() || h.from || '',
+        subject: (h.subject || '(no subject)').trim(),
+        date: h.date || '',
+        snippet: (msg.snippet || '').trim(),
+        unread: (msg.labelIds || []).includes('UNREAD'),
+      });
+    } catch (err) {
+      if (err.code === 'expired' || err.code === 'no-gmail') throw err;
+      // A single message that won't load — skip it, keep the rest.
+    }
+  }
   return out;
 }

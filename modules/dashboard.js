@@ -10,7 +10,7 @@ import { addGroceryItem } from './grocery.js';
 import { getMaintenance } from './maintenance.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, pinsFor, removePin } from './hmcontext.js';
 import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
 
@@ -211,6 +211,7 @@ function dailyBriefSection(rerender, { today, settings }) {
   } else if (hasApiKey()) {
     runBrief(host, rerender, { today, settings }); // auto-generate for the day
   } else {
+    host.append(...pinNodes(today, rerender));
     host.append(el('p', { class: 'muted small' }, 'Add a Claude API key in Settings for a morning read on your day — what matters, what to prep, and one-tap add-to-list suggestions.'));
   }
 
@@ -225,7 +226,7 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
   briefInFlight = true;
   clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Reading your day…')]));
   try {
-    const ctx = await gatherContext({ start: today, days: 2 });
+    const ctx = await gatherContext({ start: today, days: 2, email: true });
     const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long' });
     const out = await analyzeDay({
       family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
@@ -236,6 +237,7 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
       chores: ctx.choresText,
       upkeep: ctx.upkeepText,
       groceries: ctx.groceriesText,
+      email: ctx.emailsText,
     });
     writeBrief(today, out);
     renderBrief(host, out, rerender);
@@ -249,8 +251,20 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
   }
 }
 
+// Notes pinned from the Manager's "Ask" — shown at the top of the brief until
+// the family dismisses them. Per-device (localStorage), like the brief cache.
+function pinNodes(today, rerender) {
+  return pinsFor(today).map((p) =>
+    el('div', { class: 'brief-pin' }, [
+      el('span', {}, p.text),
+      el('button', { class: 'link', 'aria-label': 'Dismiss', onclick: () => { removePin(p.id); rerender(); } }, '×'),
+    ])
+  );
+}
+
 function renderBrief(host, out, rerender) {
   clear(host);
+  host.append(...pinNodes(todayStr(), rerender));
   if (out.headline) host.append(el('p', { class: 'brief-headline' }, out.headline));
   if (out.notes?.length) host.append(el('ul', { class: 'brief-notes' }, out.notes.map((n) => el('li', {}, n))));
   for (const s of out.suggestions || []) {

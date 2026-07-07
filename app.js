@@ -18,7 +18,7 @@ import { renderCalendar } from './modules/calendar.js';
 import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
 import { DEFAULT_HOUSEHOLD_NOTES } from './modules/hmcontext.js';
-import { isConnected as gcalConnected, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
+import { isConnected as gcalConnected, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { el, clear, toast, navigate, openModal, todayStr } from './modules/ui.js';
 
@@ -26,7 +26,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v12';
+const APP_VERSION = 'v13';
 
 // ---------- theme ----------
 
@@ -167,14 +167,27 @@ function renderSettings(root) {
     ]),
 
     el('section', { class: 'panel' }, [
-      el('h4', {}, 'Google Calendar (optional)'),
+      el('h4', {}, 'Google (Calendar + Email, optional)'),
       el('div', { class: 'sync-status' }, [
         el('span', { class: 'sync-dot ' + (gcalConnected() ? 'on' : 'off') }),
-        el('span', { class: 'muted' }, gcalConnected() ? 'Connected — read-only' : 'Not connected'),
+        el('span', { class: 'muted' }, gcalConnected() ? (gcalCanEmail() ? 'Connected — calendar + email (read-only)' : 'Connected — calendar only') : 'Not connected'),
       ]),
+      gcalConnected() && !gcalCanEmail()
+        ? el('p', { class: 'muted small', style: 'color: var(--accent)' }, 'Reconnect to grant Gmail read access so the house manager can factor recent email into your brief and answers.')
+        : null,
       gcalConnected()
         ? el('div', { class: 'settings-actions' }, [
             el('button', { class: 'btn btn-primary', onclick: () => chooseCalendars(() => renderSettings(root)) }, 'Choose calendars'),
+            gcalCanEmail() ? null : el('button', {
+              class: 'btn btn-primary',
+              onclick: async (e) => {
+                const b = e.currentTarget;
+                b.disabled = 'disabled';
+                b.textContent = 'Reconnecting…';
+                try { await gcalConnect(); toast('Reconnected', 'success'); renderSettings(root); }
+                catch (err) { toast(err instanceof GcalError ? `Couldn't reconnect: ${err.message}` : 'Cancelled', 'warn'); b.disabled = null; b.textContent = 'Reconnect for email'; }
+              },
+            }, 'Reconnect for email'),
             el('button', { class: 'btn', onclick: () => { gcalDisconnect(); toast('Disconnected'); renderSettings(root); } }, 'Disconnect'),
           ])
         : el('button', {
@@ -194,7 +207,7 @@ function renderSettings(root) {
               }
             },
           }, 'Connect Google Calendar'),
-      el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs. The app can only see your calendar — never change it. Sign in again occasionally (Google access expires ~hourly).'),
+      el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs, plus read-only access to recent Gmail so the house manager can factor email into your morning brief and answers. The app can only read — it never changes your calendar or sends mail. Sign in again occasionally (Google access expires ~hourly).'),
     ]),
 
     el('section', { class: 'panel' }, [

@@ -354,6 +354,8 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .brief-notes { margin: 0 0 6px; padding-left: 18px; }
 .brief-notes li { font-size: 13px; margin: 3px 0; line-height: 1.45; color: var(--text-2); }
 .hm-overview { margin: 2px 0 10px; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+.brief-pin { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; margin: 0 0 8px; padding: 8px 10px; font-size: 13px; line-height: 1.45; border-left: 3px solid var(--accent); background: var(--accent-soft, rgba(120,120,255,0.08)); border-radius: 4px; }
+.brief-pin .link { flex: 0 0 auto; padding: 0 2px; font-size: 15px; line-height: 1; }
 .hm-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .hm-add { flex: 0 0 auto; padding: 5px 12px; font-size: 12px; }
 .hm-add:disabled { opacity: 1; color: var(--good); border-color: var(--good); background: var(--good-soft); }

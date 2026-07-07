@@ -167,8 +167,8 @@ const HM_ROLE = (family) =>
 // Daily brief for the Home page — a short read on TODAY plus a few concrete,
 // one-tap-addable suggestions. Each suggestion is typed so the app can turn it
 // into a task, appointment, or grocery item.
-export async function analyzeDay({ family = [], notes = '', today, weekday = '', events = '', chores = '', upkeep = '', groceries = '' } = {}) {
-  const system = HM_ROLE(family) + ' This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee.';
+export async function analyzeDay({ family = [], notes = '', today, weekday = '', events = '', chores = '', upkeep = '', groceries = '', email = '' } = {}) {
+  const system = HM_ROLE(family) + ' This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon.';
   const prompt = `Good morning. Today is ${weekday} ${today}. Give the family a short read on the day.
 
 HOUSEHOLD NOTES / PREFERENCES:
@@ -185,6 +185,9 @@ ${upkeep || '(none)'}
 
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
+
+RECENT EMAIL (sender — subject: snippet; may be noise, use judgment):
+${email || '(no email available)'}
 
 Return JSON with exactly this shape:
 {
@@ -231,4 +234,43 @@ Return JSON with exactly this shape:
 Give 4-8 plan items, most time-sensitive first. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 2200 });
+}
+
+// Free-form Q&A for the Manager tab — answers a question grounded in the
+// family's calendar, email, tasks, plan, and groceries. Returns a short
+// answer plus any concrete one-tap actions it wants to offer. `briefNote`
+// is a one-line version the family can pin to tomorrow's morning brief.
+export async function askManager({ family = [], notes = '', today, weekday = '', question, events = '', email = '', chores = '', upkeep = '', groceries = '', plan = '' } = {}) {
+  const system = HM_ROLE(family) + ' Answer the question directly and concretely using ONLY the data below. If the data doesn\'t contain the answer, say so plainly rather than guessing. Keep the answer to a few sentences.';
+  const prompt = `Today is ${weekday} ${today}. Answer this question for the family:
+
+"${question}"
+
+CALENDAR (upcoming):
+${events || '(no calendar events available)'}
+
+RECENT EMAIL (sender — subject: snippet):
+${email || '(no email available)'}
+
+OPEN CHORES:
+${chores || '(none)'}
+
+UPKEEP DUE / OVERDUE:
+${upkeep || '(none)'}
+
+GROCERY LIST:
+${groceries || '(empty)'}
+
+WEEKLY PLAN:
+${plan || '(nothing planned)'}
+
+Return JSON with exactly this shape:
+{
+  "answer": "a direct, few-sentence answer grounded in the data above",
+  "briefNote": "one short line suitable for tomorrow's morning brief, or empty if not worth surfacing",
+  "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative action", "date": "YYYY-MM-DD (optional)", "detail": "one short clause" } ]
+}
+Offer 0-3 suggestions, only genuinely useful ones. Empty arrays/strings are fine.`;
+
+  return generateJSON({ system, prompt, maxTokens: 1600 });
 }

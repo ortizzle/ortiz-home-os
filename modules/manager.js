@@ -8,8 +8,9 @@ import { el, clear, toast, todayStr, addDays } from './ui.js';
 import { getMaintenance, maintenanceRow, editMaintenanceModal } from './maintenance.js';
 import { vendorsSection } from './vendors.js';
 import { addGroceryItem, STORES } from './grocery.js';
-import { reviewWeek, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
+import { reviewWeek, askManager, hasApiKey, AIError } from './ai.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, pinToBrief } from './hmcontext.js';
+import { isConnected, canReadEmail } from './gcal.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
@@ -86,6 +87,56 @@ export async function renderManager(root) {
   const donePlan = plan.filter((p) => p.done);
 
   root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'House Manager')]));
+
+  // ----- ask the house manager (Q&A over calendar + email + lists) -----
+  const askInput = el('input', { class: 'input', placeholder: 'Ask about your week, email, plans…' });
+  const askHost = el('div', {});
+  const askBtn = el('button', { class: 'btn btn-primary', onclick: runAsk }, 'Ask');
+  async function runAsk() {
+    const q = askInput.value.trim();
+    if (!q) return;
+    if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
+    askBtn.disabled = 'disabled';
+    askBtn.textContent = 'Thinking…';
+    clear(askHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Looking through your week…')]));
+    try {
+      const settings = getSettings();
+      const ctx = await gatherContext({ start: todayStr(), days: 14, email: true });
+      const out = await askManager({
+        family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
+        notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+        today: todayStr(),
+        weekday: new Date().toLocaleDateString(undefined, { weekday: 'long' }),
+        question: q,
+        events: ctx.eventsText,
+        email: ctx.emailsText,
+        chores: ctx.choresText,
+        upkeep: ctx.upkeepText,
+        groceries: ctx.groceriesText,
+        plan: ctx.planText,
+      });
+      renderAnswer(askHost, out, rerender);
+    } catch (err) {
+      clear(askHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
+    } finally {
+      askBtn.disabled = null;
+      askBtn.textContent = 'Ask';
+    }
+  }
+  askInput.addEventListener('keydown', (e) => e.key === 'Enter' && runAsk());
+  const askHint = !hasApiKey()
+    ? 'Add a Claude API key in Settings to ask the house manager.'
+    : isConnected() && canReadEmail()
+      ? 'Ask about your calendar, email, tasks, and plans — then pin any answer to tomorrow’s morning brief.'
+      : 'Ask about your calendar, tasks, and plans. Connect Google in Settings (and reconnect to grant email) so it can read recent mail too.';
+  root.append(
+    el('div', { class: 'panel-head' }, [el('h4', {}, 'Ask the house manager')]),
+    el('section', { class: 'panel' }, [
+      el('p', { class: 'muted small', style: 'margin-top:0' }, askHint),
+      el('div', { class: 'grocery-add' }, [askInput, askBtn]),
+      askHost,
+    ])
+  );
 
   // ----- this week's plan (living checklist) -----
   const planInput = el('input', { class: 'input', placeholder: 'Add a plan item…' });
@@ -164,6 +215,35 @@ export async function renderManager(root) {
     ),
     ...(await vendorsSection(rerender))
   );
+}
+
+function renderAnswer(host, out, rerender) {
+  clear(host);
+  if (out.answer) host.append(el('p', { class: 'hm-overview' }, out.answer));
+  for (const s of out.suggestions || []) {
+    host.append(
+      el('div', { class: 'idea' }, [
+        el('div', { class: 'idea-title' }, s.title),
+        s.detail ? el('p', { class: 'idea-detail' }, s.detail) : null,
+        addButtons(s, { today: todayStr(), includePlan: false, onAdded: rerender }),
+      ])
+    );
+  }
+  // Pin the takeaway to tomorrow's morning brief on the Home tab.
+  const noteText = (out.briefNote || out.answer || '').trim();
+  if (noteText) {
+    const pinBtn = el('button', {
+      class: 'btn seg-btn hm-add',
+      onclick: () => {
+        pinToBrief(addDays(todayStr(), 1), noteText);
+        pinBtn.disabled = 'disabled';
+        pinBtn.textContent = 'Pinned to brief ✓';
+        toast('Pinned to tomorrow’s brief', 'success');
+      },
+    }, '📌 Pin to tomorrow’s brief');
+    host.append(el('div', { class: 'hm-actions' }, [pinBtn]));
+  }
+  if (!out.answer) host.append(el('p', { class: 'muted small' }, 'No answer came back — try rephrasing.'));
 }
 
 function renderReview(host, out, rerender) {
