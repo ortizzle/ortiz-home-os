@@ -319,17 +319,8 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 /* ---------- grocery ---------- */
 .grocery-add { display: flex; gap: 8px; margin-bottom: 6px; }
 .grocery-add .input { margin-bottom: 0; flex: 1; }
-.store-toggle {
-  flex-shrink: 0;
-  font: inherit; font-size: 12px; font-weight: 600;
-  border: 1.5px solid var(--border-strong);
-  background: var(--surface);
-  color: var(--text-2);
-  border-radius: var(--radius-sm);
-  padding: 0 12px;
-  cursor: pointer;
-}
-.store-toggle.costco { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.store-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.store-picker .seg-btn { flex: 0 0 auto; padding: 7px 14px; font-size: 13px; }
 .grocery-row {
   display: flex; align-items: center; gap: 12px;
   padding: 9px 0;

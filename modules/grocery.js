@@ -1,9 +1,12 @@
 // grocery.js — the household list the app OWNS (Google Keep has no consumer
-// API — see kickoff). Fast add, Costco tag, check-off, and a paste-import
-// box for lists voiced into Keep.
+// API — see kickoff). Per-store lists, fast add, check-off, and a Keep
+// paste-import.
 
 import { getAll, put, remove, now } from './store.js';
 import { el, clear, toast, todayStr } from './ui.js';
+
+// The stores the family shops. Items keep a `store`; the list groups by it.
+export const STORES = ['Costco', 'Walmart', "Trader Joe's"];
 
 export async function getOpenGroceries() {
   const items = await getAll('groceries');
@@ -16,7 +19,7 @@ function gotToday(g) {
   return g.gotAt && g.gotAt.slice(0, 10) === todayStr();
 }
 
-export async function addGroceryItem(name, store = 'Costco') {
+export async function addGroceryItem(name, store = STORES[0]) {
   const n = name.trim();
   if (!n) return null;
   return put('groceries', { name: n, store, gotAt: null });
@@ -34,7 +37,7 @@ export function parseImport(text) {
 function groceryRow(g, rerender) {
   return el('div', { class: 'grocery-row' + (g.gotAt ? ' got' : '') }, [
     el('button', {
-      class: 'task-check' + (g.gotAt ? '' : ''),
+      class: 'task-check',
       'aria-label': g.gotAt ? 'Put back' : 'Got it',
       html: g.gotAt ? '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : '',
       style: g.gotAt ? 'background: var(--accent); border-color: var(--accent)' : '',
@@ -44,7 +47,6 @@ function groceryRow(g, rerender) {
       },
     }),
     el('span', { class: 'grocery-name' }, g.name),
-    g.store && g.store !== 'Costco' ? el('span', { class: 'pill' }, g.store) : null,
     g.by ? el('span', { class: 'grocery-by' }, g.by) : null,
     el('button', {
       class: 'link',
@@ -58,6 +60,22 @@ function groceryRow(g, rerender) {
   ]);
 }
 
+// A horizontal store selector; returns { row, get() } where get() is the
+// currently-chosen store.
+function storePicker(initial) {
+  let store = initial;
+  const btns = STORES.map((s) =>
+    el('button', {
+      class: 'btn seg-btn' + (s === store ? ' active' : ''),
+      onclick: (e) => {
+        store = s;
+        btns.forEach((b) => b.classList.toggle('active', b === e.currentTarget));
+      },
+    }, s)
+  );
+  return { row: el('div', { class: 'store-picker' }, btns), get: () => store };
+}
+
 export async function renderGrocery(root) {
   clear(root);
   const items = await getAll('groceries');
@@ -68,20 +86,12 @@ export async function renderGrocery(root) {
 
   root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'Grocery')]));
 
-  // ----- fast add -----
-  let store = 'Costco';
+  // ----- fast add (with store) -----
+  const picker = storePicker(STORES[0]);
   const input = el('input', { class: 'input', placeholder: 'Add an item…' });
-  const storeBtn = el('button', {
-    class: 'store-toggle costco',
-    onclick: () => {
-      store = store === 'Costco' ? 'Other' : 'Costco';
-      storeBtn.textContent = store;
-      storeBtn.classList.toggle('costco', store === 'Costco');
-    },
-  }, 'Costco');
   async function add() {
     if (!input.value.trim()) return;
-    await addGroceryItem(input.value, store);
+    await addGroceryItem(input.value, picker.get());
     input.value = '';
     input.focus();
     rerender();
@@ -89,45 +99,58 @@ export async function renderGrocery(root) {
   input.addEventListener('keydown', (e) => e.key === 'Enter' && add());
   root.append(
     el('section', { class: 'panel' }, [
-      el('div', { class: 'grocery-add' }, [input, storeBtn, el('button', { class: 'btn btn-primary', onclick: add }, 'Add')]),
+      el('label', { class: 'field-label' }, 'Add to'),
+      picker.row,
+      el('div', { class: 'grocery-add' }, [input, el('button', { class: 'btn btn-primary', onclick: add }, 'Add')]),
     ])
   );
 
-  // ----- open list -----
-  root.append(
-    el('h4', { class: 'group-heading' }, `List (${open.length})`),
-    el('section', { class: 'panel' },
-      open.length
-        ? open.map((g) => groceryRow(g, rerender))
-        : [el('p', { class: 'muted small' }, 'List is empty. Add items above, or paste from Keep below.')]
-    )
-  );
+  // ----- per-store lists -----
+  // Known stores in order, then any legacy/other store values still in use.
+  const extras = [...new Set(open.map((g) => g.store).filter((s) => s && !STORES.includes(s)))].sort();
+  const storeOrder = [...STORES, ...extras];
 
-  // ----- got today -----
+  if (!open.length) {
+    root.append(el('section', { class: 'panel' }, [el('p', { class: 'muted small' }, 'Lists are empty. Add items above, or paste from Keep below.')]));
+  } else {
+    for (const s of storeOrder) {
+      const list = open.filter((g) => (g.store || STORES[0]) === s);
+      if (!list.length) continue;
+      root.append(
+        el('h4', { class: 'group-heading' }, `${s} (${list.length})`),
+        el('section', { class: 'panel' }, list.map((g) => groceryRow(g, rerender)))
+      );
+    }
+  }
+
+  // ----- got today (combined) -----
   if (got.length) {
     root.append(
-      el('h4', { class: 'group-heading' }, `In the cart (${got.length})`),
+      el('h4', { class: 'group-heading' }, `In the cart today (${got.length})`),
       el('section', { class: 'panel' }, got.map((g) => groceryRow(g, rerender)))
     );
   }
 
-  // ----- Keep paste-import -----
+  // ----- Keep paste-import (into a chosen store) -----
+  const importPicker = storePicker(STORES[0]);
   const importArea = el('textarea', { class: 'input', rows: 4, placeholder: 'Open Google Keep → copy the list → paste here.\nOne item per line; bullets and checkboxes are fine.' });
   root.append(
     el('h4', { class: 'group-heading' }, 'Import from Keep'),
     el('section', { class: 'panel import-box' }, [
+      el('label', { class: 'field-label' }, 'Import into'),
+      importPicker.row,
       importArea,
       el('button', {
         class: 'btn',
         onclick: async () => {
           const names = parseImport(importArea.value);
           if (!names.length) return toast('Nothing to import', 'warn');
-          for (const name of names) await addGroceryItem(name, 'Costco');
-          toast(`Imported ${names.length} item${names.length === 1 ? '' : 's'}`, 'success');
+          for (const name of names) await addGroceryItem(name, importPicker.get());
+          toast(`Imported ${names.length} item${names.length === 1 ? '' : 's'} to ${importPicker.get()}`, 'success');
           rerender();
         },
       }, 'Import items'),
-      el('p', { class: 'muted small' }, 'Keep has no API for personal accounts, so this paste box is the bridge. Voice-added items land in Keep; paste them over before Costco day.'),
+      el('p', { class: 'muted small' }, 'Keep has no API for personal accounts, so this paste box is the bridge. Voice-added items land in Keep; paste them over before a store run.'),
     ])
   );
 }

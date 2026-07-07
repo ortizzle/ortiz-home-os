@@ -62,14 +62,20 @@ export async function renderDashboard(root) {
     ])
   );
 
-  // ----- errand-day banner (the Costco moment) -----
+  // ----- errand-day banner (the store-run moment) -----
   const win = errandWindow(settings);
   if (win && openGroceries.length) {
-    const preview = openGroceries.slice(0, 4).map((g) => g.name).join(', ');
+    // Break the count down by store so you know where you're headed.
+    const byStore = {};
+    for (const g of openGroceries) {
+      const s = g.store || 'Costco';
+      byStore[s] = (byStore[s] || 0) + 1;
+    }
+    const breakdown = Object.entries(byStore).map(([s, n]) => `${s} ${n}`).join(' · ');
     root.append(
       el('button', { class: 'errand-banner', onclick: () => navigate('#/grocery') }, [
-        el('div', { class: 'errand-title', html: CART_SVG + `<span>Costco run ${win} — ${openGroceries.length} item${openGroceries.length === 1 ? '' : 's'}</span>` }),
-        el('p', { class: 'errand-items' }, preview + (openGroceries.length > 4 ? '…' : '')),
+        el('div', { class: 'errand-title', html: CART_SVG + `<span>Grocery run ${win} — ${openGroceries.length} item${openGroceries.length === 1 ? '' : 's'}</span>` }),
+        el('p', { class: 'errand-items' }, breakdown),
       ])
     );
   }
