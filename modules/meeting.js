@@ -11,6 +11,41 @@ import { hasApiKey, reviewFamilyMeeting, AIError } from './ai.js';
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
+function to12h(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+function wkShort(dateStr) {
+  return parseDate(dateStr).toLocaleDateString(undefined, { weekday: 'short' });
+}
+
+// Split week-ahead appointments into one-offs (the interesting stuff) and
+// recurring series that land on multiple days (shown once, with a day range).
+// Series are keyed by seriesId when present (mirrored Google events carry it),
+// falling back to title for anything else.
+function collapseAppts(appts) {
+  const groups = new Map();
+  for (const a of appts) {
+    const key = a.seriesId || 'title:' + a.title;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(a);
+  }
+  const oneoffs = [];
+  const recurring = [];
+  for (const list of groups.values()) {
+    const sorted = list.slice().sort((a, b) => (a.date + (a.startTime || '') < b.date + (b.startTime || '') ? -1 : 1));
+    const dates = [...new Set(sorted.map((a) => a.date))];
+    if (dates.length >= 2) {
+      recurring.push({ title: sorted[0].title, startTime: sorted[0].startTime, range: `${wkShort(dates[0])}–${wkShort(dates[dates.length - 1])}` });
+    } else {
+      oneoffs.push(sorted[0]);
+    }
+  }
+  oneoffs.sort((a, b) => (a.date + (a.startTime || '') < b.date + (b.startTime || '') ? -1 : 1));
+  return { oneoffs, recurring };
+}
+
 function familyMembers() {
   const raw = (getSettings().familyMembers || 'Chris, Cat, Sedona, River');
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
@@ -50,10 +85,15 @@ async function gatherWeekAhead() {
   const openGroceries = groceries.filter((g) => !g.gotAt);
   const win = errandWindow(getSettings());
 
+  const { oneoffs, recurring } = collapseAppts(appts);
   const lines = [];
-  if (appts.length) {
-    lines.push('Appointments:');
-    for (const a of appts) lines.push(`  - ${fmtDay(a.date)}${a.startTime ? ' ' + a.startTime : ''}: ${a.title}${a.who ? ` (${a.who})` : ''}`);
+  if (oneoffs.length) {
+    lines.push('One-off events (of most interest):');
+    for (const a of oneoffs) lines.push(`  - ${fmtDay(a.date)}${a.startTime ? ' ' + to12h(a.startTime) : ''}: ${a.title}${a.who ? ` (${a.who})` : ''}`);
+  }
+  if (recurring.length) {
+    lines.push('Recurring this week (daily/repeating — mention once):');
+    for (const r of recurring) lines.push(`  - ${r.title} (${r.range}${r.startTime ? ', ' + to12h(r.startTime) : ''})`);
   }
   if (dueChores.length) {
     lines.push('Chores due:');
@@ -113,13 +153,26 @@ export async function renderMeeting(root) {
   );
 
   // ----- the week ahead (deterministic; no API key needed) -----
+  // One-offs are what the family actually needs to talk about; daily-recurring
+  // events (camps, lessons) collapse to a single line so they don't drown them.
+  const { oneoffs, recurring } = collapseAppts(week.appts);
   root.append(el('div', { class: 'panel-head' }, [el('h4', {}, 'The week ahead')]));
   const weekItems = [];
-  for (const a of week.appts) weekItems.push(el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, fmtDay(a.date)), el('span', { class: 'event-title' }, [a.title, a.who ? el('span', { class: 'event-who' }, `· ${a.who}`) : null])]));
+  for (const a of oneoffs) weekItems.push(el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, `${fmtDay(a.date)}${a.startTime ? ' · ' + to12h(a.startTime) : ''}`), el('span', { class: 'event-title' }, [a.title, a.who ? el('span', { class: 'event-who' }, `· ${a.who}`) : null])]));
   for (const c of week.dueChores) weekItems.push(el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, fmtDay(c.dueDate)), el('span', { class: 'event-title' }, `○ ${c.title}`)]));
   for (const m of week.dueMaint) weekItems.push(el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, fmtDay(nextDue(m))), el('span', { class: 'event-title' }, `⟳ ${m.title}`)]));
   if (week.openGroceries.length) weekItems.push(el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, 'Groceries'), el('span', { class: 'event-title' }, `${week.openGroceries.length} open item${week.openGroceries.length === 1 ? '' : 's'}`)]));
   root.append(el('section', { class: 'panel' }, weekItems.length ? weekItems : [el('p', { class: 'muted small' }, 'Nothing scheduled in the next 7 days.')]));
+
+  // Recurring (daily/repeating) — collapsed to one line each, muted below.
+  if (recurring.length) {
+    root.append(
+      el('div', { class: 'panel-head' }, [el('h4', {}, 'Also recurring this week')]),
+      el('section', { class: 'panel' }, recurring.map((r) =>
+        el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, r.range), el('span', { class: 'event-title muted' }, `${r.title}${r.startTime ? ` · ${to12h(r.startTime)}` : ''}`)])
+      ))
+    );
+  }
 
   // ----- agenda -----
   const input = el('input', { class: 'input', placeholder: 'Add an agenda item…' });

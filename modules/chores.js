@@ -3,6 +3,7 @@
 
 import { getAll, put, remove, now, deviceName } from './store.js';
 import { el, clear, toast, openModal, todayStr, fmtDue } from './ui.js';
+import { parseImport } from './grocery.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
@@ -135,12 +136,11 @@ export async function renderChores(root) {
 
   if (!chores.length) {
     root.append(
-      el('div', { class: 'empty' }, [
+      el('div', { class: 'empty compact' }, [
         el('p', {}, 'No chores yet.'),
         el('p', { class: 'muted' }, 'One-off household tasks live here. Recurring upkeep has its own tab.'),
       ])
     );
-    return;
   }
 
   for (const [label, list] of groups) {
@@ -157,4 +157,24 @@ export async function renderChores(root) {
       el('section', { class: 'panel' }, done.slice(0, 20).map((c) => choreRow(c, { onchange: rerender, vendorById })))
     );
   }
+
+  // ----- Keep paste-import (Kat's list bridge) -----
+  const importArea = el('textarea', { class: 'input', rows: 4, placeholder: 'Paste a to-do list from Google Keep — one item per line.\nBullets and checkboxes are fine.' });
+  root.append(
+    el('h4', { class: 'group-heading' }, 'Import from Keep'),
+    el('section', { class: 'panel import-box' }, [
+      importArea,
+      el('button', {
+        class: 'btn',
+        onclick: async () => {
+          const names = parseImport(importArea.value);
+          if (!names.length) return toast('Nothing to import', 'warn');
+          for (const name of names) await put('chores', { title: name, done: false });
+          toast(`Imported ${names.length} chore${names.length === 1 ? '' : 's'}`, 'success');
+          rerender();
+        },
+      }, 'Import as chores'),
+      el('p', { class: 'muted small' }, 'Keep has no API for personal accounts, so this paste box is the bridge. Copy a Keep note, paste here, and each line becomes a chore.'),
+    ])
+  );
 }
