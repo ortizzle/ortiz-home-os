@@ -21,19 +21,58 @@ export const DEFAULT_FOOD_NOTES =
 // Default kids line for age-appropriate chore ideas. Editable in Settings.
 export const DEFAULT_KIDS = 'Sedona and River (roughly 8–12)';
 
-// ---------- brief pins (per-device: notes the family pins to the morning brief) ----------
+// ---------- brief pins (synced — a pin either of you adds, both of you see) ----------
 
-const PINS_KEY = 'ohos.briefPins';
-export function readPins() { try { return JSON.parse(localStorage.getItem(PINS_KEY)) || []; } catch { return []; } }
-function writePins(p) { localStorage.setItem(PINS_KEY, JSON.stringify(p)); }
-export function pinToBrief(date, text) {
-  const pins = readPins();
-  pins.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, date, text });
-  writePins(pins);
+export async function pinToBrief(date, text) {
+  await put('pins', { date, text });
 }
-export function removePin(id) { writePins(readPins().filter((p) => p.id !== id)); }
+export async function removePin(id) {
+  await removeRec('pins', id);
+}
 // A pin shows once its date arrives and stays until dismissed.
-export function pinsFor(date) { return readPins().filter((p) => (p.date || '') <= date); }
+export async function pinsFor(date) {
+  const all = await getAll('pins');
+  return all.filter((p) => (p.date || '') <= date);
+}
+
+// ---------- shared daily brief (synced — Claudia's morning read, same for both phones) ----------
+// Keyed by date (one record per day), so whichever phone opens first in the
+// morning generates it, and the other phone's Home tab shows the identical
+// read instead of paying for and generating a second, possibly-different one.
+
+export async function getBrief(date) {
+  return get('briefs', date);
+}
+export async function saveBrief(date, data) {
+  await put('briefs', { id: date, data, added: [] });
+}
+export async function markBriefAdded(date, title) {
+  const b = await get('briefs', date);
+  if (!b) return;
+  await put('briefs', { ...b, added: [...new Set([...(b.added || []), title])] });
+}
+
+// ---------- shared weekly review (synced — a single "current" record) ----------
+// No expiry: it lives until either of you runs a fresh one (the ~2x/week
+// rhythm), so both phones show the same plan, the same dismissals, and the
+// same resolved questions.
+
+const REVIEW_ID = 'current';
+export async function getReview() {
+  return get('reviews', REVIEW_ID);
+}
+export async function saveReview(data) {
+  await put('reviews', { id: REVIEW_ID, reviewedAt: todayStr(), data, added: [], dismissed: [], resolved: {} });
+}
+async function patchReview(fn) {
+  const r = await get('reviews', REVIEW_ID);
+  if (!r) return;
+  fn(r);
+  await put('reviews', r);
+}
+export const markReviewAdded = (title) => patchReview((r) => { r.added = [...new Set([...(r.added || []), title])]; });
+export const markReviewDismissed = (title) => patchReview((r) => { r.dismissed = [...new Set([...(r.dismissed || []), title])]; });
+export const markQuestionResolved = (q, answer) => patchReview((r) => { r.resolved = { ...(r.resolved || {}), [q]: answer || true }; });
 
 function to12(t) {
   if (!t) return '';

@@ -4,7 +4,7 @@
 // record is stamped with `by` (the per-device display name) at creation.
 
 const DB_NAME = 'ortiz-home-os';
-const DB_VERSION = 4; // v2: 'agenda'; v3: 'plan'; v4: 'meals' + 'suggLog'
+const DB_VERSION = 5; // v2: 'agenda'; v3: 'plan'; v4: 'meals'+'suggLog'; v5: 'briefs'+'pins'+'reviews'
 export const SCHEMA_VERSION = 1;
 
 // Object stores that hold household records.
@@ -19,6 +19,9 @@ export const STORES = [
   'plan',
   'meals', // planned dinners: {date, title, detail}
   'suggLog', // AI follow-through memory: what was suggested, added, done
+  'briefs', // Claudia's daily brief, one per date — shared, so both phones see the same read
+  'pins', // notes pinned to a brief date
+  'reviews', // Claudia's weekly review — one shared "current" record
   'tombstones',
 ];
 

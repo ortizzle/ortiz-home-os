@@ -10,12 +10,11 @@ import { addGroceryItem } from './grocery.js';
 import { getMaintenance } from './maintenance.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, logShownSuggestions } from './hmcontext.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, logShownSuggestions } from './hmcontext.js';
 import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
 
 const CART_SVG = '<svg viewBox="0 0 24 24"><path d="M3.5 4.5H6l2.3 10.5h9.4l2.3-8.5H7"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="16.5" cy="19" r="1.5"/></svg>';
-const BRIEF_KEY = 'ohos.dayBrief';
 let briefInFlight = false;
 
 function greeting() {
@@ -100,8 +99,8 @@ export async function renderDashboard(root) {
     );
   }
 
-  // ----- daily brief (Claude, auto once each morning) -----
-  root.append(...dailyBriefSection(rerender, { today, settings }));
+  // ----- daily brief (Claude, auto once each morning, shared with Kat) -----
+  root.append(...(await dailyBriefSection(rerender, { today, settings })));
 
   // ----- quick capture -----
   let kind = 'chore';
@@ -199,19 +198,20 @@ function apptRow(a, rerender) {
 }
 
 // The Home daily brief: a short read on TODAY that generates automatically on
-// the first open of the day (cached until tomorrow), with a Refresh, and
-// suggestions you can add with one tap.
-function dailyBriefSection(rerender, { today, settings }) {
+// the first open of the day (shared — whichever phone opens first generates
+// it, the other phone's Home tab shows the identical read), with a Refresh,
+// and suggestions you can add with one tap.
+async function dailyBriefSection(rerender, { today, settings }) {
   const host = el('div', {});
   const refresh = el('button', { class: 'link', onclick: () => runBrief(host, rerender, { today, settings, force: true }) }, 'Refresh');
 
-  const cached = readBrief();
-  if (cached && cached.date === today) {
-    renderBrief(host, cached.data, rerender, new Set(cached.added || []));
+  const cached = await getBrief(today);
+  if (cached) {
+    renderBrief(host, cached.data, rerender, new Set(cached.added || []), await pinsFor(today), today);
   } else if (hasApiKey()) {
     runBrief(host, rerender, { today, settings }); // auto-generate for the day
   } else {
-    host.append(...pinNodes(today, rerender));
+    host.append(...pinNodes(await pinsFor(today), rerender));
     host.append(el('p', { class: 'muted small' }, 'Add a Claude API key in Settings and Claudia will read your day each morning — what matters, what to prep, and one-tap add-to-list suggestions.'));
   }
 
@@ -242,8 +242,8 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
       email: ctx.emailsText,
     });
     logShownSuggestions(out.suggestions, 'brief').catch(() => {});
-    writeBrief(today, out);
-    renderBrief(host, out, rerender, new Set());
+    await saveBrief(today, out);
+    renderBrief(host, out, rerender, new Set(), await pinsFor(today), today);
   } catch (err) {
     clear(host).append(
       el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Couldn't generate today's brief: ${err.message}`),
@@ -254,20 +254,20 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
   }
 }
 
-// Notes pinned from the Manager's "Ask" — shown at the top of the brief until
-// the family dismisses them. Per-device (localStorage), like the brief cache.
-function pinNodes(today, rerender) {
-  return pinsFor(today).map((p) =>
+// Notes pinned from Ask — shown at the top of the brief until dismissed.
+// Synced: a pin either of you adds, both of you see and can dismiss.
+function pinNodes(pins, rerender) {
+  return pins.map((p) =>
     el('div', { class: 'brief-pin' }, [
       el('span', {}, p.text),
-      el('button', { class: 'link', 'aria-label': 'Dismiss', onclick: () => { removePin(p.id); rerender(); } }, '×'),
+      el('button', { class: 'link', 'aria-label': 'Dismiss', onclick: async () => { await removePin(p.id); rerender(); } }, '×'),
     ])
   );
 }
 
-function renderBrief(host, out, rerender, addedSet = new Set()) {
+function renderBrief(host, out, rerender, addedSet, pins, today) {
   clear(host);
-  host.append(...pinNodes(todayStr(), rerender));
+  host.append(...pinNodes(pins, rerender));
   if (out.headline) host.append(el('p', { class: 'brief-headline' }, out.headline));
   if (out.notes?.length) host.append(el('ul', { class: 'brief-notes' }, out.notes.map((n) => el('li', {}, n))));
   for (const s of out.suggestions || []) {
@@ -279,21 +279,12 @@ function renderBrief(host, out, rerender, addedSet = new Set()) {
           today: todayStr(),
           includePlan: false,
           alreadyAdded: addedSet.has(s.title),
-          // Persist the Added ✓ state so the re-render (which refreshes the
-          // Today list below) restores it instead of re-arming the button.
-          onAdded: () => { markBriefAdded(s.title); rerender(); },
+          // Persist the Added ✓ state (shared) so a re-render — on either
+          // phone — restores it instead of re-arming the button.
+          onAdded: async () => { await markBriefAdded(today, s.title); rerender(); },
         }),
       ])
     );
   }
   if (!out.headline && !out.notes?.length && !out.suggestions?.length) host.append(el('p', { class: 'muted small' }, 'Nothing pressing today — enjoy it.'));
-}
-
-function readBrief() { try { return JSON.parse(localStorage.getItem(BRIEF_KEY)); } catch { return null; } }
-function writeBrief(date, data) { localStorage.setItem(BRIEF_KEY, JSON.stringify({ date, data, added: [] })); }
-function markBriefAdded(title) {
-  const b = readBrief();
-  if (!b) return;
-  b.added = [...new Set([...(b.added || []), title])];
-  localStorage.setItem(BRIEF_KEY, JSON.stringify(b));
 }

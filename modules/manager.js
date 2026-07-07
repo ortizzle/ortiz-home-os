@@ -9,7 +9,7 @@ import { getMaintenance, maintenanceRow, editMaintenanceModal } from './maintena
 import { vendorsSection } from './vendors.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, askManager, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinToBrief, logShownSuggestions, logSuggestionAdded, logSuggestionDismissed, logQuestionResolved, followUpText } from './hmcontext.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinToBrief, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logSuggestionDismissed, logQuestionResolved, followUpText } from './hmcontext.js';
 import { isConnected, canReadEmail } from './gcal.js';
 import { meetingSection } from './meeting.js';
 
@@ -63,33 +63,9 @@ export function addButtons(sugg, { today, includePlan = false, onAdded, alreadyA
   return el('div', { class: 'hm-actions' }, out);
 }
 
-// ---------- weekly review persistence ----------
-// The review persists until the family runs a fresh one (Chris's ~2x/week
-// rhythm, on his schedule) — surviving re-renders and reloads. Accepted items
-// show Added ✓, dismissed ones stay gone, resolved questions stay resolved.
-// Per-device, like the Home brief.
-
-const REVIEW_KEY = 'ohos.weekReview';
-function readReview() {
-  try {
-    const r = JSON.parse(localStorage.getItem(REVIEW_KEY));
-    return r && r.data ? r : null; // no expiry — lives until re-run
-  } catch { return null; }
-}
-function writeReview(data) {
-  localStorage.setItem(REVIEW_KEY, JSON.stringify({ reviewedAt: todayStr(), data, added: [], dismissed: [], resolved: {} }));
-}
-function patchReview(fn) {
-  const r = readReview();
-  if (!r) return;
-  fn(r);
-  localStorage.setItem(REVIEW_KEY, JSON.stringify(r));
-}
-const markReviewAdded = (title) => patchReview((r) => { r.added = [...new Set([...(r.added || []), title])]; });
-const markReviewDismissed = (title) => patchReview((r) => { r.dismissed = [...new Set([...(r.dismissed || []), title])]; });
-const markQuestionResolved = (q, answer) => patchReview((r) => { r.resolved = { ...(r.resolved || {}), [q]: answer || true }; });
-
-// The per-render view of the persisted state.
+// The per-render view of the persisted state (now synced — see hmcontext.js
+// getReview/saveReview/markReviewAdded/markReviewDismissed/markQuestionResolved,
+// shared between both phones like the Home brief).
 function reviewState(r) {
   return {
     reviewedAt: r.reviewedAt || null,
@@ -220,8 +196,8 @@ export async function renderManager(root) {
           follow,
         });
         logShownSuggestions(out.planItems, 'review').catch(() => {});
-        writeReview(out); // persists until the next run
-        renderReview(host, out, rerender, reviewState(readReview()));
+        await saveReview(out); // persists until the next run, shared with Kat
+        renderReview(host, out, rerender, reviewState(await getReview()));
       } catch (err) {
         clear(host).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
       } finally {
@@ -230,9 +206,9 @@ export async function renderManager(root) {
       }
     },
   }, 'Review the week');
-  // Restore the persisted review so adds/dismisses (which re-render the view)
-  // and even reloads never lose the rest of the list.
-  const cachedReview = readReview();
+  // Restore the persisted (shared) review so adds/dismisses — which re-render
+  // the view — and even reloads never lose the rest of the list.
+  const cachedReview = await getReview();
   if (cachedReview) renderReview(host, cachedReview.data, rerender, reviewState(cachedReview));
   root.append(
     el('div', { class: 'panel-head' }, [el('h4', {}, 'Plan the week with Claudia')]),
@@ -314,11 +290,11 @@ function renderAnswer(host, out) {
   if (noteText) {
     const pinBtn = el('button', {
       class: 'btn seg-btn hm-add',
-      onclick: () => {
-        pinToBrief(addDays(todayStr(), 1), noteText);
+      onclick: async () => {
+        await pinToBrief(addDays(todayStr(), 1), noteText);
         pinBtn.disabled = 'disabled';
         pinBtn.textContent = 'Pinned to brief ✓';
-        toast('Pinned to tomorrow’s brief', 'success');
+        toast('Pinned to tomorrow’s brief — Kat will see it too', 'success');
       },
     }, '📌 Pin to tomorrow’s brief');
     host.append(el('div', { class: 'hm-actions' }, [pinBtn]));
@@ -333,16 +309,16 @@ function reviewIdea(item, rerender, state) {
     today: todayStr(),
     includePlan: true,
     alreadyAdded: state.added.has(item.title),
-    // Record the add BEFORE re-rendering, so the restored review shows this
-    // item as Added ✓ and keeps every other item on screen.
-    onAdded: () => { markReviewAdded(item.title); rerender(); },
+    // Record the add BEFORE re-rendering, so the restored (shared) review
+    // shows this item as Added ✓ on both phones and keeps the rest on screen.
+    onAdded: async () => { await markReviewAdded(item.title); rerender(); },
   });
   if (!state.added.has(item.title)) {
     const dismissBtn = el('button', {
       class: 'btn seg-btn hm-add',
       'aria-label': 'Dismiss — don’t suggest again',
-      onclick: () => {
-        markReviewDismissed(item.title);
+      onclick: async () => {
+        await markReviewDismissed(item.title);
         logSuggestionDismissed(item.title).catch(() => {});
         toast('Got it — Claudia won’t suggest that again');
         rerender();
@@ -372,7 +348,7 @@ function questionRow(q, rerender, state) {
       taskBtn.disabled = 'disabled';
       const { store, rec } = await applyAdd('task', { title: q });
       logSuggestionAdded(q, store, rec?.id).catch(() => {});
-      markQuestionResolved(q, 'turned into a task');
+      await markQuestionResolved(q, 'turned into a task');
       toast('Added as a task', 'success');
       rerender();
     },
@@ -390,7 +366,7 @@ function questionRow(q, rerender, state) {
           class: 'btn btn-primary',
           onclick: async () => {
             const a = answer.value.trim();
-            markQuestionResolved(q, a || true);
+            await markQuestionResolved(q, a || true);
             logQuestionResolved(q, a).catch(() => {});
             m.close();
             toast(a ? 'Claudia will remember that' : 'Resolved', 'success');
