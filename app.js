@@ -23,6 +23,10 @@ import { el, clear, toast, navigate, openModal, todayStr } from './modules/ui.js
 
 const view = document.getElementById('view');
 
+// Shown in Settings so any phone can be checked at a glance. Keep in step
+// with the sw.js CACHE version when shipping.
+const APP_VERSION = 'v10';
+
 // ---------- theme ----------
 
 const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -226,7 +230,9 @@ function renderSettings(root) {
       el('button', { class: 'btn btn-primary', onclick: onSave }, 'Save'),
       el('button', { class: 'btn', onclick: onSyncNow, disabled: syncConfigured() ? null : 'disabled' }, 'Sync now'),
       el('button', { class: 'btn', onclick: onExport }, 'Export JSON'),
-    ])
+    ]),
+
+    el('p', { class: 'muted small center', style: 'margin-top: 18px' }, `Ortiz Home OS ${APP_VERSION}`)
   );
 
   async function onSave() {
