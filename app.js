@@ -16,6 +16,7 @@ import { renderChores } from './modules/chores.js';
 import { renderGrocery } from './modules/grocery.js';
 import { renderCalendar } from './modules/calendar.js';
 import { renderUpkeep } from './modules/maintenance.js';
+import { renderMeeting } from './modules/meeting.js';
 import { errandWindow } from './modules/suggest.js';
 import { el, clear, toast, navigate, todayStr } from './modules/ui.js';
 
@@ -49,6 +50,7 @@ const routes = [
   { re: /^#\/calendar$/, tab: 'calendar', fn: () => renderCalendar(view, { mode: 'day', date: todayStr() }) },
   { re: /^#\/calendar\/(day|week)\/(\d{4}-\d{2}-\d{2})$/, tab: 'calendar', fn: (m) => renderCalendar(view, { mode: m[1], date: m[2] }) },
   { re: /^#\/upkeep$/, tab: 'upkeep', fn: () => renderUpkeep(view) },
+  { re: /^#\/meeting$/, tab: 'meeting', fn: () => renderMeeting(view) },
   { re: /^#\/settings$/, tab: 'settings', fn: () => renderSettings(view) },
 ];
 
@@ -88,12 +90,18 @@ async function router() {
 // ---------- Settings view ----------
 
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function renderSettings(root) {
   clear(root);
   const s = getSettings();
 
   const deviceNameInput = el('input', { class: 'input', placeholder: 'e.g. Chris', value: s.deviceName || '' });
+  const familyInput = el('input', { class: 'input', placeholder: 'Chris, Cat, Sedona, River', value: s.familyMembers || 'Chris, Cat, Sedona, River' });
+  const meetingDaySel = el('select', { class: 'input' }, DAY_LABELS.map((_, i) =>
+    el('option', { value: i, selected: Number(s.meetingDay ?? 3) === i ? 'selected' : null }, FULL_DAYS[i])
+  ));
+  const apiKey = el('input', { class: 'input', type: 'password', placeholder: 'sk-ant-...', value: s.apiKey || '' });
   const gistToken = el('input', { class: 'input', type: 'password', placeholder: 'GitHub token (gist scope)', value: s.gistToken || '' });
   const gistId = el('input', { class: 'input', placeholder: 'Gist ID', value: s.gistId || '' });
 
@@ -131,6 +139,21 @@ function renderSettings(root) {
       deviceNameInput,
       el('label', { class: 'field-label' }, 'Errand day(s) — when the grocery list surfaces'),
       dayRow,
+    ]),
+
+    el('section', { class: 'panel' }, [
+      el('h4', {}, 'Family & meeting'),
+      el('label', { class: 'field-label' }, 'Family members (comma-separated)'),
+      familyInput,
+      el('label', { class: 'field-label' }, 'Family meeting day'),
+      meetingDaySel,
+    ]),
+
+    el('section', { class: 'panel' }, [
+      el('h4', {}, 'Claude AI (optional)'),
+      el('label', { class: 'field-label' }, 'Claude API key (stored only on this device)'),
+      apiKey,
+      el('p', { class: 'muted small' }, 'Powers the family-meeting review. Used for direct browser calls to Anthropic; sends the agenda + week ahead to Claude, and never leaves your device except to Anthropic.'),
     ]),
 
     el('section', { class: 'panel' }, [
@@ -175,6 +198,9 @@ function renderSettings(root) {
     saveSettings({
       deviceName: deviceNameInput.value.trim(),
       errandDays: errandDays.sort(),
+      familyMembers: familyInput.value.trim(),
+      meetingDay: Number(meetingDaySel.value),
+      apiKey: apiKey.value.trim(),
       gistToken: gistToken.value.trim(),
       gistId: gistId.value.trim(),
     });
