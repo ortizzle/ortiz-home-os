@@ -20,13 +20,14 @@ import { renderMeeting } from './modules/meeting.js';
 import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS } from './modules/hmcontext.js';
 import { isConnected as gcalConnected, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
+import { diagnosticsSection } from './modules/diag.js';
 import { el, clear, toast, navigate, openModal, todayStr, tableOfContents } from './modules/ui.js';
 
 const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v24';
+const APP_VERSION = 'v25';
 
 // ---------- theme ----------
 
@@ -259,6 +260,8 @@ function renderSettings(root) {
       el('button', { class: 'btn', onclick: onExport }, 'Export JSON'),
     ]),
 
+    diagnosticsSection(APP_VERSION),
+
     el('p', { class: 'muted small center', style: 'margin-top: 18px' }, `Ortiz Home OS ${APP_VERSION}`)
   );
 
@@ -269,6 +272,7 @@ function renderSettings(root) {
     { label: 'Google', at: 'Google' },
     { label: 'Theme', at: 'Appearance' },
     { label: 'Sync', at: 'Household sync' },
+    { label: 'Debug', at: 'Diagnostics' },
   ]);
 
   async function onSave() {

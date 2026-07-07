@@ -178,6 +178,22 @@ body { overscroll-behavior-y: none; }
 .toc-sep { font-size: 13px; color: var(--text-3); }
 .toc-anchor { scroll-margin-top: calc(var(--topbar-h) + 46px); }
 
+/* diagnostics report */
+.diag-out {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  font-size: 11px;
+  line-height: 1.6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
 .view-head { margin-bottom: 18px; }
 .view-head h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 4px 0; }
 .view-head-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
