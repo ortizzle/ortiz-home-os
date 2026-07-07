@@ -424,6 +424,24 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .week-item.is-event { color: var(--accent); font-weight: 500; }
 .week-more { font-size: 11px; color: var(--text-3); }
 
+/* all-day events stand out: filled accent chip instead of a plain timed row */
+.event-row.all-day {
+  background: var(--accent-soft);
+  border-top: none;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin: 4px 0;
+}
+.event-row.all-day + .event-row { border-top: none; }
+.event-row.all-day .event-time {
+  color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+.event-row.all-day .event-title { font-weight: 600; }
+
 /* ---------- family meeting ---------- */
 .meeting-section { margin-top: 14px; }
 .meeting-section:first-child { margin-top: 4px; }

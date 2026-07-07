@@ -7,9 +7,12 @@
 // app cannot modify your Google Calendar (scope is calendar.readonly).
 
 const CLIENT_ID = '305346848345-0q6ojf9t6eqhguh4pb3f2gm5p7rhhmtq.apps.googleusercontent.com';
-const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
+// readonly: read events + list calendars. events: create/edit events (write).
+const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/calendar.events';
 const GSI_SRC = 'https://accounts.google.com/gsi/client';
 const TOKEN_KEY = 'ohos.gcalToken';
+const WRITE_CAL_KEY = 'ohos.gcalWriteCal';
+const FAMILY_CAL = 'family04161634646034573603@group.calendar.google.com';
 
 // Which calendars to overlay. Default to the family's shared calendars until
 // the user picks their own set via the Settings picker (stored per device).
@@ -44,11 +47,24 @@ function readToken() {
   } catch {}
   return null;
 }
-function writeToken(accessToken, expiresInSec) {
-  localStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken, expiresAt: Date.now() + (expiresInSec || 3600) * 1000 }));
+function writeToken(accessToken, expiresInSec, scope) {
+  localStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken, expiresAt: Date.now() + (expiresInSec || 3600) * 1000, scope: scope || '' }));
 }
 export function isConnected() { return !!readToken(); }
-export function disconnect() { localStorage.removeItem(TOKEN_KEY); clearCache(); }
+// Whether the granted token actually includes write access to events.
+export function canWrite() {
+  const t = readToken();
+  return !!t && /calendar\.events|auth\/calendar(\s|$)/.test(t.scope || '');
+}
+export function disconnect() { localStorage.removeItem(TOKEN_KEY); clearCache(); writableCache = null; }
+
+// The Google calendar new events are written to (default: Family).
+export function getWriteCalendar() {
+  return localStorage.getItem(WRITE_CAL_KEY) || FAMILY_CAL;
+}
+export function setWriteCalendar(id) {
+  if (id) localStorage.setItem(WRITE_CAL_KEY, id);
+}
 
 // ---------- Google Identity Services ----------
 
@@ -88,12 +104,13 @@ export async function connect() {
   return new Promise((resolve, reject) => {
     client.callback = (resp) => {
       if (resp.error) return reject(new GcalError(resp.error_description || resp.error, 'oauth'));
-      writeToken(resp.access_token, resp.expires_in);
+      writeToken(resp.access_token, resp.expires_in, resp.scope);
       clearCache();
       resolve(true);
     };
-    // Show consent on first grant; Google returns silently on later grants.
-    client.requestAccessToken({ prompt: '' });
+    // 'consent' so an existing read-only grant is re-prompted for the added
+    // write scope; Google still remembers the account, so it's one tap.
+    client.requestAccessToken({ prompt: 'consent' });
   });
 }
 
@@ -125,6 +142,7 @@ function toAppt(ev) {
     location: ev.location || null,
     seriesId: ev.recurringEventId || null,
     source: 'gcal',
+    htmlLink: ev.htmlLink || null, // open/edit this event in Google
   };
 }
 
@@ -144,7 +162,55 @@ export async function listCalendars() {
     id: c.id,
     summary: c.summaryOverride || c.summary || c.id,
     primary: Boolean(c.primary),
+    accessRole: c.accessRole, // owner | writer | reader | freeBusyReader
   }));
+}
+
+// Calendars this account can WRITE to (for the "Save to" target). Cached.
+let writableCache = null;
+export async function writableCalendars() {
+  if (writableCache) return writableCache;
+  const cals = await listCalendars();
+  writableCache = cals.filter((c) => c.accessRole === 'owner' || c.accessRole === 'writer');
+  return writableCache;
+}
+
+// Create an event on a Google calendar. Returns the created event.
+export async function createEvent(calendarId, { title, date, startTime, endTime, allDay, location } = {}) {
+  const t = readToken();
+  if (!t) throw new GcalError('Not connected to Google Calendar', 'not-connected');
+  const TZ = 'America/Phoenix';
+  const body = { summary: (title || '').trim() || '(untitled)' };
+  if (location) body.location = location;
+  if (allDay) {
+    body.start = { date };
+    body.end = { date: addDaysStr(date, 1) }; // Google all-day end is exclusive
+  } else {
+    const st = startTime || '09:00';
+    const et = endTime && et24(endTime) > et24(st) ? endTime : addMinutesStr(st, 60);
+    body.start = { dateTime: `${date}T${st}:00`, timeZone: TZ };
+    body.end = { dateTime: `${date}T${et}:00`, timeZone: TZ };
+  }
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+    { method: 'POST', headers: { Authorization: 'Bearer ' + t.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+  );
+  if (res.status === 401) { disconnect(); throw new GcalError('Google sign-in expired — reconnect', 'expired'); }
+  if (res.status === 403) throw new GcalError('No write access — disconnect and reconnect to grant it', 'no-write');
+  if (!res.ok) throw new GcalError(`Calendar API ${res.status}`, 'api');
+  clearCache();
+  return res.json();
+}
+
+function et24(hhmm) { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; }
+function addMinutesStr(hhmm, mins) {
+  const total = et24(hhmm) + mins;
+  return `${pad(Math.floor(total / 60) % 24)}:${pad(total % 60)}`;
+}
+function addDaysStr(dateStr, n) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + n);
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }
 
 // Overlay events for [start, end) (local YYYY-MM-DD). Cached per session.

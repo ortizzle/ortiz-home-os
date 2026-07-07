@@ -7,7 +7,7 @@ import { getAll, put, remove } from './store.js';
 import { el, clear, toast, navigate, openModal, todayStr, addDays, parseDate, dateStr, fmtDay } from './ui.js';
 import { choreRow, editChoreModal } from './chores.js';
 import { getMaintenance, nextDue, maintenanceRow } from './maintenance.js';
-import { isConnected, connect, eventsForRange, GcalError } from './gcal.js';
+import { isConnected, connect, eventsForRange, GcalError, canWrite, writableCalendars, createEvent, getWriteCalendar, setWriteCalendar } from './gcal.js';
 
 // A "Connect Google Calendar" prompt, shown when not yet connected. Tapping it
 // pops Google's read-only consent, then re-renders so live events appear.
@@ -58,8 +58,10 @@ function apptTimeLabel(a) {
 }
 
 // Create/edit bottom sheet. `preset` seeds fields for contextual creation
-// (e.g. a vendor's Schedule button passes title + vendorId).
-export function editAppointmentModal(appointment, date, onchange, preset = {}) {
+// (e.g. a vendor's Schedule button passes title + vendorId). When creating a
+// new appointment with Google write access, a "Save to" picker lets the event
+// go straight onto a Google calendar (default: Family) instead of Home OS.
+export async function editAppointmentModal(appointment, date, onchange, preset = {}) {
   const isNew = !appointment;
   const a = appointment || { date, ...preset };
 
@@ -79,6 +81,20 @@ export function editAppointmentModal(appointment, date, onchange, preset = {}) {
   });
   if (a.allDay) timesRow.style.display = 'none';
 
+  // "Save to" picker — only for brand-new appointments when we can write.
+  let saveSel = null;
+  if (isNew && isConnected() && canWrite()) {
+    let cals = [];
+    try { cals = await writableCalendars(); } catch {}
+    if (cals.length) {
+      const def = getWriteCalendar();
+      saveSel = el('select', { class: 'input' }, [
+        ...cals.map((c) => el('option', { value: c.id, selected: c.id === def ? 'selected' : null }, c.summary + (c.primary ? ' (primary)' : ''))),
+        el('option', { value: '__home__' }, 'Home OS only (not on Google)'),
+      ]);
+    }
+  }
+
   const actions = [
     !isNew &&
       el('button', {
@@ -96,16 +112,26 @@ export function editAppointmentModal(appointment, date, onchange, preset = {}) {
       onclick: async () => {
         if (!title.value.trim()) return toast('Give it a title', 'warn');
         if (!dateInput.value) return toast('Pick a date', 'warn');
-        await put('appointments', {
-          ...a,
+        const fields = {
           title: title.value.trim(),
           date: dateInput.value,
-          who: who.value.trim() || null,
           location: location.value.trim() || null,
           allDay: allDay.checked,
           startTime: allDay.checked ? null : start.value || null,
           endTime: allDay.checked ? null : end.value || null,
-        });
+        };
+        const target = saveSel ? saveSel.value : '__home__';
+        if (target !== '__home__') {
+          try {
+            await createEvent(target, fields);
+            setWriteCalendar(target);
+            toast('Added to Google Calendar', 'success');
+          } catch (err) {
+            return toast(err instanceof GcalError ? err.message : 'Could not add to Google Calendar', 'error');
+          }
+        } else {
+          await put('appointments', { ...a, ...fields, who: who.value.trim() || null });
+        }
         m.close();
         onchange?.();
       },
@@ -116,6 +142,8 @@ export function editAppointmentModal(appointment, date, onchange, preset = {}) {
     title,
     el('label', { class: 'field-label' }, 'Date'),
     dateInput,
+    saveSel ? el('label', { class: 'field-label' }, 'Save to') : null,
+    saveSel,
     el('div', { class: 'field-row' }, [
       el('div', {}, [el('label', { class: 'field-label' }, 'Who'), who]),
       el('div', {}, [el('label', { class: 'field-label' }, 'Location'), location]),
@@ -187,7 +215,15 @@ async function renderDay(root, date) {
     el('section', { class: 'panel' },
       dayAppts.length
         ? dayAppts.map((a) =>
-            el('div', { class: 'event-row', onclick: () => editAppointmentModal(a, date, rerender) }, [
+            el('div', {
+              class: 'event-row' + (a.allDay ? ' all-day' : ''),
+              // Live Google events open in Google (read-only here); app
+              // appointments open the in-app editor.
+              onclick: () =>
+                a.source === 'gcal'
+                  ? (a.htmlLink ? window.open(a.htmlLink, '_blank', 'noopener') : toast('This is a Google Calendar event', 'info'))
+                  : editAppointmentModal(a, date, rerender),
+            }, [
               el('span', { class: 'event-time' }, apptTimeLabel(a)),
               el('span', { class: 'event-title' }, [
                 a.title,
