@@ -17,7 +17,7 @@ import { renderGrocery } from './modules/grocery.js';
 import { renderCalendar } from './modules/calendar.js';
 import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
-import { DEFAULT_HOUSEHOLD_NOTES } from './modules/hmcontext.js';
+import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS } from './modules/hmcontext.js';
 import { isConnected as gcalConnected, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { el, clear, toast, navigate, openModal, todayStr } from './modules/ui.js';
@@ -26,7 +26,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v14';
+const APP_VERSION = 'v15';
 
 // ---------- theme ----------
 
@@ -112,6 +112,8 @@ function renderSettings(root) {
   const householdNotes = el('textarea', { class: 'input', rows: 4 }, s.householdNotes ?? DEFAULT_HOUSEHOLD_NOTES);
   const interestsInput = el('input', { class: 'input', placeholder: 'e.g. movies, hiking, board games, live music', value: s.familyInterests || '' });
   const cityInput = el('input', { class: 'input', placeholder: 'e.g. Phoenix, AZ', value: s.homeCity || '' });
+  const foodNotes = el('textarea', { class: 'input', rows: 3 }, s.foodNotes ?? DEFAULT_FOOD_NOTES);
+  const kidsInput = el('input', { class: 'input', placeholder: 'e.g. Sedona 11, River 9', value: s.kidsAges ?? DEFAULT_KIDS });
   const gistToken = el('input', { class: 'input', type: 'password', placeholder: 'GitHub token (gist scope)', value: s.gistToken || '' });
   const gistId = el('input', { class: 'input', placeholder: 'Gist ID', value: s.gistId || '' });
 
@@ -169,6 +171,10 @@ function renderSettings(root) {
       interestsInput,
       el('label', { class: 'field-label' }, 'City / area — for finding what’s on nearby'),
       cityInput,
+      el('label', { class: 'field-label' }, 'Food rules — for the dinner planner'),
+      foodNotes,
+      el('label', { class: 'field-label' }, 'Kids & ages — for age-fit chore ideas'),
+      kidsInput,
       el('p', { class: 'muted small' }, 'Powers the daily brief, weekly review, meeting draft, and Ask. Notes are background context so ideas fit your family; interests + city let the weekly review and Ask search the web for real nearby things — a movie you’d love this week, local events — with actual dates and times. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
     ]),
 
@@ -266,6 +272,8 @@ function renderSettings(root) {
       householdNotes: householdNotes.value.trim(),
       familyInterests: interestsInput.value.trim(),
       homeCity: cityInput.value.trim(),
+      foodNotes: foodNotes.value.trim(),
+      kidsAges: kidsInput.value.trim(),
       gistToken: gistToken.value.trim(),
       gistId: gistId.value.trim(),
     });

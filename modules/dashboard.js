@@ -10,7 +10,7 @@ import { addGroceryItem } from './grocery.js';
 import { getMaintenance } from './maintenance.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, pinsFor, removePin } from './hmcontext.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, logShownSuggestions } from './hmcontext.js';
 import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
 
@@ -231,14 +231,17 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
     const out = await analyzeDay({
       family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
       notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+      kids: settings.kidsAges || DEFAULT_KIDS,
       today,
       weekday,
       events: ctx.eventsText,
       chores: ctx.choresText,
       upkeep: ctx.upkeepText,
       groceries: ctx.groceriesText,
+      meals: ctx.mealsText,
       email: ctx.emailsText,
     });
+    logShownSuggestions(out.suggestions, 'brief').catch(() => {});
     writeBrief(today, out);
     renderBrief(host, out, rerender);
   } catch (err) {
@@ -270,7 +273,7 @@ function renderBrief(host, out, rerender) {
   for (const s of out.suggestions || []) {
     host.append(
       el('div', { class: 'idea' }, [
-        el('div', { class: 'idea-title' }, s.title),
+        el('div', { class: 'idea-title' }, [s.title, s.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, s.who) : null]),
         s.detail ? el('p', { class: 'idea-detail' }, s.detail) : null,
         addButtons(s, { today: todayStr(), includePlan: false, onAdded: rerender }),
       ])

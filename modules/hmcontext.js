@@ -1,8 +1,10 @@
 // hmcontext.js — gathers + formats the household state the house-manager AI
 // reads. Shared by the Home daily brief and the Manager weekly review.
+// Also home of the suggestion log (the AI's follow-through memory) and the
+// brief pins.
 
-import { getAll } from './store.js';
-import { addDays, fmtDay } from './ui.js';
+import { getAll, get, put, remove as removeRec } from './store.js';
+import { addDays, fmtDay, todayStr } from './ui.js';
 import { getMaintenance, nextDue, dueState } from './maintenance.js';
 import { isConnected, eventsForRange, canReadEmail, gmailRecent } from './gcal.js';
 import { STORES } from './grocery.js';
@@ -11,6 +13,13 @@ import { STORES } from './grocery.js';
 // Settings → "Notes for the assistant"; this is the default seed.
 export const DEFAULT_HOUSEHOLD_NOTES =
   "Shopping habits: Costco — go during executive hours right when it opens (weekend mornings). Trader Joe's — quick, local runs for a few items. Walmart — usually home delivery, for items we don't want in Costco bulk sizes.";
+
+// Standing food rules for the dinner planner. Editable in Settings.
+export const DEFAULT_FOOD_NOTES =
+  'Weeknight dinners: quick (~30 minutes) and healthy-ish, kid-friendly. Bigger cooking projects are for weekends.';
+
+// Default kids line for age-appropriate chore ideas. Editable in Settings.
+export const DEFAULT_KIDS = 'Sedona and River (roughly 8–12)';
 
 // ---------- brief pins (per-device: notes the family pins to the morning brief) ----------
 
@@ -32,6 +41,67 @@ function to12(t) {
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
+// ---------- suggestion log (the AI's follow-through memory; synced) ----------
+// Every AI suggestion shown gets logged; adding one records where it went.
+// The weekly review reads this back so it can follow up on what was added
+// but never finished, and stop repeating what the family keeps ignoring.
+
+const normKey = (title) => (title || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim().slice(0, 80);
+
+// Log a batch of freshly-generated suggestions. Repeat sightings of the same
+// title bump a counter instead of piling up rows.
+export async function logShownSuggestions(items, source) {
+  const log = await getAll('suggLog');
+  for (const it of items || []) {
+    const key = normKey(it.title);
+    if (!key) continue;
+    const existing = log.find((r) => r.key === key);
+    if (existing) {
+      await put('suggLog', { ...existing, lastShownAt: todayStr(), shownCount: (existing.shownCount || 1) + 1 });
+    } else {
+      await put('suggLog', { key, title: it.title, type: it.suggestedType || it.type || 'task', source, firstShownAt: todayStr(), lastShownAt: todayStr(), shownCount: 1, addedAt: null, targetStore: null, targetId: null });
+    }
+  }
+}
+
+// Record that a suggestion was accepted (one-tap added) and where it landed.
+export async function logSuggestionAdded(title, targetStore, targetId) {
+  const key = normKey(title);
+  if (!key) return;
+  const log = await getAll('suggLog');
+  const entry = log.find((r) => r.key === key);
+  if (entry) await put('suggLog', { ...entry, addedAt: todayStr(), targetStore, targetId: targetId || null });
+}
+
+// Did the record a suggestion turned into actually get done?
+async function targetDone(store, id) {
+  if (!store || !id) return false;
+  const rec = await get(store, id).catch(() => null);
+  if (!rec) return false;
+  if (store === 'chores' || store === 'plan') return Boolean(rec.done);
+  if (store === 'groceries') return Boolean(rec.gotAt);
+  if (store === 'appointments') return (rec.date || '') < todayStr(); // it happened
+  return false;
+}
+
+// The follow-through block for the weekly review prompt — and housekeeping:
+// entries older than ~5 weeks are pruned so the log stays small.
+export async function followUpText() {
+  const log = await getAll('suggLog');
+  const cutoff = addDays(todayStr(), -35);
+  const lines = [];
+  for (const r of log) {
+    if ((r.lastShownAt || '') < cutoff) { await removeRec('suggLog', r.id); continue; }
+    if (r.addedAt) {
+      const done = await targetDone(r.targetStore, r.targetId);
+      lines.push(`- "${r.title}" — added ${fmtDay(r.addedAt)}${done ? ', DONE ✓' : ', not completed yet'}`);
+    } else if ((r.shownCount || 1) >= 2) {
+      lines.push(`- "${r.title}" — suggested ${r.shownCount} times, never added (the family may not want this)`);
+    }
+  }
+  return lines.join('\n');
+}
+
 // Format recent email into a compact block for the prompt. Sender + subject +
 // a short snippet is enough for the AI to flag what needs attention.
 export function emailText(emails) {
@@ -44,11 +114,12 @@ export function emailText(emails) {
 // bound the calendar window pulled from the live Google overlay. Pass
 // `email: true` to also pull recent Gmail (when the scope was granted).
 export async function gatherContext({ start, days, email = false }) {
-  const [chores, groceries, maintenance, plan] = await Promise.all([
+  const [chores, groceries, maintenance, plan, meals] = await Promise.all([
     getAll('chores'),
     getAll('groceries'),
     getMaintenance(),
     getAll('plan'),
+    getAll('meals'),
   ]);
   const events = isConnected() ? await eventsForRange(start, addDays(start, days)).catch(() => []) : [];
   const emails = email && canReadEmail() ? await gmailRecent({ days: 7 }).catch(() => []) : [];
@@ -68,5 +139,11 @@ export async function gatherContext({ start, days, email = false }) {
 
   const planText = plan.filter((p) => !p.done).map((p) => `- ${p.title}`).join('\n');
 
-  return { events, eventsText, choresText, upkeepText, groceriesText, planText, emails, emailsText: emailText(emails) };
+  const end = addDays(start, days);
+  const mealsInRange = meals
+    .filter((m) => m.date >= start && m.date < end)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const mealsText = mealsInRange.map((m) => `- ${fmtDay(m.date)}: ${m.title}`).join('\n');
+
+  return { events, eventsText, choresText, upkeepText, groceriesText, planText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
 }

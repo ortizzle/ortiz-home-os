@@ -204,8 +204,8 @@ const HM_ROLE = (family) =>
 // Daily brief for the Home page — a short read on TODAY plus a few concrete,
 // one-tap-addable suggestions. Each suggestion is typed so the app can turn it
 // into a task, appointment, or grocery item.
-export async function analyzeDay({ family = [], notes = '', today, weekday = '', events = '', chores = '', upkeep = '', groceries = '', email = '' } = {}) {
-  const system = HM_ROLE(family) + ' This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon.';
+export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', upkeep = '', groceries = '', meals = '', email = '' } = {}) {
+  const system = HM_ROLE(family) + ` This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon. If dinner is planned for tonight, mention it in a note. Kids (${kids || 'none listed'}) don't use the app — when a small chore genuinely fits one of them, suggest it as a task with their name in "who".`;
   const prompt = `Good morning. Today is ${weekday} ${today}. Give the family a short read on the day.
 
 HOUSEHOLD NOTES / PREFERENCES:
@@ -213,6 +213,9 @@ ${notes || '(none provided)'}
 
 TODAY & TOMORROW ON THE CALENDAR:
 ${events || '(no calendar events available)'}
+
+DINNERS PLANNED:
+${meals || '(none planned)'}
 
 OPEN CHORES:
 ${chores || '(none)'}
@@ -230,7 +233,7 @@ Return JSON with exactly this shape:
 {
   "headline": "one warm sentence reading the shape of the day",
   "notes": ["1-3 short lines: what matters today, timing to watch, a heads-up"],
-  "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative, e.g. 'Prep gym bag for River'", "date": "YYYY-MM-DD (optional; for a task due date or appointment date)", "detail": "one short clause on why" } ]
+  "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative, e.g. 'Prep gym bag for River'", "date": "YYYY-MM-DD (optional; for a task due date or appointment date)", "who": "family member name (optional; who should do it)", "detail": "one short clause on why" } ]
 }
 Give 0-4 suggestions, only genuinely useful ones for today or the next day. Empty arrays are fine.`;
 
@@ -240,10 +243,12 @@ Give 0-4 suggestions, only genuinely useful ones for today or the next day. Empt
 // Weekly review for the House Manager tab — proposes a concrete plan of items
 // to complete for the rest of the week. Each item is typed so it can be added
 // to the living weekly plan (or straight to tasks/calendar/grocery).
-export async function reviewWeek({ family = [], notes = '', interests = '', today, events = '', chores = '', upkeep = '', groceries = '', plan = '' } = {}) {
+export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', upkeep = '', groceries = '', plan = '', meals = '', follow = '' } = {}) {
   const system = HM_ROLE(family) +
     ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
-    ' Also look OUTWARD: use web search to find 1-2 timely, real things this family would genuinely enjoy this week — a movie they\'d love playing nearby, a local event, a seasonal activity — matched to their interests and their open evenings. Include the real date, time, and venue from the search results, and only suggest what you actually verified. If nothing good is on, say nothing rather than padding.';
+    ' Also look OUTWARD: use web search to find 1-2 timely, real things this family would genuinely enjoy this week — a movie they\'d love playing nearby, a local event, a seasonal activity — matched to their interests and their open evenings. Include the real date, time, and venue from the search results, and only suggest what you actually verified. If nothing good is on, say nothing rather than padding.' +
+    ` Kids (${kids || 'none listed'}) don't use the app — when a chore genuinely fits one of them (age-appropriate: dishes, trash, room care, packing their own bags), suggest it with their name in "who" so the parents can assign it. One kid chore per review at most; this is help, not a chore chart.` +
+    ' FOLLOW-THROUGH: you get a log of your own past suggestions. Follow up ONCE, gently, on something that was added but never finished ("still want to get to X?"). NEVER re-suggest something the family has ignored twice — let it go unless it becomes genuinely urgent. Briefly acknowledge a win if something you suggested got done. No nagging, no guilt, no scorekeeping.';
   const prompt = `Today is ${today}. Propose a plan of what's worth getting done for the rest of this week — and anything fun worth planning around.
 
 HOUSEHOLD NOTES / PREFERENCES (background only — do not repeat back):
@@ -251,6 +256,12 @@ ${notes || '(none provided)'}
 
 FAMILY INTERESTS (for fun / outing ideas):
 ${interests || '(none listed — skip outing ideas)'}
+
+YOUR PAST SUGGESTIONS (follow-through log):
+${follow || '(no history yet)'}
+
+DINNERS PLANNED THIS WEEK:
+${meals || '(none planned)'}
 
 UPCOMING CALENDAR (next ~2 weeks):
 ${events || '(no calendar events available — Google Calendar may not be connected)'}
@@ -270,7 +281,7 @@ ${plan || '(nothing planned yet)'}
 Return JSON with exactly this shape:
 {
   "overview": "2-3 sentences reading the week and what to prioritize",
-  "planItems": [ { "title": "short imperative plan item", "detail": "one sentence: what, why, and roughly when", "suggestedType": "plan" | "task" | "appointment" | "grocery", "day": "YYYY-MM-DD (optional)" } ],
+  "planItems": [ { "title": "short imperative plan item", "detail": "one sentence: what, why, and roughly when", "suggestedType": "plan" | "task" | "appointment" | "grocery", "day": "YYYY-MM-DD (optional)", "who": "family member name (optional)" } ],
   "questions": ["a short question whose answer would sharpen the plan"]
 }
 Give 3-8 plan items, most time-sensitive first — quality over quantity; never pad with generic errands. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.`;
@@ -278,11 +289,42 @@ Give 3-8 plan items, most time-sensitive first — quality over quantity; never 
   return generateJSON({ system, prompt, maxTokens: 3000, tools: [webSearchTool()] });
 }
 
+// Dinner planner for the Manager tab — proposes dinners for the empty nights
+// ahead, fitted to the calendar (busy evening → quick meal) and the family's
+// standing food rules. Each proposal carries the ingredients so the family
+// can push what's missing onto the grocery list in one tap. No web search —
+// good weeknight cooking doesn't need it.
+export async function planMeals({ family = [], foodNotes = '', kids = '', today, events = '', existingMeals = '', groceries = '' } = {}) {
+  const system = HM_ROLE(family) + ` You are planning family dinners. Kids: ${kids || 'none listed'}. Fit each night's meal to that night's calendar — a packed evening gets a 20-minute meal or leftovers, an open weekend night can be a cooking project. Vary cuisines across the week. Real, normal meals a home cook actually makes — not restaurant fantasy.`;
+  const prompt = `Today is ${today}. Propose dinners for the nights ahead that don't have one planned yet (next 7 days).
+
+STANDING FOOD RULES:
+${foodNotes || '(none — use good judgment)'}
+
+DINNERS ALREADY PLANNED (skip these nights):
+${existingMeals || '(none yet — plan the whole week)'}
+
+EVENINGS ON THE CALENDAR (plan around these):
+${events || '(no calendar events available)'}
+
+ALREADY ON THE GROCERY LIST (prefer meals that use these):
+${groceries || '(empty)'}
+
+Return JSON with exactly this shape:
+{
+  "note": "one short line reading the week's cooking rhythm (optional)",
+  "meals": [ { "date": "YYYY-MM-DD", "title": "the dish, short (e.g. 'Sheet-pan lemon chicken & broccoli')", "detail": "1-2 sentences: quick how-to or why it fits that night", "ingredients": ["main ingredients someone would need to buy, 3-8 items, lowercase"] } ]
+}
+One meal per empty night, dated correctly. Empty arrays are fine.`;
+
+  return generateJSON({ system, prompt, maxTokens: 2400 });
+}
+
 // Free-form Q&A for the Manager tab — answers a question grounded in the
 // family's calendar, email, tasks, plan, and groceries. Returns a short
 // answer plus any concrete one-tap actions it wants to offer. `briefNote`
 // is a one-line version the family can pin to tomorrow's morning brief.
-export async function askManager({ family = [], notes = '', interests = '', today, weekday = '', question, events = '', email = '', chores = '', upkeep = '', groceries = '', plan = '' } = {}) {
+export async function askManager({ family = [], notes = '', interests = '', today, weekday = '', question, events = '', email = '', chores = '', upkeep = '', groceries = '', plan = '', meals = '' } = {}) {
   const system = HM_ROLE(family) + ' Answer the question directly and concretely from the family data below. If the question needs current outside information (showtimes, local events, hours, weather, news), use web search and cite real dates/times/venues from what you find. If neither the data nor a search answers it, say so plainly rather than guessing. Keep the answer to a few sentences.';
   const prompt = `Today is ${weekday} ${today}. Answer this question for the family:
 
@@ -308,6 +350,9 @@ ${groceries || '(empty)'}
 
 WEEKLY PLAN:
 ${plan || '(nothing planned)'}
+
+DINNERS PLANNED:
+${meals || '(none planned)'}
 
 Return JSON with exactly this shape:
 {
