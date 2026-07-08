@@ -27,7 +27,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v35';
+const APP_VERSION = 'v36';
 
 // ---------- theme ----------
 
@@ -204,16 +204,36 @@ async function renderSettings(root) {
   root.append(
     el('header', { class: 'view-head' }, [el('h1', {}, 'Settings')]),
 
-    el('section', { class: 'panel' }, [
-      el('h4', {}, 'This device'),
+    // ----- you & this device: identity + look, purely local, no sync -----
+    disclosure('This device', el('section', { class: 'panel' }, [
       el('label', { class: 'field-label' }, 'Your name (stamps who added/did what)'),
       deviceNameInput,
       el('label', { class: 'field-label' }, 'Errand day(s) — when the grocery list surfaces'),
       dayRow,
-    ]),
+    ]), { open: true }),
 
-    el('section', { class: 'panel' }, [
-      el('h4', {}, 'Family & meeting'),
+    disclosure('Appearance', el('section', { class: 'panel' }, [
+      el('div', { class: 'seg' }, [
+        themeBtn('auto', 'Auto'),
+        themeBtn('light', 'Light'),
+        themeBtn('dark', 'Dark'),
+      ]),
+      el('label', { class: 'field-label' }, 'Accent color'),
+      el('div', { class: 'accent-row' }, ACCENTS.map((a) =>
+        el('button', {
+          class: 'accent-dot accent-' + a + ((s.accent || 'blue') === a ? ' active' : ''),
+          title: a,
+          onclick: () => {
+            saveSettings({ accent: a });
+            applyTheme();
+            renderSettings(root);
+          },
+        })
+      )),
+    ])),
+
+    // ----- the household: who's in it, and when it meets -----
+    disclosure('Family & meeting', el('section', { class: 'panel' }, [
       el('label', { class: 'field-label' }, 'Family members (comma-separated)'),
       familyInput,
       el('p', { class: 'muted small', style: 'margin: 14px 0 4px; font-weight: 600' }, 'Family meeting — kids included, icebreakers + fun family connections'),
@@ -228,10 +248,10 @@ async function renderSettings(root) {
       ]),
       el('label', { class: 'field-label' }, 'Admin attendees'),
       adminAttendeesInput,
-    ]),
+    ])),
 
-    el('section', { class: 'panel' }, [
-      el('h4', {}, 'Claudia — AI house manager (optional)'),
+    // ----- Claudia: her config, then what she's learned -----
+    disclosure('Claudia — AI house manager (optional)', el('section', { class: 'panel' }, [
       el('label', { class: 'field-label' }, 'Claude API key (stored only on this device)'),
       apiKey,
       el('label', { class: 'field-label' }, 'Notes for the assistant (habits, preferences)'),
@@ -245,12 +265,12 @@ async function renderSettings(root) {
       el('label', { class: 'field-label' }, 'Kids & ages — for age-fit task ideas'),
       kidsInput,
       el('p', { class: 'muted small' }, 'Claudia (powered by Claude) runs the daily brief, weekly review, dinner plans, meeting drafts, and Ask. Notes are background context so her ideas fit your family; interests + city let her search the web for real nearby things — a movie you’d love this week, local events — with actual dates and times. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
-    ]),
+    ])),
 
     memorySection(s, memory),
 
-    el('section', { class: 'panel' }, [
-      el('h4', {}, 'Google (Calendar + Email, optional)'),
+    // ----- integrations -----
+    disclosure('Google (Calendar + Email, optional)', el('section', { class: 'panel' }, [
       el('div', { class: 'sync-status' }, [
         el('span', { class: 'sync-dot ' + (gcalConnected() ? 'on' : 'off') }),
         el('span', { class: 'muted' }, gcalConnected()
@@ -294,38 +314,17 @@ async function renderSettings(root) {
             },
           }, gcalEverConnected() ? 'Reconnect Google (one tap)' : 'Connect Google Calendar'),
       el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs, plus read-only access to recent Gmail so Claudia can factor email into your morning brief and answers. The app can only read — it never changes your calendar or sends mail. Google access expires hourly, but the app renews it silently in the background — you should only need to sign in again after clearing browser data or on a new device.'),
-    ]),
+    ])),
 
-    el('section', { class: 'panel' }, [
-      el('h4', {}, 'Appearance'),
-      el('div', { class: 'seg' }, [
-        themeBtn('auto', 'Auto'),
-        themeBtn('light', 'Light'),
-        themeBtn('dark', 'Dark'),
-      ]),
-      el('label', { class: 'field-label' }, 'Accent color'),
-      el('div', { class: 'accent-row' }, ACCENTS.map((a) =>
-        el('button', {
-          class: 'accent-dot accent-' + a + ((s.accent || 'blue') === a ? ' active' : ''),
-          title: a,
-          onclick: () => {
-            saveSettings({ accent: a });
-            applyTheme();
-            renderSettings(root);
-          },
-        })
-      )),
-    ]),
-
-    el('section', { class: 'panel' }, [
-      el('h4', {}, 'Household sync'),
+    // ----- sync infrastructure + actions -----
+    disclosure('Household sync', el('section', { class: 'panel' }, [
       el('div', { class: 'sync-status' }, [status, statusText]),
       el('label', { class: 'field-label' }, 'GitHub token (gist scope)'),
       gistToken,
       el('label', { class: 'field-label' }, 'Gist ID'),
       gistId,
       el('p', { class: 'muted small' }, 'One private Gist for the household — configure the SAME token and Gist ID on both phones and everything merges. Deletions stay deleted (tombstones).'),
-    ]),
+    ])),
 
     el('div', { class: 'settings-actions' }, [
       el('button', { class: 'btn btn-primary', onclick: onSave }, 'Save'),
@@ -340,11 +339,11 @@ async function renderSettings(root) {
 
   tableOfContents(root, [
     { label: 'Device', at: 'This device' },
+    { label: 'Theme', at: 'Appearance' },
     { label: 'Family', at: 'Family & meeting' },
     { label: 'Claudia', at: 'Claudia' },
     { label: 'Memory', at: 'What Claudia knows' },
     { label: 'Google', at: 'Google' },
-    { label: 'Theme', at: 'Appearance' },
     { label: 'Sync', at: 'Household sync' },
     { label: 'Debug', at: 'Diagnostics' },
   ]);

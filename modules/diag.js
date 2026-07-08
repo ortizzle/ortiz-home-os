@@ -5,7 +5,7 @@
 // eviction, and what the synced Gist actually contains right now.
 
 import { getAll, getSettings, uid } from './store.js';
-import { el, toast, todayStr } from './ui.js';
+import { el, toast, todayStr, disclosure } from './ui.js';
 
 async function openRawDb() {
   return new Promise((resolve, reject) => {
@@ -152,10 +152,9 @@ export function diagnosticsSection(appVersion) {
     },
   }, 'Run diagnostics');
 
-  return el('section', { class: 'panel' }, [
-    el('h4', {}, 'Diagnostics'),
+  return disclosure('Diagnostics', el('section', { class: 'panel' }, [
     el('p', { class: 'muted small' }, 'If something looks off — a vanished review, missing sync — run this and copy the report. It checks this phone’s storage, the backup mirror, and what the shared sync file actually contains.'),
     el('div', { class: 'settings-actions' }, [runBtn, copyBtn]),
     out,
-  ]);
+  ]));
 }
