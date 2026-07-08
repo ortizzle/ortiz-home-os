@@ -143,23 +143,20 @@ export async function renderChores(root) {
     root.append(disclosure(`Done (${done.length})`, el('section', { class: 'panel' }, done.slice(0, 20).map((c) => choreRow(c, { onchange: rerender })))));
   }
 
-  // ----- Keep paste-import (Kat's list bridge) -----
+  // ----- Keep paste-import (Kat's list bridge) — collapsed: occasional use -----
   const importArea = el('textarea', { class: 'input', rows: 4, placeholder: 'Paste a to-do list from Google Keep — one item per line.\nBullets and checkboxes are fine.' });
-  root.append(
-    el('h4', { class: 'group-heading' }, 'Import from Keep'),
-    el('section', { class: 'panel import-box' }, [
-      importArea,
-      el('button', {
-        class: 'btn',
-        onclick: async () => {
-          const names = parseImport(importArea.value);
-          if (!names.length) return toast('Nothing to import', 'warn');
-          for (const name of names) await put('chores', { title: name, done: false });
-          toast(`Imported ${names.length} task${names.length === 1 ? '' : 's'}`, 'success');
-          rerender();
-        },
-      }, 'Import as tasks'),
-      el('p', { class: 'muted small' }, 'Keep has no API for personal accounts, so this paste box is the bridge. Copy a Keep note, paste here, and each line becomes a task.'),
-    ])
-  );
+  root.append(disclosure('Import from Keep', el('section', { class: 'panel import-box' }, [
+    importArea,
+    el('button', {
+      class: 'btn',
+      onclick: async () => {
+        const names = parseImport(importArea.value);
+        if (!names.length) return toast('Nothing to import', 'warn');
+        for (const name of names) await put('chores', { title: name, done: false });
+        toast(`Imported ${names.length} task${names.length === 1 ? '' : 's'}`, 'success');
+        rerender();
+      },
+    }, 'Import as tasks'),
+    el('p', { class: 'muted small' }, 'Keep has no API for personal accounts, so this paste box is the bridge. Copy a Keep note, paste here, and each line becomes a task.'),
+  ])));
 }

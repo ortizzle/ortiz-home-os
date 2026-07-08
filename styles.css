@@ -359,10 +359,18 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .task-row.done .task-name { text-decoration: line-through; color: var(--text-3); }
 .task-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .task-meta .pill { font-size: 11px; padding: 2px 8px; }
-.group-heading { margin: 20px 0 6px; }
+.group-heading {
+  margin: 20px 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-2);
+}
 .group-heading:first-child { margin-top: 0; }
-/* Reusable collapsible section — see ui.js disclosure(). Works with either
-   a .group-heading or a .panel-head summary (Settings uses the latter). */
+/* Reusable collapsible section — see ui.js disclosure(). A <summary> doesn't
+   pick up the h4 tag styling above, so .group-heading carries the same look
+   (and bolder, since it's now also the tappable affordance) explicitly. */
 .disclosure summary {
   cursor: pointer;
   list-style: none;

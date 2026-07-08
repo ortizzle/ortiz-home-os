@@ -223,6 +223,16 @@ function toAppt(ev) {
   };
 }
 
+// Shared identity key for de-duping the same appointment appearing from
+// multiple sources — content-based (title+date+time) rather than Google's
+// iCalUID, so it also catches an event copied (not shared/invited) into more
+// than one selected calendar, or a local appointment that predates Google
+// being connected. Used both across calendars here and against local
+// appointments in calendar.js's appointmentsFor().
+export function apptKey(a) {
+  return `${(a.title || '').trim().toLowerCase()}|${a.date}|${a.allDay ? 'allday' : (a.startTime || '')}`;
+}
+
 async function apiGet(url) {
   const t = readToken();
   if (!t) throw new GcalError('Not connected to Google Calendar', 'not-connected');
@@ -303,10 +313,11 @@ export async function eventsForRange(start, end, { force = false } = {}) {
   const timeMin = new Date(`${start}T00:00:00`).toISOString();
   const timeMax = new Date(`${end}T00:00:00`).toISOString();
   const out = [];
-  // De-dupe the same event appearing on multiple selected calendars (e.g. a
-  // family event that's also on your personal calendar as an attendee). Key on
-  // Google's stable iCalUID PLUS the instance start, so cross-calendar copies
-  // collapse while distinct events and each day of a recurring series survive.
+  // De-dupe the same event appearing on multiple selected calendars — both a
+  // true shared/invited event (same iCalUID on each calendar) AND a plain
+  // copy-pasted duplicate (different id/iCalUID, identical title+date+time).
+  // Content-based apptKey() catches both; distinct events and each day of a
+  // recurring series still have different keys, so those survive untouched.
   const seen = new Set();
   for (const cal of getSelectedCalendars()) {
     try {
@@ -318,7 +329,7 @@ export async function eventsForRange(start, end, { force = false } = {}) {
       for (const ev of data.items || []) {
         const a = toAppt(ev);
         if (!a) continue;
-        const dedupeKey = `${ev.iCalUID || ev.id}|${a.date}|${a.startTime || ''}`;
+        const dedupeKey = apptKey(a);
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         out.push(a);

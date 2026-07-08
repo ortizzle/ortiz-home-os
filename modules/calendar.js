@@ -7,7 +7,7 @@
 import { getAll, put, remove } from './store.js';
 import { el, clear, toast, navigate, openModal, todayStr, addDays, parseDate, dateStr, fmtDay, onSwipe, preserveScroll } from './ui.js';
 import { choreRow, editChoreModal } from './chores.js';
-import { isConnected, everConnected, connect, eventsForRange, GcalError, canWrite, writableCalendars, createEvent, getWriteCalendar, setWriteCalendar } from './gcal.js';
+import { isConnected, everConnected, connect, eventsForRange, GcalError, canWrite, writableCalendars, createEvent, getWriteCalendar, setWriteCalendar, apptKey } from './gcal.js';
 
 // A "Connect Google Calendar" prompt, shown when not yet connected. First
 // connect shows Google's consent; after that (session merely expired and the
@@ -45,14 +45,14 @@ export async function appointmentsFor(start, end) {
   ]);
   const base = connected ? stored.filter((a) => a.source !== 'gcal') : stored;
   // De-dupe a local appointment against a live Google event with the same
-  // title/date/time — catches leftover copies from before Google was
-  // connected (or the old weekly mirror) now shadowed by the live one. Live
-  // wins, since it reflects the real calendar; genuinely distinct events
-  // (different titles/times) are untouched either way.
-  const key = (a) => `${(a.title || '').trim().toLowerCase()}|${a.date}|${a.allDay ? 'allday' : (a.startTime || '')}`;
-  const seen = new Set(live.map(key));
+  // title/date/time (shared apptKey — see gcal.js, which uses the same key
+  // to de-dupe the live events across multiple selected calendars too) —
+  // catches leftover copies from before Google was connected (or the old
+  // weekly mirror) now shadowed by the live one. Live wins, since it reflects
+  // the real calendar; genuinely distinct events are untouched either way.
+  const seen = new Set(live.map(apptKey));
   const dedupedBase = base.filter((a) => {
-    const k = key(a);
+    const k = apptKey(a);
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
