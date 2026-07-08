@@ -38,11 +38,17 @@ function gcalConnectBar(rerender) {
 // double up); when NOT connected, the mirror stays visible as a fallback so
 // nobody loses their calendar before they've tapped Connect.
 export async function appointmentsFor(start, end) {
-  const connected = isConnected();
+  // eventsForRange() checks the connection itself and self-heals with a
+  // silent token renewal when needed — gating the call on isConnected() here
+  // (checked before that renewal has a chance to run) used to skip straight
+  // to "no live events" for this render, even though the very same renewal
+  // would succeed a moment later. Check isConnected() AFTER awaiting it below
+  // so `connected` reflects the renewed state, not the pre-renewal snapshot.
   const [stored, live] = await Promise.all([
     getAll('appointments'),
-    connected ? eventsForRange(start, end).catch(() => []) : Promise.resolve([]),
+    eventsForRange(start, end).catch(() => []),
   ]);
+  const connected = isConnected();
   const base = connected ? stored.filter((a) => a.source !== 'gcal') : stored;
   // De-dupe a local appointment against a live Google event with the same
   // title/date/time (shared apptKey — see gcal.js, which uses the same key

@@ -5,7 +5,7 @@
 
 import { getAll, get, put, remove as removeRec } from './store.js';
 import { addDays, fmtDay, todayStr } from './ui.js';
-import { isConnected, eventsForRange, canReadEmail, gmailRecent } from './gcal.js';
+import { eventsForRange, canReadEmail, gmailRecent } from './gcal.js';
 import { STORES } from './grocery.js';
 
 // The family's habits/preferences, fed to the house-manager AI. Editable in
@@ -233,7 +233,13 @@ export async function gatherContext({ start, days, email = false }) {
     getAll('plan'),
     getAll('meals'),
   ]);
-  const events = isConnected() ? await eventsForRange(start, addDays(start, days)).catch(() => []) : [];
+  // eventsForRange() already checks the connection and self-heals with a
+  // silent token renewal if needed — an outer isConnected() gate here would
+  // skip straight to "no events" without giving that renewal a chance, which
+  // is exactly how the daily brief used to get cached (for the whole day,
+  // shared with Kat) claiming "nothing on the calendar" moments before a
+  // renewal landed and the real calendar reappeared everywhere else.
+  const events = await eventsForRange(start, addDays(start, days)).catch(() => []);
   const emails = email && canReadEmail() ? await gmailRecent({ days: 7 }).catch(() => []) : [];
 
   const eventsText = events
