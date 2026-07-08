@@ -21,13 +21,13 @@ import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestio
 import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { diagnosticsSection } from './modules/diag.js';
-import { el, clear, toast, navigate, openModal, todayStr, fmtDay, tableOfContents, disclosure } from './modules/ui.js';
+import { el, clear, toast, navigate, openModal, todayStr, fmtDay, disclosure } from './modules/ui.js';
 
 const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v37';
+const APP_VERSION = 'v38';
 
 // ---------- theme ----------
 
@@ -336,17 +336,6 @@ async function renderSettings(root) {
 
     el('p', { class: 'muted small center', style: 'margin-top: 18px' }, `Ortiz Home OS ${APP_VERSION}`)
   );
-
-  tableOfContents(root, [
-    { label: 'Device', at: 'This device' },
-    { label: 'Theme', at: 'Appearance' },
-    { label: 'Family', at: 'Family & meeting' },
-    { label: 'Claudia', at: 'Claudia' },
-    { label: 'Memory', at: 'What Claudia knows' },
-    { label: 'Google', at: 'Google' },
-    { label: 'Sync', at: 'Household sync' },
-    { label: 'Debug', at: 'Diagnostics' },
-  ]);
 
   async function onSave() {
     saveSettings({
