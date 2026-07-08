@@ -1,11 +1,16 @@
 // chores.js — one-off household tasks: due date, assignee. Same interaction
 // grammar as Focus OS tasks.
 
-import { getAll, put, remove, now, deviceName } from './store.js';
+import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
 import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure } from './ui.js';
 import { parseImport } from './grocery.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+function familyMembers() {
+  const raw = getSettings().familyMembers || 'Chris, Kat, Sedona, River';
+  return raw.split(',').map((s) => s.trim()).filter(Boolean);
+}
 
 export async function getOpenChores() {
   const chores = await getAll('chores');
@@ -55,7 +60,13 @@ export async function editChoreModal(chore, onchange) {
 
   const title = el('input', { class: 'input', placeholder: 'What needs doing?', value: c.title || '' });
   const due = el('input', { class: 'input', type: 'date', value: c.dueDate || '' });
-  const assignee = el('input', { class: 'input', placeholder: 'Anyone', value: c.assignee || '' });
+  const familyOpts = familyMembers();
+  const assignee = el('select', { class: 'input' }, [
+    el('option', { value: '' }, 'Anyone'),
+    ...familyOpts.map((name) => el('option', { value: name, selected: c.assignee === name ? 'selected' : null }, name)),
+    // an old/custom assignee not in the current family list — keep it selectable so editing doesn't silently clear it
+    c.assignee && !familyOpts.includes(c.assignee) ? el('option', { value: c.assignee, selected: 'selected' }, c.assignee) : null,
+  ]);
 
   const actions = [
     !isNew &&
@@ -78,7 +89,7 @@ export async function editChoreModal(chore, onchange) {
           ...c,
           title: name,
           dueDate: due.value || null,
-          assignee: assignee.value.trim() || null,
+          assignee: assignee.value || null,
           done: c.done || false,
         });
         m.close();
