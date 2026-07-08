@@ -3,9 +3,6 @@
 // it should feel attentive, not clever. Calendar-driven triggers arrive in
 // v1.5; a Claude-powered advisor is a v2 decision.
 
-import { todayStr, addDays, fmtDue } from './ui.js';
-import { nextDue } from './maintenance.js';
-
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 // Is today or tomorrow an errand day? Returns null, 'today', or 'tomorrow'.
@@ -17,12 +14,11 @@ export function errandWindow(settings) {
   return null;
 }
 
-export function buildSuggestions({ maintenance = [], chores = [], groceries = [], appointments = [], settings = {} }) {
+export function buildSuggestions({ chores = [], groceries = [], appointments = [], settings = {} }) {
   const out = [];
-  const today = todayStr();
   const openGroceries = groceries.filter((g) => !g.gotAt);
 
-  // 1. Errand day + open grocery items → the Costco nudge.
+  // Errand day + open grocery items → the Costco nudge.
   const win = errandWindow(settings);
   if (win && openGroceries.length) {
     out.push({
@@ -30,38 +26,6 @@ export function buildSuggestions({ maintenance = [], chores = [], groceries = []
       text: `${DAY_NAMES[new Date().getDay() + (win === 'tomorrow' ? 1 : 0)] || 'Errand day'} is errand day ${win} — ${openGroceries.length} item${openGroceries.length === 1 ? '' : 's'} on the list`,
       hash: '#/grocery',
       go: 'View list',
-    });
-  }
-
-  // 2. Overdue maintenance → schedule or do it.
-  for (const it of maintenance.filter((m) => nextDue(m) < today).slice(0, 2)) {
-    const days = Math.round((new Date(today) - new Date(nextDue(it))) / 86400000);
-    out.push({
-      urgent: true,
-      text: `${it.title} is ${days} day${days === 1 ? '' : 's'} overdue`,
-      hash: '#/manager',
-      go: 'Manager',
-    });
-  }
-
-  // 3. Maintenance due within 7 days → heads-up.
-  for (const it of maintenance.filter((m) => nextDue(m) >= today && nextDue(m) <= addDays(today, 7)).slice(0, 2)) {
-    out.push({
-      urgent: false,
-      text: `${it.title} due ${fmtDue(nextDue(it))}`,
-      hash: '#/manager',
-      go: 'Manager',
-    });
-  }
-
-  // 4. Vendor-linked chore with no date → it'll never happen on its own.
-  const dateless = chores.find((c) => !c.done && c.vendorId && !c.dueDate);
-  if (dateless) {
-    out.push({
-      urgent: false,
-      text: `“${dateless.title}” has a vendor but no date — pick one`,
-      hash: '#/tasks',
-      go: 'Tasks',
     });
   }
 

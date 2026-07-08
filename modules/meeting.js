@@ -1,10 +1,10 @@
-// meeting.js — the weekly family meeting. A space to review the week ahead,
-// keep a running agenda, and (optionally) have Claude review the agenda and
-// suggest how to structure a good meeting. The Ortizes meet Wednesdays.
+// meeting.js — the weekly family meeting: pick Family (kids included, fun
+// + togetherness) or Admin (Chris + Kat, household ops), keep a running
+// agenda, and have Claude draft or review it. No calendar summary here —
+// Calendar is the place for that; this stays focused on the agenda + draft.
 
 import { getAll, put, remove, getSettings, deviceName } from './store.js';
-import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtDay } from './ui.js';
-import { getMaintenance, nextDue } from './maintenance.js';
+import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtDay, shareText } from './ui.js';
 import { appointmentsFor } from './calendar.js';
 import { errandWindow } from './suggest.js';
 import { hasApiKey, reviewFamilyMeeting, draftMeeting, AIError } from './ai.js';
@@ -12,6 +12,12 @@ import { DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+
+// Meeting type — per device, remembers your last choice. Family = Wednesday-
+// style, kids included; Admin = Chris + Kat, household ops.
+const MEETING_TYPE_KEY = 'ohos.meetingType';
+function getMeetingType() { return localStorage.getItem(MEETING_TYPE_KEY) === 'admin' ? 'admin' : 'family'; }
+function setMeetingType(t) { localStorage.setItem(MEETING_TYPE_KEY, t === 'admin' ? 'admin' : 'family'); }
 
 function to12h(t) {
   if (!t) return '';
@@ -65,15 +71,15 @@ function nextMeetingDate() {
   return addDays(todayStr(), delta); // addDays returns a YYYY-MM-DD string
 }
 
-// Gather the next 7 days of household activity, as records + a text summary
-// for the AI. Kept deterministic so the "week ahead" panel works with no key.
+// Gather the next 7 days of household activity into a text summary for
+// Claude to draft from. Not shown as its own panel (Calendar already covers
+// that) — this is purely AI context now.
 async function gatherWeekAhead() {
   const today = todayStr();
   const end = addDays(today, 7);
-  const [appointments, chores, maintenance, groceries] = await Promise.all([
+  const [appointments, chores, groceries] = await Promise.all([
     appointmentsFor(today, end),
     getAll('chores'),
-    getMaintenance(),
     getAll('groceries'),
   ]);
 
@@ -83,7 +89,6 @@ async function gatherWeekAhead() {
   const dueChores = chores
     .filter((c) => c.dueDate && c.dueDate >= today && c.dueDate < end && !c.done)
     .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
-  const dueMaint = maintenance.filter((m) => nextDue(m) >= today && nextDue(m) < end);
   const openGroceries = groceries.filter((g) => !g.gotAt);
   const win = errandWindow(getSettings());
 
@@ -98,18 +103,14 @@ async function gatherWeekAhead() {
     for (const r of recurring) lines.push(`  - ${r.title} (${r.range}${r.startTime ? ', ' + to12h(r.startTime) : ''})`);
   }
   if (dueChores.length) {
-    lines.push('Chores due:');
+    lines.push('Tasks due:');
     for (const c of dueChores) lines.push(`  - ${fmtDay(c.dueDate)}: ${c.title}${c.assignee ? ` (${c.assignee})` : ''}`);
-  }
-  if (dueMaint.length) {
-    lines.push('Home upkeep due:');
-    for (const m of dueMaint) lines.push(`  - ${fmtDay(nextDue(m))}: ${m.title}`);
   }
   if (openGroceries.length) {
     lines.push(`Grocery list: ${openGroceries.length} open item${openGroceries.length === 1 ? '' : 's'}${win ? ` (errand day is ${win})` : ''}.`);
   }
 
-  return { appts, dueChores, dueMaint, openGroceries, summary: lines.join('\n') };
+  return { appts, dueChores, openGroceries, summary: lines.join('\n') };
 }
 
 function agendaRow(item, rerender) {
@@ -159,27 +160,19 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
     root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'Family Meeting'), el('p', { class: 'muted' }, meta)]));
   }
 
-  // ----- the week ahead (deterministic; no API key needed) -----
-  // One-offs are what the family actually needs to talk about; daily-recurring
-  // events (camps, lessons) collapse to a single line so they don't drown them.
-  const { oneoffs, recurring } = collapseAppts(week.appts);
-  root.append(el('div', { class: 'panel-head' }, [el('h4', {}, 'The week ahead')]));
-  const weekItems = [];
-  for (const a of oneoffs) weekItems.push(el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, `${fmtDay(a.date)}${a.startTime ? ' · ' + to12h(a.startTime) : ''}`), el('span', { class: 'event-title' }, [a.title, a.who ? el('span', { class: 'event-who' }, `· ${a.who}`) : null])]));
-  for (const c of week.dueChores) weekItems.push(el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, fmtDay(c.dueDate)), el('span', { class: 'event-title' }, `○ ${c.title}`)]));
-  for (const m of week.dueMaint) weekItems.push(el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, fmtDay(nextDue(m))), el('span', { class: 'event-title' }, `⟳ ${m.title}`)]));
-  if (week.openGroceries.length) weekItems.push(el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, 'Groceries'), el('span', { class: 'event-title' }, `${week.openGroceries.length} open item${week.openGroceries.length === 1 ? '' : 's'}`)]));
-  root.append(el('section', { class: 'panel' }, weekItems.length ? weekItems : [el('p', { class: 'muted small' }, 'Nothing scheduled in the next 7 days.')]));
-
-  // Recurring (daily/repeating) — collapsed to one line each, muted below.
-  if (recurring.length) {
-    root.append(
-      el('div', { class: 'panel-head' }, [el('h4', {}, 'Also recurring this week')]),
-      el('section', { class: 'panel' }, recurring.map((r) =>
-        el('div', { class: 'event-row' }, [el('span', { class: 'event-time' }, r.range), el('span', { class: 'event-title muted' }, `${r.title}${r.startTime ? ` · ${to12h(r.startTime)}` : ''}`)])
-      ))
-    );
-  }
+  // ----- meeting type: Family (kids, fun) or Admin (Chris + Kat, household ops) -----
+  let type = getMeetingType();
+  const typeBtn = (t, label) =>
+    el('button', {
+      class: 'btn seg-btn' + (type === t ? ' active' : ''),
+      onclick: (e) => {
+        type = t;
+        setMeetingType(t);
+        e.currentTarget.parentElement.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('active', b === e.currentTarget));
+        draftBtn.textContent = draftLabel();
+      },
+    }, label);
+  root.append(el('div', { class: 'seg' }, [typeBtn('family', 'Family'), typeBtn('admin', 'Admin')]));
 
   // ----- agenda -----
   const input = el('input', { class: 'input', placeholder: 'Add an agenda item…' });
@@ -203,6 +196,7 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   // ----- Claude: draft the meeting / review the agenda -----
   root.append(el('div', { class: 'panel-head' }, [el('h4', {}, 'Plan with Claudia')]));
   const resultHost = el('div', {});
+  const draftLabel = () => `Draft the ${type === 'admin' ? 'Admin' : 'Family'} meeting`;
 
   const draftBtn = el('button', {
     class: 'btn btn-primary full',
@@ -211,6 +205,7 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
         toast('Add a Claude API key in Settings first', 'warn');
         return navigate('#/settings');
       }
+      const label = draftLabel();
       draftBtn.disabled = 'disabled';
       draftBtn.textContent = 'Drafting…';
       clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is drafting your meeting…')]));
@@ -228,16 +223,17 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
           weekAhead: week.summary,
           openItems,
           currentAgenda,
+          type,
         });
-        renderDraft(resultHost, out, rerender);
+        renderDraft(resultHost, out, rerender, { type, meetingDate: fmtDay(meetingDate) });
       } catch (err) {
         clear(resultHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
       } finally {
         draftBtn.disabled = null;
-        draftBtn.textContent = 'Draft the meeting';
+        draftBtn.textContent = label;
       }
     },
-  }, 'Draft the meeting');
+  }, draftLabel());
 
   const reviewBtn = el('button', {
     class: 'btn full',
@@ -303,7 +299,28 @@ function agendaAddBtn(text) {
   return el('div', { class: 'hm-actions' }, [btn]);
 }
 
-function renderDraft(host, out, _rerender) {
+// Plain-text version of the draft, for Copy / Share (paste into email,
+// Notes, Google Docs, wherever) — no in-app formatting needed elsewhere.
+function draftToText(out, { type, meetingDate } = {}) {
+  const lines = [`${type === 'admin' ? 'Admin' : 'Family'} meeting${meetingDate ? ` — ${meetingDate}` : ''}`, ''];
+  if (out.draftAgenda?.length) {
+    lines.push('Agenda:');
+    for (const s of out.draftAgenda) lines.push(`- ${s.topic}${s.why ? ` (${s.why})` : ''}`);
+    lines.push('');
+  }
+  if (out.icebreakers?.length) {
+    lines.push('Icebreakers:');
+    for (const t of out.icebreakers) lines.push(`- ${t}`);
+    lines.push('');
+  }
+  if (out.activities?.length) {
+    lines.push('Activities:');
+    for (const t of out.activities) lines.push(`- ${t}`);
+  }
+  return lines.join('\n').trim();
+}
+
+function renderDraft(host, out, rerender, ctx = {}) {
   clear(host);
   const section = (title, node) => el('div', { class: 'meeting-section' }, [el('h5', {}, title), node]);
 
@@ -334,7 +351,16 @@ function renderDraft(host, out, _rerender) {
   }
   if (!host.children.length) {
     host.append(el('p', { class: 'muted small' }, 'Claudia didn’t have a draft to add — try jotting a few week notes above.'));
+    return;
   }
+  // Share/copy the whole draft as plain text — paste into email, Notes,
+  // Google Docs, wherever. Native share sheet first, clipboard fallback.
+  host.append(
+    el('button', {
+      class: 'btn full', style: 'margin-top: 10px',
+      onclick: () => shareText({ title: 'Family meeting draft', text: draftToText(out, ctx) }),
+    }, '📤 Share / copy draft')
+  );
 }
 
 function bulletList(items) {

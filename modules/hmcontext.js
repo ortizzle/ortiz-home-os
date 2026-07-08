@@ -5,7 +5,6 @@
 
 import { getAll, get, put, remove as removeRec } from './store.js';
 import { addDays, fmtDay, todayStr } from './ui.js';
-import { getMaintenance, nextDue, dueState } from './maintenance.js';
 import { isConnected, eventsForRange, canReadEmail, gmailRecent } from './gcal.js';
 import { STORES } from './grocery.js';
 
@@ -205,10 +204,9 @@ export function emailText(emails) {
 // bound the calendar window pulled from the live Google overlay. Pass
 // `email: true` to also pull recent Gmail (when the scope was granted).
 export async function gatherContext({ start, days, email = false }) {
-  const [chores, groceries, maintenance, plan, meals] = await Promise.all([
+  const [chores, groceries, plan, meals] = await Promise.all([
     getAll('chores'),
     getAll('groceries'),
-    getMaintenance(),
     getAll('plan'),
     getAll('meals'),
   ]);
@@ -222,7 +220,6 @@ export async function gatherContext({ start, days, email = false }) {
     .join('\n');
 
   const choresText = chores.filter((c) => !c.done).map((c) => `- ${c.title}${c.dueDate ? ` (due ${c.dueDate})` : ''}`).join('\n');
-  const upkeepText = maintenance.filter((m) => dueState(m) !== 'ok').map((m) => `- ${m.title} (due ${nextDue(m)})`).join('\n');
 
   const byStore = {};
   for (const g of groceries.filter((x) => !x.gotAt)) { const s = g.store || STORES[0]; (byStore[s] ||= []).push(g.name); }
@@ -236,5 +233,5 @@ export async function gatherContext({ start, days, email = false }) {
     .sort((a, b) => (a.date < b.date ? -1 : 1));
   const mealsText = mealsInRange.map((m) => `- ${fmtDay(m.date)}: ${m.title}`).join('\n');
 
-  return { events, eventsText, choresText, upkeepText, groceriesText, planText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
+  return { events, eventsText, choresText, groceriesText, planText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
 }

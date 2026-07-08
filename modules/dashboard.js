@@ -1,13 +1,12 @@
 // dashboard.js — Home: the household's shared "today". Suggestions from the
-// rule engine, the errand-day banner, today's chores + appointments, an
-// upkeep snapshot, and quick capture. Counts and due-dates only — no
-// streaks, no scores (a household app that scores spouses is a divorce app).
+// rule engine, the errand-day banner, today's chores + appointments, and
+// quick capture. Counts and due-dates only — no streaks, no scores (a
+// household app that scores spouses is a divorce app).
 
 import { getAll, put, getSettings } from './store.js';
 import { el, clear, navigate, toast, todayStr, addDays, fmtDay } from './ui.js';
 import { choreRow } from './chores.js';
 import { addGroceryItem } from './grocery.js';
-import { getMaintenance } from './maintenance.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
 import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions } from './hmcontext.js';
@@ -31,14 +30,11 @@ export async function renderDashboard(root) {
   const settings = getSettings();
 
   const tomorrow = addDays(today, 1);
-  const [chores, groceries, apptsWeek, maintenance, vendors] = await Promise.all([
+  const [chores, groceries, apptsWeek] = await Promise.all([
     getAll('chores'),
     getAll('groceries'),
     appointmentsFor(today, addDays(today, 7)), // next 7 days (live + stored)
-    getMaintenance(),
-    getAll('vendors'),
   ]);
-  const vendorById = Object.fromEntries(vendors.map((v) => [v.id, v]));
 
   const byTime = (a, b) => ((a.allDay ? '' : a.startTime || '') < (b.allDay ? '' : b.startTime || '') ? -1 : 1);
   const openGroceries = groceries.filter((g) => !g.gotAt);
@@ -85,7 +81,7 @@ export async function renderDashboard(root) {
   }
 
   // ----- suggestions (instant, rule-based) -----
-  const suggestions = buildSuggestions({ maintenance, chores, groceries, appointments: apptsWeek, settings })
+  const suggestions = buildSuggestions({ chores, groceries, appointments: apptsWeek, settings })
     // the banner already covers the errand rule when it fires
     .filter((s) => !(win && s.hash === '#/grocery'));
   if (suggestions.length) {
@@ -156,7 +152,7 @@ export async function renderDashboard(root) {
     ]),
     el('section', { class: 'panel' }, [
       ...todayAppts.map((a) => apptRow(a, rerender)),
-      ...todayList.map((c) => choreRow(c, { onchange: rerender, vendorById })),
+      ...todayList.map((c) => choreRow(c, { onchange: rerender })),
       !todayAppts.length && !todayList.length
         ? el('p', { class: 'muted small' }, 'Clear day. Capture something above, or enjoy it.')
         : null,
@@ -236,7 +232,6 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
       weekday,
       events: ctx.eventsText,
       chores: ctx.choresText,
-      upkeep: ctx.upkeepText,
       groceries: ctx.groceriesText,
       meals: ctx.mealsText,
       email: ctx.emailsText,

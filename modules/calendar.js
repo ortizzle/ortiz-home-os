@@ -1,12 +1,12 @@
-// calendar.js — day and week views: appointments, chores due, and
-// maintenance falling due. Ported from Focus OS. Month view: not in v1.
-// Google Calendar read-overlay is planned for v1.5 — keep rendering
-// composable so overlay events can slot into these same lists.
+// calendar.js — day and week views: appointments and tasks due. Ported from
+// Focus OS. Month view: not in v1. Google Calendar read-overlay: v1.5 — keep
+// rendering composable so overlay events can slot into these same lists.
+// Recurring upkeep is a plain Calendar appointment now — no separate
+// maintenance-schedule feature.
 
 import { getAll, put, remove } from './store.js';
 import { el, clear, toast, navigate, openModal, todayStr, addDays, parseDate, dateStr, fmtDay, onSwipe } from './ui.js';
 import { choreRow, editChoreModal } from './chores.js';
-import { getMaintenance, nextDue, maintenanceRow } from './maintenance.js';
 import { isConnected, everConnected, connect, eventsForRange, GcalError, canWrite, writableCalendars, createEvent, getWriteCalendar, setWriteCalendar } from './gcal.js';
 
 // A "Connect Google Calendar" prompt, shown when not yet connected. First
@@ -72,10 +72,10 @@ function apptTimeLabel(a) {
   return a.endTime ? `${fmtTime(a.startTime)}–${fmtTime(a.endTime)}` : fmtTime(a.startTime);
 }
 
-// Create/edit bottom sheet. `preset` seeds fields for contextual creation
-// (e.g. a vendor's Schedule button passes title + vendorId). When creating a
-// new appointment with Google write access, a "Save to" picker lets the event
-// go straight onto a Google calendar (default: Family) instead of Home OS.
+// Create/edit bottom sheet. `preset` seeds fields for contextual creation.
+// When creating a new appointment with Google write access, a "Save to"
+// picker lets the event go straight onto a Google calendar (default: Family)
+// instead of Home OS.
 export async function editAppointmentModal(appointment, date, onchange, preset = {}) {
   const isNew = !appointment;
   const a = appointment || { date, ...preset };
@@ -200,19 +200,15 @@ export async function renderCalendar(root, { mode = 'day', date = todayStr() } =
 async function renderDay(root, date) {
   // Modals mutate data, then redraw the whole view (head + seg included).
   const rerender = () => renderCalendar(root, { mode: 'day', date });
-  const [chores, appointments, maintenance, vendors] = await Promise.all([
+  const [chores, appointments] = await Promise.all([
     getAll('chores'),
     appointmentsFor(date, addDays(date, 1)),
-    getMaintenance(),
-    getAll('vendors'),
   ]);
-  const vendorById = Object.fromEntries(vendors.map((v) => [v.id, v]));
 
   const dayChores = chores.filter((c) => c.dueDate === date);
   const dayAppts = appointments
     .filter((a) => a.date === date)
     .sort((a, b) => ((a.allDay ? '' : a.startTime || '') < (b.allDay ? '' : b.startTime || '') ? -1 : 1));
-  const dayMaint = maintenance.filter((it) => nextDue(it) === date);
 
   // Swipe container: fresh node each render, so listeners never pile up or
   // outlive this view (clear(root) drops it, old + new both, automatically).
@@ -265,17 +261,10 @@ async function renderDay(root, date) {
     ]),
     el('section', { class: 'panel' },
       dayChores.length
-        ? dayChores.map((c) => choreRow(c, { onchange: rerender, showDue: false, vendorById }))
+        ? dayChores.map((c) => choreRow(c, { onchange: rerender, showDue: false }))
         : [el('p', { class: 'muted small' }, 'Nothing due this day.')]
     )
   );
-
-  if (dayMaint.length) {
-    append(
-      el('div', { class: 'panel-head' }, [el('h4', {}, 'Upkeep falling due')]),
-      el('section', { class: 'panel' }, dayMaint.map((it) => maintenanceRow(it, { onchange: rerender, vendorById })))
-    );
-  }
 }
 
 async function renderWeek(root, date) {

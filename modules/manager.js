@@ -1,14 +1,13 @@
 // manager.js — the Claudia tab: ask her anything, have her plan the week
 // (a persistent review whose items add/dismiss with one tap), the family's
-// shared weekly checklist, the family meeting, and the recurring maintenance
-// schedule + vendors (the old Upkeep tab, folded in here).
+// shared weekly checklist, and the family meeting. Recurring upkeep and
+// vendor contacts live as plain Calendar appointments now — no separate
+// maintenance/vendor feature.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, addDays, fmtDay, openModal, tableOfContents } from './ui.js';
-import { getMaintenance, maintenanceRow, editMaintenanceModal } from './maintenance.js';
-import { vendorsSection } from './vendors.js';
+import { el, clear, toast, todayStr, addDays, fmtDay, openModal, tableOfContents, shareText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
-import { reviewWeek, askManager, hasApiKey, AIError } from './ai.js';
+import { reviewWeek, askManager, claudifyPlanItem, hasApiKey, AIError } from './ai.js';
 import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinToBrief, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
 import { isConnected, canReadEmail } from './gcal.js';
 import { meetingSection } from './meeting.js';
@@ -75,36 +74,73 @@ function reviewState(r) {
   };
 }
 
+// "Claudify" a plan item: expand it into a fuller, concrete write-up
+// (steps, considerations, timeline) shown inline below the row, with a
+// Share/Copy button so it can be pasted into email, Notes, Google Docs,
+// wherever. Ephemeral — not saved to the plan record, just this view.
+function claudifyBtn(p, resultHost) {
+  return el('button', {
+    class: 'link', style: 'padding: 4px 6px; font-size: 13px',
+    'aria-label': 'Claudify — expand into a fuller plan',
+    onclick: async () => {
+      if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
+      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is expanding this…')]));
+      try {
+        const settings = getSettings();
+        const text = await claudifyPlanItem({
+          family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
+          notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+          title: p.title,
+          detail: p.detail || '',
+        });
+        clear(resultHost).append(
+          el('p', { class: 'idea-detail', style: 'white-space: pre-wrap' }, text),
+          el('button', {
+            class: 'btn seg-btn hm-add', style: 'margin-top: 6px',
+            onclick: () => shareText({ title: p.title, text }),
+          }, '📤 Share / copy')
+        );
+      } catch (err) {
+        clear(resultHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
+      }
+    },
+  }, '✨ Claudify');
+}
+
 function planRow(p, rerender) {
-  return el('div', { class: 'task-row' + (p.done ? ' done' : '') }, [
-    el('button', {
-      class: 'task-check',
-      'aria-label': p.done ? 'Mark not done' : 'Mark done',
-      html: p.done ? CHECK_SVG : '',
-      onclick: async () => {
-        await put('plan', { ...p, done: !p.done, doneAt: !p.done ? now() : null, doneBy: !p.done ? deviceName() : null });
-        rerender();
-      },
-    }),
-    el('div', { class: 'task-main' }, [
-      el('span', { class: 'task-name' }, p.title),
-      (p.detail || p.by) ? el('span', { class: 'task-meta' }, [
-        p.detail ? el('span', { class: 'muted small' }, p.detail) : null,
-        p.by ? el('span', { class: 'pill' }, p.by) : null,
-      ]) : null,
+  const resultHost = el('div', {});
+  return el('div', { class: 'plan-row-wrap' }, [
+    el('div', { class: 'task-row' + (p.done ? ' done' : '') }, [
+      el('button', {
+        class: 'task-check',
+        'aria-label': p.done ? 'Mark not done' : 'Mark done',
+        html: p.done ? CHECK_SVG : '',
+        onclick: async () => {
+          await put('plan', { ...p, done: !p.done, doneAt: !p.done ? now() : null, doneBy: !p.done ? deviceName() : null });
+          rerender();
+        },
+      }),
+      el('div', { class: 'task-main' }, [
+        el('span', { class: 'task-name' }, p.title),
+        (p.detail || p.by) ? el('span', { class: 'task-meta' }, [
+          p.detail ? el('span', { class: 'muted small' }, p.detail) : null,
+          p.by ? el('span', { class: 'pill' }, p.by) : null,
+        ]) : null,
+      ]),
+      claudifyBtn(p, resultHost),
+      el('button', {
+        class: 'link', style: 'padding: 4px 6px; font-size: 15px; line-height: 1', 'aria-label': 'Remove',
+        onclick: async () => { await remove('plan', p.id); rerender(); },
+      }, '×'),
     ]),
-    el('button', {
-      class: 'link', style: 'padding: 4px 6px; font-size: 15px; line-height: 1', 'aria-label': 'Remove',
-      onclick: async () => { await remove('plan', p.id); rerender(); },
-    }, '×'),
+    resultHost,
   ]);
 }
 
 export async function renderManager(root) {
   clear(root);
   const rerender = () => renderManager(root);
-  const [plan, maintenance, vendors] = await Promise.all([getAll('plan'), getMaintenance(), getAll('vendors')]);
-  const vendorById = Object.fromEntries(vendors.map((v) => [v.id, v]));
+  const plan = await getAll('plan');
   const openPlan = plan.filter((p) => !p.done).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const donePlan = plan.filter((p) => p.done);
 
@@ -137,7 +173,6 @@ export async function renderManager(root) {
         events: ctx.eventsText,
         email: ctx.emailsText,
         chores: ctx.choresText,
-        upkeep: ctx.upkeepText,
         groceries: ctx.groceriesText,
         plan: ctx.planText,
         meals: ctx.mealsText,
@@ -189,7 +224,6 @@ export async function renderManager(root) {
           today: todayStr(),
           events: ctx.eventsText,
           chores: ctx.choresText,
-          upkeep: ctx.upkeepText,
           groceries: ctx.groceriesText,
           plan: ctx.planText,
           meals: ctx.mealsText,
@@ -248,27 +282,12 @@ export async function renderManager(root) {
   // ----- family meeting (moved from its own tab) -----
   root.append(...(await meetingSection(rerender)));
 
-  // ----- maintenance schedule (the old Upkeep) -----
-  root.append(
-    el('div', { class: 'view-head-row', style: 'margin-top: 20px' }, [
-      el('h4', { style: 'margin:0' }, 'Maintenance'),
-      el('button', { class: 'link', onclick: () => editMaintenanceModal(null, rerender) }, '+ Item'),
-    ]),
-    el('section', { class: 'panel' },
-      maintenance.length
-        ? maintenance.map((it) => maintenanceRow(it, { onchange: rerender, vendorById }))
-        : [el('p', { class: 'muted small' }, 'Nothing recurring yet. Filters, gutters, smoke-alarm batteries…')]
-    ),
-    ...(await vendorsSection(rerender))
-  );
-
   // jump-to menu for this long tab
   tableOfContents(root, [
     { label: 'Ask', at: 'Ask Claudia' },
     { label: 'Plan week', at: 'Plan the week' },
     { label: 'Checklist', at: "This week's plan" },
     { label: 'Meeting', at: 'Family meeting' },
-    { label: 'Maintenance', at: 'Maintenance' },
   ]);
 }
 

@@ -168,12 +168,17 @@ Keep the suggested agenda to a realistic 20-30 minute family meeting (4-6 topics
 // Drafts a full family-meeting plan from the week — a proposed agenda drawn
 // from real events and open items, plus fun icebreakers and togetherness
 // activities that get everyone (including the kids) participating.
-export async function draftMeeting({ family = [], notes = '', meetingDate, weekAhead = '', openItems = '', currentAgenda = '' } = {}) {
-  const system = `You are Claudia, the Ortiz family's AI house manager, helping them run a warm, fun weekly family meeting. Family: ${family.join(', ') || 'the family'} (Sedona and River are kids). Draft an agenda drawn from the week's real events and open items — never invent events, people, or commitments. Make it feel like a family moment, not a status meeting: include quick icebreakers the kids will enjoy and short activities that build participation and togetherness. Keep everything concrete and kid-friendly. Respond with JSON only — no markdown, no fences.`;
+// `type`: 'family' (Wednesday-style, kids included — warm, icebreakers,
+// togetherness activities) or 'admin' (Chris + Kat only — brisk, household
+// ops/projects/finances, no kid content).
+export async function draftMeeting({ family = [], notes = '', meetingDate, weekAhead = '', openItems = '', currentAgenda = '', type = 'family' } = {}) {
+  const system = type === 'admin'
+    ? `You are Claudia, the Ortiz house manager, helping Chris and Kat run a quick admin meeting — just the two of them, no kids. Draft an agenda drawn from real open household items: tasks, the weekly plan, projects, decisions, budgeting — never invent anything not in the data. Keep it brisk and businesslike, like a well-run status check between two people running a household together, not a family gathering. No icebreakers or kid activities. Respond with JSON only — no markdown, no fences.`
+    : `You are Claudia, the Ortiz family's AI house manager, helping them run a warm, fun weekly family meeting. Family: ${family.join(', ') || 'the family'} (Sedona and River are kids). Draft an agenda drawn from the week's real events and open items — never invent events, people, or commitments. Make it feel like a family moment, not a status meeting: include quick icebreakers the kids will enjoy and short activities that build participation and togetherness. Keep everything concrete and kid-friendly. Respond with JSON only — no markdown, no fences.`;
 
-  const prompt = `Draft this week's family meeting${meetingDate ? ` for ${meetingDate}` : ''}.
+  const prompt = `Draft this week's ${type === 'admin' ? 'admin' : 'family'} meeting${meetingDate ? ` for ${meetingDate}` : ''}.
 
-FAMILY NOTES / PREFERENCES:
+HOUSEHOLD NOTES / PREFERENCES:
 ${notes || '(none)'}
 
 THE WEEK AHEAD (real calendar + household):
@@ -191,7 +196,9 @@ Return JSON with exactly this shape:
   "icebreakers": ["a quick, fun question the whole family (kids included) can answer in a sentence"],
   "activities": ["a short togetherness activity or ritual to do during the meeting"]
 }
-Give 4-6 agenda topics (most drawn from the week's real items), 2 icebreakers, and 2 activities. Empty arrays are fine.`;
+${type === 'admin'
+  ? 'Give 4-6 agenda topics focused on household tasks/plan/projects/decisions. Leave icebreakers and activities as empty arrays — this meeting is just the two of them.'
+  : 'Give 4-6 agenda topics (most drawn from the week\'s real items), 2 icebreakers, and 2 activities.'} Empty arrays are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 1800 });
 }
@@ -204,7 +211,7 @@ const HM_ROLE = (family) =>
 // Daily brief for the Home page — a short read on TODAY plus a few concrete,
 // one-tap-addable suggestions. Each suggestion is typed so the app can turn it
 // into a task, appointment, or grocery item.
-export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', upkeep = '', groceries = '', meals = '', email = '' } = {}) {
+export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', email = '' } = {}) {
   const system = HM_ROLE(family) + ` This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon. If dinner is planned for tonight, mention it in a note. Kids (${kids || 'none listed'}) don't use the app — when a small chore genuinely fits one of them, suggest it as a task with their name in "who".`;
   const prompt = `Good morning. Today is ${weekday} ${today}. Give the family a short read on the day.
 
@@ -219,9 +226,6 @@ ${meals || '(none planned)'}
 
 OPEN CHORES:
 ${chores || '(none)'}
-
-UPKEEP DUE / OVERDUE:
-${upkeep || '(none)'}
 
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
@@ -243,7 +247,7 @@ Give 0-4 suggestions, only genuinely useful ones for today or the next day. Neve
 // Weekly review for the House Manager tab — proposes a concrete plan of items
 // to complete for the rest of the week. Each item is typed so it can be added
 // to the living weekly plan (or straight to tasks/calendar/grocery).
-export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', upkeep = '', groceries = '', plan = '', meals = '', email = '', follow = '' } = {}) {
+export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', groceries = '', plan = '', meals = '', email = '', follow = '' } = {}) {
   const system = HM_ROLE(family) +
     ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
     ' If recent email surfaces something worth planning around (an RSVP, a bill due, a school notice, an invite), fold it into the plan — only when it\'s genuinely actionable, not just noise.' +
@@ -270,9 +274,6 @@ ${events || '(no calendar events available — Google Calendar may not be connec
 
 OPEN CHORES:
 ${chores || '(none)'}
-
-UPKEEP DUE / OVERDUE:
-${upkeep || '(none)'}
 
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
@@ -329,7 +330,7 @@ One meal per empty night, dated correctly. Empty arrays are fine.`;
 // family's calendar, email, tasks, plan, and groceries. Returns a short
 // answer plus any concrete one-tap actions it wants to offer. `briefNote`
 // is a one-line version the family can pin to tomorrow's morning brief.
-export async function askManager({ family = [], notes = '', interests = '', today, weekday = '', question, events = '', email = '', chores = '', upkeep = '', groceries = '', plan = '', meals = '' } = {}) {
+export async function askManager({ family = [], notes = '', interests = '', today, weekday = '', question, events = '', email = '', chores = '', groceries = '', plan = '', meals = '' } = {}) {
   const system = HM_ROLE(family) + ' Answer the question directly and concretely from the family data below. If the question needs current outside information (showtimes, local events, hours, weather, news), use web search and cite real dates/times/venues from what you find. If neither the data nor a search answers it, say so plainly rather than guessing. Keep the answer to a few sentences.';
   const prompt = `Today is ${weekday} ${today}. Answer this question for the family:
 
@@ -346,9 +347,6 @@ ${email || '(no email available)'}
 
 OPEN CHORES:
 ${chores || '(none)'}
-
-UPKEEP DUE / OVERDUE:
-${upkeep || '(none)'}
 
 GROCERY LIST:
 ${groceries || '(empty)'}
@@ -368,4 +366,22 @@ Return JSON with exactly this shape:
 Offer 0-3 suggestions, only genuinely useful ones. Never suggest a grocery item already on the list above. Empty arrays/strings are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 2400, tools: [webSearchTool()] });
+}
+
+// "Claudify" a single plan item: expand a one-line plan item into a fuller,
+// concrete write-up — steps, considerations, a rough timeline — something
+// you could actually hand to someone or paste into email/Notes/wherever.
+// Plain text, not JSON: this is meant to be read and copied, not parsed.
+export async function claudifyPlanItem({ family = [], notes = '', title, detail = '' } = {}) {
+  const system = `You are Claudia, the Ortiz family's house manager. Turn one plan item into a genuinely useful, concrete write-up the family could act on directly or paste into another app or email. Ground it in what's given; never invent specifics (addresses, prices, names, dates) that aren't provided. Keep it tight — a short lead-in line, then the real content (steps, considerations, a rough timeline where relevant) as short prose or plain dashes. No JSON, no markdown headers, no filler, no restating the obvious.`;
+  const prompt = `Expand this plan item for ${family.join(', ') || 'the family'} into something concrete and actionable:
+
+PLAN ITEM: ${title}
+${detail ? `NOTES ALREADY ON IT: ${detail}\n` : ''}
+HOUSEHOLD NOTES / PREFERENCES (background):
+${notes || '(none)'}
+
+Write the expanded plan directly as plain text.`;
+
+  return callClaude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 900 });
 }

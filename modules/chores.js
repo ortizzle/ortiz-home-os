@@ -1,5 +1,5 @@
-// chores.js — one-off household tasks: due date, assignee, optional vendor.
-// Same interaction grammar as Focus OS tasks.
+// chores.js — one-off household tasks: due date, assignee. Same interaction
+// grammar as Focus OS tasks.
 
 import { getAll, put, remove, now, deviceName } from './store.js';
 import { el, clear, toast, openModal, todayStr, fmtDue } from './ui.js';
@@ -21,17 +21,14 @@ export async function toggleChore(chore) {
   return put('chores', { ...chore, done, doneAt: done ? now() : null, doneBy: done ? deviceName() : null });
 }
 
-// One chore row: check circle, title + meta pills (due, assignee, vendor).
-export function choreRow(chore, { onchange, showDue = true, vendorById = {} } = {}) {
+// One chore row: check circle, title + meta pills (due, assignee).
+export function choreRow(chore, { onchange, showDue = true } = {}) {
   const meta = [];
   if (showDue && chore.dueDate) {
     const overdue = !chore.done && chore.dueDate < todayStr();
     meta.push(el('span', { class: 'pill' + (overdue ? ' pill-overdue' : '') }, fmtDue(chore.dueDate)));
   }
   if (chore.assignee) meta.push(el('span', { class: 'pill pill-accent' }, chore.assignee));
-  if (chore.vendorId && vendorById[chore.vendorId]) {
-    meta.push(el('span', { class: 'pill' }, vendorById[chore.vendorId].name));
-  }
   if (chore.done && chore.doneBy) meta.push(el('span', { class: 'pill pill-done' }, `done · ${chore.doneBy}`));
 
   return el('div', { class: 'task-row' + (chore.done ? ' done' : '') }, [
@@ -55,15 +52,10 @@ export function choreRow(chore, { onchange, showDue = true, vendorById = {} } = 
 export async function editChoreModal(chore, onchange) {
   const isNew = !chore || !chore.id;
   const c = chore || {};
-  const vendors = await getAll('vendors');
 
   const title = el('input', { class: 'input', placeholder: 'What needs doing?', value: c.title || '' });
   const due = el('input', { class: 'input', type: 'date', value: c.dueDate || '' });
   const assignee = el('input', { class: 'input', placeholder: 'Anyone', value: c.assignee || '' });
-  const vendor = el('select', { class: 'input' }, [
-    el('option', { value: '' }, 'No vendor'),
-    ...vendors.map((v) => el('option', { value: v.id, selected: c.vendorId === v.id ? 'selected' : null }, v.name)),
-  ]);
 
   const actions = [
     !isNew &&
@@ -87,7 +79,6 @@ export async function editChoreModal(chore, onchange) {
           title: name,
           dueDate: due.value || null,
           assignee: assignee.value.trim() || null,
-          vendorId: vendor.value || null,
           done: c.done || false,
         });
         m.close();
@@ -103,16 +94,13 @@ export async function editChoreModal(chore, onchange) {
       el('div', {}, [el('label', { class: 'field-label' }, 'Due date'), due]),
       el('div', {}, [el('label', { class: 'field-label' }, 'Assignee'), assignee]),
     ]),
-    el('label', { class: 'field-label' }, 'Vendor (optional)'),
-    vendor,
   ], actions);
   title.focus();
 }
 
 export async function renderChores(root) {
   clear(root);
-  const [chores, vendors] = await Promise.all([getAll('chores'), getAll('vendors')]);
-  const vendorById = Object.fromEntries(vendors.map((v) => [v.id, v]));
+  const chores = await getAll('chores');
   const rerender = () => renderChores(root);
 
   const today = todayStr();
@@ -138,7 +126,7 @@ export async function renderChores(root) {
     root.append(
       el('div', { class: 'empty compact' }, [
         el('p', {}, 'No tasks yet.'),
-        el('p', { class: 'muted' }, 'One-off household tasks live here. Recurring upkeep has its own tab.'),
+        el('p', { class: 'muted' }, 'One-off household tasks live here. For recurring reminders (filters, gutters…), add them straight to Calendar.'),
       ])
     );
   }
@@ -147,14 +135,14 @@ export async function renderChores(root) {
     if (!list.length) continue;
     root.append(
       el('h4', { class: 'group-heading' }, label),
-      el('section', { class: 'panel' }, list.map((c) => choreRow(c, { onchange: rerender, vendorById })))
+      el('section', { class: 'panel' }, list.map((c) => choreRow(c, { onchange: rerender })))
     );
   }
 
   if (done.length) {
     root.append(
       el('h4', { class: 'group-heading' }, `Done (${done.length})`),
-      el('section', { class: 'panel' }, done.slice(0, 20).map((c) => choreRow(c, { onchange: rerender, vendorById })))
+      el('section', { class: 'panel' }, done.slice(0, 20).map((c) => choreRow(c, { onchange: rerender })))
     );
   }
 
