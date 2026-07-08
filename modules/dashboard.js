@@ -56,7 +56,9 @@ export async function renderDashboard(root) {
         el('div', { class: 'stat-label' }, 'grocery items'),
       ]),
       el('button', { class: 'stat stat-btn', onclick: () => navigate('#/calendar') }, [
-        el('div', { class: 'stat-value' }, apptsWeek.length),
+        // Count distinct events — a daily recurring camp is ONE thing on your
+        // plate this week, not seven.
+        el('div', { class: 'stat-value' }, new Set(apptsWeek.map((a) => a.seriesId || a.id)).size),
         el('div', { class: 'stat-label' }, 'upcoming events'),
       ]),
     ])
@@ -199,11 +201,16 @@ function apptRow(a, rerender) {
 // and suggestions you can add with one tap.
 async function dailyBriefSection(rerender, { today, settings }) {
   const host = el('div', {});
-  const refresh = el('button', { class: 'link', onclick: () => runBrief(host, rerender, { today, settings, force: true }) }, 'Refresh');
+  const refresh = el('button', { class: 'link', onclick: () => runBrief(host, rerender, { today, settings }) }, 'Refresh');
 
   const cached = await getBrief(today);
   if (cached) {
     renderBrief(host, cached.data, rerender, new Set(cached.added || []), new Set(cached.dismissed || []), await pinsFor(today), today);
+  } else if (briefInFlight) {
+    // A generation kicked off by a previous render is still running — show
+    // the spinner here rather than a blank panel (the finished brief lands on
+    // the next re-render, or via the guard-free path below next time).
+    host.append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reading your day…')]));
   } else if (hasApiKey()) {
     runBrief(host, rerender, { today, settings }); // auto-generate for the day
   } else {
@@ -217,7 +224,7 @@ async function dailyBriefSection(rerender, { today, settings }) {
   ];
 }
 
-async function runBrief(host, rerender, { today, settings, force = false }) {
+async function runBrief(host, rerender, { today, settings }) {
   if (briefInFlight) return;
   briefInFlight = true;
   clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reading your day…')]));
@@ -242,7 +249,7 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
   } catch (err) {
     clear(host).append(
       el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Couldn't generate today's brief: ${err.message}`),
-      el('button', { class: 'btn', style: 'margin-top: 8px', onclick: () => runBrief(host, rerender, { today, settings, force: true }) }, 'Try again')
+      el('button', { class: 'btn', style: 'margin-top: 8px', onclick: () => runBrief(host, rerender, { today, settings }) }, 'Try again')
     );
   } finally {
     briefInFlight = false;

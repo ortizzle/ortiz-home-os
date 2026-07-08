@@ -151,8 +151,11 @@ export async function exportSnapshot() {
 // Merge an incoming snapshot: newest updatedAt wins per record, EXCEPT
 // tombstoned records — a deletion (on either phone) is never resurrected
 // by a later merge, unless a genuinely newer edit exists.
+// Returns how many local records actually changed, so callers (like the
+// background sync) can skip re-rendering when nothing did.
 export async function mergeSnapshot(snapshot) {
-  if (!snapshot || !snapshot.data) return;
+  if (!snapshot || !snapshot.data) return 0;
+  let changed = 0;
   // Future: if snapshot.schemaVersion < SCHEMA_VERSION, migrate here.
 
   // Tombstones merge first, so we know what NOT to bring back.
@@ -174,6 +177,7 @@ export async function mergeSnapshot(snapshot) {
       const existing = await get(name, rec.id);
       if (!existing || (rec.updatedAt || '') > (existing.updatedAt || '')) {
         await put(name, rec, { touch: false });
+        changed++;
       }
     }
   }
@@ -186,8 +190,10 @@ export async function mergeSnapshot(snapshot) {
     const existing = await get(t.store, t.recordId);
     if (existing && (existing.updatedAt || '') <= (t.deletedAt || '')) {
       await reqToPromise((await tx(t.store, 'readwrite')).delete(t.recordId));
+      changed++;
     }
   }
+  return changed;
 }
 
 // ---------- Gist sync ----------
@@ -236,23 +242,27 @@ async function gistFetch(path, options = {}) {
 // a stale-code phone must never strip newer shared data from the Gist.
 let lastRemoteData = null;
 
+// Returns how many local records changed (0 on no-op or failure), so the
+// background sync can re-render only when there's actually something new.
 export async function pullFromGist() {
-  if (!syncConfigured()) return;
+  if (!syncConfigured()) return 0;
   const { gistId } = getSettings();
   emitSync('syncing');
+  let changed = 0;
   try {
     const gist = await gistFetch(`/gists/${gistId}`);
     const file = gist.files && gist.files[GIST_FILENAME];
     if (file && file.content) {
       const snapshot = JSON.parse(file.content);
       lastRemoteData = snapshot.data || null;
-      await mergeSnapshot(snapshot);
+      changed = await mergeSnapshot(snapshot);
     }
     emitSync('synced');
   } catch (err) {
     console.warn('pullFromGist failed', err);
     emitSync('error');
   }
+  return changed;
 }
 
 export async function pushToGist() {

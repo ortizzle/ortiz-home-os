@@ -209,7 +209,7 @@ Return JSON with exactly this shape:
   "notes": ["1-3 short lines: what matters today, timing to watch, a heads-up"],
   "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative, e.g. 'Prep gym bag for River'", "date": "YYYY-MM-DD (optional; for a task due date or appointment date)", "who": "family member name (optional; who should do it)", "detail": "one short clause on why", "store": "Costco | Walmart | Trader Joe's (REQUIRED for type grocery — match the store it's actually for; never leave it to default)" } ]
 }
-Give 0-4 suggestions, only genuinely useful ones for today or the next day. Never suggest a grocery item already on the list above. Empty arrays are fine.`;
+Give 0-4 suggestions, only genuinely useful ones for today or the next day. Never suggest a grocery item already on the list above; for grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Empty arrays are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 1400 });
 }
@@ -260,7 +260,7 @@ Return JSON with exactly this shape:
   "planItems": [ { "title": "short imperative plan item", "detail": "one sentence: what, why, and roughly when", "suggestedType": "plan" | "task" | "appointment" | "grocery", "day": "YYYY-MM-DD (optional)", "who": "family member name (optional)", "store": "Costco | Walmart | Trader Joe's (REQUIRED for suggestedType grocery — match the store it's actually for; never leave it to default)" } ],
   "questions": ["a short question whose answer would sharpen the plan"]
 }
-Give 3-8 plan items, most time-sensitive first — quality over quantity; never pad with generic errands. Never suggest a grocery item already on the list above. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.`;
+Give 3-8 plan items, most time-sensitive first — quality over quantity; never pad with generic errands. Never suggest a grocery item already on the list above; for grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 3000, tools: [webSearchTool()] });
 }
@@ -333,7 +333,7 @@ Return JSON with exactly this shape:
   "briefNote": "one short line suitable for tomorrow's morning brief, or empty if not worth surfacing",
   "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative action", "date": "YYYY-MM-DD (optional)", "detail": "one short clause", "store": "Costco | Walmart | Trader Joe's (REQUIRED for type grocery — match the store it's actually for; never leave it to default)" } ]
 }
-Offer 0-3 suggestions, only genuinely useful ones. Never suggest a grocery item already on the list above. Empty arrays/strings are fine.`;
+Offer 0-3 suggestions, only genuinely useful ones. Never suggest a grocery item already on the list above; for grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Empty arrays/strings are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 2400, tools: [webSearchTool()] });
 }

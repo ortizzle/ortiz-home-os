@@ -157,16 +157,27 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   const isToday = meetingDate === todayStr();
 
   // Lazy-migrate legacy agenda items (from before type/cycleDate existed)
-  // onto the current cycle, once, so nothing old just vanishes.
+  // onto the current cycle, once, so nothing old just vanishes. And prune:
+  // reviewed items from past cycles are finished business, and unreviewed
+  // ones older than ~5 weeks have aged out of follow-through — without this
+  // the agenda store (and the follow-up prompt) grows forever.
   const rawAgenda = await getAll('agenda');
+  const staleCutoff = addDays(todayStr(), -35);
+  const agenda = [];
   for (const a of rawAgenda) {
     if (!a.cycleDate) {
       a.type = a.type || 'family';
       a.cycleDate = meetingDate;
       await put('agenda', a, { touch: false });
     }
+    const pastCycle = a.cycleDate < meetingDate;
+    if ((pastCycle && a.reviewed) || a.cycleDate < staleCutoff) {
+      await remove('agenda', a.id);
+      continue;
+    }
+    agenda.push(a);
   }
-  const agenda = rawAgenda.sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
+  agenda.sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const week = await gatherWeekAhead();
 
   const meta = `${isToday ? 'Today' : DAY_NAMES[meetingDay()]} · ${fmtDay(meetingDate)} — ${familyMembers().join(', ')}`;
@@ -196,8 +207,9 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
     if (!text) return;
     await put('agenda', { text, reviewed: false, type, cycleDate: meetingDate });
     input.value = '';
-    input.focus();
-    rerender();
+    // Re-render replaces this input — refocus the new one for rapid entry.
+    await rerender();
+    document.querySelector('input[placeholder="Add an agenda item…"]')?.focus();
   }
   input.addEventListener('keydown', (e) => e.key === 'Enter' && add());
 
@@ -366,7 +378,7 @@ function renderDraft(host, out, rerender, addedSet, ctx) {
   host.append(
     el('button', {
       class: 'btn full', style: 'margin-top: 10px',
-      onclick: () => shareText({ title: 'Family meeting draft', text: draftToText(out, ctx) }),
+      onclick: () => shareText({ title: `${ctx.type === 'admin' ? 'Admin' : 'Family'} meeting agenda`, text: draftToText(out, ctx) }),
     }, '📤 Share / copy draft')
   );
 }

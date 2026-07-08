@@ -237,10 +237,10 @@ export async function renderManager(root) {
         clear(host).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
       } finally {
         reviewBtn.disabled = null;
-        reviewBtn.textContent = 'Review the week';
+        reviewBtn.textContent = 'Plan the week';
       }
     },
-  }, 'Review the week');
+  }, 'Plan the week');
   // Restore the persisted (shared) review so adds/dismisses — which re-render
   // the view — and even reloads never lose the rest of the list.
   const cachedReview = await getReview();
@@ -248,7 +248,7 @@ export async function renderManager(root) {
   root.append(
     el('div', { class: 'panel-head' }, [el('h4', {}, 'Plan the week with Claudia')]),
     el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reviews your calendar + lists, searches for fun things nearby that match your interests, and proposes what to plan. Add what you want with one tap, dismiss (✕) what you don’t — she remembers both. Refresh a couple times a week.' : 'Add a Claude API key in Settings and Claudia will propose what to plan each week.'),
+      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reads your calendar + lists, searches for fun things nearby that match your interests, and proposes what to plan. Add what you want with one tap, clear what you don’t (✓ Not needed). Run it a couple times a week.' : 'Add a Claude API key in Settings and Claudia will propose what to plan each week.'),
       reviewBtn,
       host,
     ])
@@ -260,8 +260,10 @@ export async function renderManager(root) {
     if (!planInput.value.trim()) return;
     await put('plan', { title: planInput.value.trim(), done: false });
     planInput.value = '';
-    planInput.focus();
-    rerender();
+    // The re-render replaces the whole view (and this input with it) — put
+    // focus back on the NEW input so several items can be added in a row.
+    await rerender();
+    document.querySelector('input[placeholder="Add a plan item…"]')?.focus();
   }
   planInput.addEventListener('keydown', (e) => e.key === 'Enter' && addPlan());
   root.append(
@@ -409,7 +411,7 @@ function renderReview(host, out, rerender, state) {
   clear(host);
   if (state.reviewedAt) {
     host.append(el('p', { class: 'muted small', style: 'margin: 0 0 8px' },
-      `Reviewed ${state.reviewedAt === todayStr() ? 'today' : fmtDay(state.reviewedAt)} — tap Review the week for a fresh look.`));
+      `Planned ${state.reviewedAt === todayStr() ? 'today' : fmtDay(state.reviewedAt)} — tap Plan the week for a fresh look.`));
   }
   if (out.overview) host.append(el('p', { class: 'hm-overview' }, out.overview));
   const items = (out.planItems || []).filter((item) => !state.dismissed.has(item.title));

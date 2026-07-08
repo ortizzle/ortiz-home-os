@@ -158,7 +158,7 @@ export async function renderChores(root) {
           const names = parseImport(importArea.value);
           if (!names.length) return toast('Nothing to import', 'warn');
           for (const name of names) await put('chores', { title: name, done: false });
-          toast(`Imported ${names.length} chore${names.length === 1 ? '' : 's'}`, 'success');
+          toast(`Imported ${names.length} task${names.length === 1 ? '' : 's'}`, 'success');
           rerender();
         },
       }, 'Import as tasks'),

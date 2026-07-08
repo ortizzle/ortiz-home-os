@@ -27,7 +27,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v31';
+const APP_VERSION = 'v32';
 
 // ---------- theme ----------
 
@@ -58,7 +58,7 @@ const routes = [
   { re: /^#\/calendar\/(day|week)\/(\d{4}-\d{2}-\d{2})$/, tab: 'calendar', fn: (m) => renderCalendar(view, { mode: m[1], date: m[2] }) },
   { re: /^#\/manager$/, tab: 'manager', fn: () => renderManager(view) },
   { re: /^#\/upkeep$/, tab: 'manager', fn: () => renderManager(view) }, // legacy alias
-  { re: /^#\/meeting$/, tab: 'meeting', fn: () => renderMeeting(view) },
+  { re: /^#\/meeting$/, tab: 'manager', fn: () => renderMeeting(view) }, // meeting lives on the Claudia tab now
   { re: /^#\/settings$/, tab: 'settings', fn: () => renderSettings(view) },
 ];
 
@@ -356,7 +356,10 @@ async function renderSettings(root) {
     toast('Syncing…');
     await pullFromGist();
     await pushToGist();
-    toast('Synced', 'success');
+    // pull/push swallow errors internally and report via the status dot —
+    // read it back so this toast tells the truth.
+    const ok = document.getElementById('header-sync')?.classList.contains('synced');
+    toast(ok ? 'Synced' : 'Sync had trouble — check connection and token', ok ? 'success' : 'warn');
   }
 
   async function onExport() {
@@ -443,23 +446,29 @@ async function boot() {
   // and email are simply live again without anyone tapping anything.
   gcalSilentRenew().then((ok) => { if (ok) router(); }).catch(() => {});
 
-  // Two-user household: without this, a chore Chris marks done on his phone
+  // Two-user household: without this, a task Chris marks done on his phone
   // sits in the Gist until Kat's phone happens to relaunch or she taps Sync
   // Now — her already-open session just keeps showing the stale state. Pull
-  // quietly (a) whenever the app regains focus (phone unlocked, switched back
-  // from another app) and (b) every 45s while it stays open and visible, then
-  // redraw the current screen so the update actually appears without anyone
-  // asking for it.
-  let bgSyncTimer = null;
+  // quietly (a) whenever the app regains focus and (b) every 45s while
+  // visible. Re-render ONLY when the pull actually changed something, never
+  // while someone is mid-typing or has a modal open, and without losing the
+  // scroll position — a background refresh must be invisible unless it has
+  // news.
   async function backgroundSync() {
     if (!syncConfigured() || document.visibilityState !== 'visible') return;
-    await pullFromGist();
+    const changed = await pullFromGist();
+    if (!changed) return;
+    const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    const modalOpen = Boolean(document.querySelector('.modal-overlay'));
+    if (typing || modalOpen) return; // next tick will catch it
+    const y = window.scrollY;
     await router();
+    window.scrollTo(0, y);
   }
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') backgroundSync();
   });
-  bgSyncTimer = setInterval(backgroundSync, 45_000);
+  const bgSyncTimer = setInterval(backgroundSync, 45_000);
   window.addEventListener('beforeunload', () => clearInterval(bgSyncTimer));
 }
 
