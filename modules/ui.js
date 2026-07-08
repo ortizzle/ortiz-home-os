@@ -41,6 +41,22 @@ export function preserveScroll(renderFn) {
   };
 }
 
+// A collapsible section: a bare heading (matches the app's panel-head
+// convention elsewhere) that expands to reveal a bordered panel below it —
+// "acts as a button for further action, and saves visual space" for anything
+// that isn't the primary reason someone opened this view. `open` controls
+// whether it starts expanded (the main content) or collapsed (secondary
+// stuff like Done items or an occasional-use import box).
+// `content` is placed directly after the summary — pass an already-built
+// `.panel` section (the common case) or several nodes for anything that
+// needs more than one panel inside (e.g. grouped-by-store sub-lists).
+export function disclosure(heading, content, { open = false } = {}) {
+  const attrs = { class: 'disclosure' };
+  if (open) attrs.open = 'open';
+  const kids = Array.isArray(content) ? content : [content];
+  return el('details', attrs, [el('summary', { class: 'group-heading' }, heading), ...kids]);
+}
+
 // Horizontal swipe navigation (e.g. Calendar's day/week paging). Fires onLeft
 // (finger moved left → "go forward", like flipping to the next page) or
 // onRight ("go back") once the gesture clearly reads as horizontal — a big
@@ -127,7 +143,10 @@ export function openModal(title, body, actions = []) {
 // then inserts the link row right after the view's header. No-ops if fewer
 // than 2 sections resolve (a TOC for one section is just clutter).
 export function tableOfContents(root, entries) {
-  const heads = [...root.querySelectorAll('h4, .view-head-row h1')];
+  // Collapsible sections use <summary> for the heading (see disclosure()) —
+  // match those too, or a section that gets turned into a dropdown silently
+  // drops out of the jump menu.
+  const heads = [...root.querySelectorAll('h4, summary, .view-head-row h1')];
   const norm = (s) => (s || '').trim().toLowerCase();
   const links = [];
   entries.forEach((e, i) => {

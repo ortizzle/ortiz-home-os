@@ -2,7 +2,7 @@
 // grammar as Focus OS tasks.
 
 import { getAll, put, remove, now, deviceName } from './store.js';
-import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll } from './ui.js';
+import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure } from './ui.js';
 import { parseImport } from './grocery.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -140,10 +140,7 @@ export async function renderChores(root) {
   }
 
   if (done.length) {
-    root.append(
-      el('h4', { class: 'group-heading' }, `Done (${done.length})`),
-      el('section', { class: 'panel' }, done.slice(0, 20).map((c) => choreRow(c, { onchange: rerender })))
-    );
+    root.append(disclosure(`Done (${done.length})`, el('section', { class: 'panel' }, done.slice(0, 20).map((c) => choreRow(c, { onchange: rerender })))));
   }
 
   // ----- Keep paste-import (Kat's list bridge) -----

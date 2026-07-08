@@ -21,13 +21,13 @@ import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestio
 import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { diagnosticsSection } from './modules/diag.js';
-import { el, clear, toast, navigate, openModal, todayStr, fmtDay, tableOfContents } from './modules/ui.js';
+import { el, clear, toast, navigate, openModal, todayStr, fmtDay, tableOfContents, disclosure } from './modules/ui.js';
 
 const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v34';
+const APP_VERSION = 'v35';
 
 // ---------- theme ----------
 
@@ -99,6 +99,9 @@ async function router() {
 
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DEFAULT_FAMILY_TIME = 'after dinner';
+const DEFAULT_ADMIN_TIME = 'after 8pm';
+const DEFAULT_ADMIN_ATTENDEES = 'Chris, Kat';
 
 // Read-only recap of everything that shapes Claudia: the fields above,
 // plus what she's picked up from actual use (accepted suggestions, answered
@@ -137,8 +140,7 @@ function memorySection(s, memory) {
     memNodes.push(el('p', { class: 'muted small' }, 'No follow-through history yet — this fills in as you use Ask, the weekly review, and the daily brief.'));
   }
 
-  return el('section', { class: 'panel' }, [
-    el('h4', {}, 'What Claudia knows'),
+  return disclosure('What Claudia knows', el('section', { class: 'panel' }, [
     el('p', { class: 'muted small', style: 'margin-top: 0' }, 'A readable recap of what shapes Claudia’s answers — the fields above, plus what she’s picked up from actual use. Settings → Export JSON has the full raw data.'),
     row('Family', s.familyMembers || 'Chris, Kat, Sedona, River'),
     row('Kids & ages', s.kidsAges || DEFAULT_KIDS),
@@ -147,7 +149,7 @@ function memorySection(s, memory) {
     row('Food rules', s.foodNotes || DEFAULT_FOOD_NOTES, true),
     row('Household notes', s.householdNotes || DEFAULT_HOUSEHOLD_NOTES, true),
     ...memNodes,
-  ]);
+  ]));
 }
 
 async function renderSettings(root) {
@@ -157,9 +159,14 @@ async function renderSettings(root) {
 
   const deviceNameInput = el('input', { class: 'input', placeholder: 'e.g. Chris', value: s.deviceName || '' });
   const familyInput = el('input', { class: 'input', placeholder: 'Chris, Kat, Sedona, River', value: s.familyMembers || 'Chris, Kat, Sedona, River' });
-  const meetingDaySel = el('select', { class: 'input' }, DAY_LABELS.map((_, i) =>
-    el('option', { value: i, selected: Number(s.meetingDay ?? 3) === i ? 'selected' : null }, FULL_DAYS[i])
+  const daySelect = (settingKey, defaultDay) => el('select', { class: 'input' }, DAY_LABELS.map((_, i) =>
+    el('option', { value: i, selected: Number(s[settingKey] ?? defaultDay) === i ? 'selected' : null }, FULL_DAYS[i])
   ));
+  const meetingDaySel = daySelect('meetingDay', 3); // Family — default Wednesday
+  const adminDaySel = daySelect('adminMeetingDay', 4); // Admin — default Thursday
+  const familyTimeInput = el('input', { class: 'input', placeholder: 'e.g. after dinner', value: s.familyMeetingTime ?? DEFAULT_FAMILY_TIME });
+  const adminTimeInput = el('input', { class: 'input', placeholder: 'e.g. after 8pm', value: s.adminMeetingTime ?? DEFAULT_ADMIN_TIME });
+  const adminAttendeesInput = el('input', { class: 'input', placeholder: 'e.g. Chris, Kat', value: s.adminAttendees || DEFAULT_ADMIN_ATTENDEES });
   const apiKey = el('input', { class: 'input', type: 'password', placeholder: 'sk-ant-...', value: s.apiKey || '' });
   const householdNotes = el('textarea', { class: 'input', rows: 4 }, s.householdNotes ?? DEFAULT_HOUSEHOLD_NOTES);
   const interestsInput = el('input', { class: 'input', placeholder: 'e.g. movies, hiking, board games, live music', value: s.familyInterests || '' });
@@ -209,8 +216,18 @@ async function renderSettings(root) {
       el('h4', {}, 'Family & meeting'),
       el('label', { class: 'field-label' }, 'Family members (comma-separated)'),
       familyInput,
-      el('label', { class: 'field-label' }, 'Family meeting day'),
-      meetingDaySel,
+      el('p', { class: 'muted small', style: 'margin: 14px 0 4px; font-weight: 600' }, 'Family meeting — kids included, icebreakers + fun family connections'),
+      el('div', { class: 'field-row' }, [
+        el('div', {}, [el('label', { class: 'field-label' }, 'Day'), meetingDaySel]),
+        el('div', {}, [el('label', { class: 'field-label' }, 'Time'), familyTimeInput]),
+      ]),
+      el('p', { class: 'muted small', style: 'margin: 14px 0 4px; font-weight: 600' }, 'Admin meeting — just the two of you, core household items'),
+      el('div', { class: 'field-row' }, [
+        el('div', {}, [el('label', { class: 'field-label' }, 'Day'), adminDaySel]),
+        el('div', {}, [el('label', { class: 'field-label' }, 'Time'), adminTimeInput]),
+      ]),
+      el('label', { class: 'field-label' }, 'Admin attendees'),
+      adminAttendeesInput,
     ]),
 
     el('section', { class: 'panel' }, [
@@ -338,6 +355,10 @@ async function renderSettings(root) {
       errandDays: errandDays.sort(),
       familyMembers: familyInput.value.trim(),
       meetingDay: Number(meetingDaySel.value),
+      adminMeetingDay: Number(adminDaySel.value),
+      familyMeetingTime: familyTimeInput.value.trim(),
+      adminMeetingTime: adminTimeInput.value.trim(),
+      adminAttendees: adminAttendeesInput.value.trim(),
       apiKey: apiKey.value.trim(),
       householdNotes: householdNotes.value.trim(),
       familyInterests: interestsInput.value.trim(),

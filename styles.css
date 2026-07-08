@@ -361,20 +361,22 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .task-meta .pill { font-size: 11px; padding: 2px 8px; }
 .group-heading { margin: 20px 0 6px; }
 .group-heading:first-child { margin-top: 0; }
-.done-dropdown summary.group-heading {
+/* Reusable collapsible section — see ui.js disclosure(). Works with either
+   a .group-heading or a .panel-head summary (Settings uses the latter). */
+.disclosure summary {
   cursor: pointer;
   list-style: none;
   display: flex; align-items: center; gap: 6px;
   user-select: none;
 }
-.done-dropdown summary.group-heading::-webkit-details-marker { display: none; }
-.done-dropdown summary.group-heading::before {
+.disclosure summary::-webkit-details-marker { display: none; }
+.disclosure summary::before {
   content: '▸';
   font-size: 11px;
   color: var(--text-3);
   transition: transform 0.15s;
 }
-.done-dropdown[open] summary.group-heading::before { transform: rotate(90deg); }
+.disclosure[open] summary::before { transform: rotate(90deg); }
 
 /* ---------- grocery ---------- */
 .grocery-add { display: flex; gap: 8px; margin-bottom: 6px; }

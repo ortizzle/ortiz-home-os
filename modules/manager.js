@@ -5,7 +5,7 @@
 // feature.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, preserveScroll } from './ui.js';
+import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, preserveScroll, disclosure } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, claudifyPlanItem, hasApiKey, AIError } from './ai.js';
 import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
@@ -222,12 +222,7 @@ export async function renderManager(root) {
     ])
   );
   if (donePlan.length) {
-    root.append(
-      el('details', { class: 'done-dropdown' }, [
-        el('summary', { class: 'group-heading' }, `Done this week (${donePlan.length})`),
-        el('section', { class: 'panel' }, donePlan.slice(0, 20).map((p) => planRow(p, rerender))),
-      ])
-    );
+    root.append(disclosure(`Done this week (${donePlan.length})`, el('section', { class: 'panel' }, donePlan.slice(0, 20).map((p) => planRow(p, rerender)))));
   }
 
   // ----- family meeting (moved from its own tab) -----

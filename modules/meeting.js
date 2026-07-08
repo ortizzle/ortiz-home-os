@@ -65,17 +65,34 @@ function familyMembers() {
   return raw.split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-function meetingDay() {
-  const d = Number(getSettings().meetingDay);
-  return Number.isInteger(d) && d >= 0 && d <= 6 ? d : 3; // default Wednesday
+// Family = Wednesday/after dinner by default; Admin = Thursday/after 8pm,
+// just Chris + Kat. Each type keeps its own day, time, and cycle.
+function meetingDay(type) {
+  const d = Number(getSettings()[type === 'admin' ? 'adminMeetingDay' : 'meetingDay']);
+  const fallback = type === 'admin' ? 4 : 3;
+  return Number.isInteger(d) && d >= 0 && d <= 6 ? d : fallback;
+}
+
+function meetingTime(type) {
+  const s = getSettings();
+  return type === 'admin' ? (s.adminMeetingTime || 'after 8pm') : (s.familyMeetingTime || 'after dinner');
+}
+
+function attendeesFor(type) {
+  if (type === 'admin') {
+    const raw = getSettings().adminAttendees || 'Chris, Kat';
+    return raw.split(',').map((s) => s.trim()).filter(Boolean);
+  }
+  return familyMembers();
 }
 
 // The date of this week's meeting: today if it's meeting day, else the next
 // one. Doubles as the "cycle" key for agenda items — the day after this date
-// passes, a fresh nextMeetingDate() starts a new, empty cycle.
-function nextMeetingDate() {
+// passes, a fresh nextMeetingDate() starts a new, empty cycle. Family and
+// Admin meet on different days, so this is always computed per type.
+function nextMeetingDate(type) {
   const today = parseDate(todayStr());
-  const delta = (meetingDay() - today.getDay() + 7) % 7;
+  const delta = (meetingDay(type) - today.getDay() + 7) % 7;
   return addDays(todayStr(), delta); // addDays returns a YYYY-MM-DD string
 }
 
@@ -153,24 +170,29 @@ function agendaRow(item, rerender) {
 export async function meetingSection(rerender, { embedded = true } = {}) {
   const nodes = [];
   const root = { append: (...n) => nodes.push(...n.filter(Boolean)) }; // collect instead of mount
-  const meetingDate = nextMeetingDate();
+
+  // Family and Admin meet on different days — each type gets its own cycle date.
+  const meetingDateByType = { family: nextMeetingDate('family'), admin: nextMeetingDate('admin') };
+  let type = getMeetingType();
+  const meetingDate = meetingDateByType[type];
   const isToday = meetingDate === todayStr();
 
   // Lazy-migrate legacy agenda items (from before type/cycleDate existed)
-  // onto the current cycle, once, so nothing old just vanishes. And prune:
-  // reviewed items from past cycles are finished business, and unreviewed
-  // ones older than ~5 weeks have aged out of follow-through — without this
-  // the agenda store (and the follow-up prompt) grows forever.
+  // onto their type's current cycle, once, so nothing old just vanishes. And
+  // prune: reviewed items from past cycles are finished business, and
+  // unreviewed ones older than ~5 weeks have aged out of follow-through —
+  // without this the agenda store (and the follow-up prompt) grows forever.
   const rawAgenda = await getAll('agenda');
   const staleCutoff = addDays(todayStr(), -35);
   const agenda = [];
   for (const a of rawAgenda) {
+    const aType = a.type || 'family';
     if (!a.cycleDate) {
-      a.type = a.type || 'family';
-      a.cycleDate = meetingDate;
+      a.type = aType;
+      a.cycleDate = meetingDateByType[aType];
       await put('agenda', a, { touch: false });
     }
-    const pastCycle = a.cycleDate < meetingDate;
+    const pastCycle = a.cycleDate < meetingDateByType[aType];
     if ((pastCycle && a.reviewed) || a.cycleDate < staleCutoff) {
       await remove('agenda', a.id);
       continue;
@@ -180,13 +202,12 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   agenda.sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const week = await gatherWeekAhead();
 
-  const meta = `${isToday ? 'Today' : DAY_NAMES[meetingDay()]} · ${fmtDay(meetingDate)} — ${familyMembers().join(', ')}`;
+  const meta = `${isToday ? 'Today' : DAY_NAMES[meetingDay(type)]} · ${fmtDay(meetingDate)}, ${meetingTime(type)} — ${attendeesFor(type).join(', ')}`;
   const headEl = embedded
     ? el('div', { class: 'panel-head', style: 'margin-top: 20px' }, [el('h4', {}, 'Family meeting')])
     : el('div', { class: 'view-head' }, [el('h1', {}, 'Family Meeting')]);
 
   // ----- meeting type: Family (kids, fun) or Admin (Chris + Kat, household ops) -----
-  let type = getMeetingType();
   const typeBtn = (t, label) =>
     el('button', {
       class: 'btn seg-btn' + (type === t ? ' active' : ''),
@@ -240,9 +261,10 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
         const currentAgenda = cycleAgenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
         const stillOpen = stillOpenItems.map((a) => `- ${a.text}`).join('\n');
         const out = await draftMeeting({
-          family: familyMembers(),
+          attendees: attendeesFor(type),
           notes: getSettings().householdNotes || DEFAULT_HOUSEHOLD_NOTES,
           meetingDate: fmtDay(meetingDate),
+          when: meetingTime(type),
           weekAhead: week.summary,
           openItems,
           currentAgenda,
