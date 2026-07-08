@@ -91,9 +91,6 @@ export async function renderGrocery(root) {
 
   root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'Grocery')]));
 
-  // ----- the week's dinners (meals drive the list) -----
-  root.append(...dinnersSection(meals, rerender));
-
   // ----- fast add (with store) -----
   const picker = storePicker(STORES[0]);
   const input = el('input', { class: 'input', placeholder: 'Add an item…' });
@@ -118,7 +115,8 @@ export async function renderGrocery(root) {
     const sortBtn = (v, label) =>
       el('button', {
         class: 'btn seg-btn' + (sort === v ? ' active' : ''),
-        onclick: () => { setSort(v); rerender(); },
+        // Keep your place instead of jumping to the top of the page.
+        onclick: async () => { const y = window.scrollY; setSort(v); await rerender(); window.scrollTo(0, y); },
       }, label);
     root.append(
       el('div', { class: 'grocery-head' }, [
@@ -178,9 +176,12 @@ export async function renderGrocery(root) {
     ])
   );
 
+  // ----- the week's dinners (below the list — plan meals, they feed the list) -----
+  root.append(...dinnersSection(meals, rerender));
+
   tableOfContents(root, [
-    { label: 'Dinners', at: "This week's dinners" },
     { label: 'List', at: 'List' },
     { label: 'Import', at: 'Import from Keep' },
+    { label: 'Dinners', at: "This week's dinners" },
   ]);
 }

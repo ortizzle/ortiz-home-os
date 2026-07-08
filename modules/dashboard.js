@@ -4,13 +4,13 @@
 // streaks, no scores (a household app that scores spouses is a divorce app).
 
 import { getAll, put, getSettings } from './store.js';
-import { el, clear, navigate, todayStr, addDays, fmtDay } from './ui.js';
+import { el, clear, navigate, toast, todayStr, addDays, fmtDay } from './ui.js';
 import { choreRow } from './chores.js';
 import { addGroceryItem } from './grocery.js';
 import { getMaintenance } from './maintenance.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, logShownSuggestions } from './hmcontext.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions, logSuggestionDismissed } from './hmcontext.js';
 import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
 
@@ -207,7 +207,7 @@ async function dailyBriefSection(rerender, { today, settings }) {
 
   const cached = await getBrief(today);
   if (cached) {
-    renderBrief(host, cached.data, rerender, new Set(cached.added || []), await pinsFor(today), today);
+    renderBrief(host, cached.data, rerender, new Set(cached.added || []), new Set(cached.dismissed || []), await pinsFor(today), today);
   } else if (hasApiKey()) {
     runBrief(host, rerender, { today, settings }); // auto-generate for the day
   } else {
@@ -243,7 +243,7 @@ async function runBrief(host, rerender, { today, settings, force = false }) {
     });
     logShownSuggestions(out.suggestions, 'brief').catch(() => {});
     await saveBrief(today, out);
-    renderBrief(host, out, rerender, new Set(), await pinsFor(today), today);
+    renderBrief(host, out, rerender, new Set(), new Set(), await pinsFor(today), today);
   } catch (err) {
     clear(host).append(
       el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Couldn't generate today's brief: ${err.message}`),
@@ -265,26 +265,39 @@ function pinNodes(pins, rerender) {
   );
 }
 
-function renderBrief(host, out, rerender, addedSet, pins, today) {
+function renderBrief(host, out, rerender, addedSet, dismissedSet, pins, today) {
   clear(host);
   host.append(...pinNodes(pins, rerender));
   if (out.headline) host.append(el('p', { class: 'brief-headline' }, out.headline));
   if (out.notes?.length) host.append(el('ul', { class: 'brief-notes' }, out.notes.map((n) => el('li', {}, n))));
-  for (const s of out.suggestions || []) {
+  // Added suggestions become real tasks (drop off the brief); dismissed ones
+  // are declined for good (drop off + Claudia stops re-suggesting them).
+  const live = (out.suggestions || []).filter((s) => !addedSet.has(s.title) && !dismissedSet.has(s.title));
+  for (const s of live) {
+    const actions = addButtons(s, {
+      today: todayStr(),
+      includePlan: false,
+      onAdded: async () => { await markBriefAdded(today, s.title); rerender(); },
+    });
+    actions.append(el('button', {
+      class: 'btn seg-btn hm-add',
+      'aria-label': 'Not needed — don’t suggest again',
+      onclick: async () => {
+        await markBriefDismissed(today, s.title);
+        logSuggestionDismissed(s.title).catch(() => {});
+        toast('Got it — Claudia won’t suggest that again');
+        rerender();
+      },
+    }, '✕ No thanks'));
     host.append(
       el('div', { class: 'idea' }, [
         el('div', { class: 'idea-title' }, [s.title, s.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, s.who) : null]),
         s.detail ? el('p', { class: 'idea-detail' }, s.detail) : null,
-        addButtons(s, {
-          today: todayStr(),
-          includePlan: false,
-          alreadyAdded: addedSet.has(s.title),
-          // Persist the Added ✓ state (shared) so a re-render — on either
-          // phone — restores it instead of re-arming the button.
-          onAdded: async () => { await markBriefAdded(today, s.title); rerender(); },
-        }),
+        actions,
       ])
     );
   }
-  if (!out.headline && !out.notes?.length && !out.suggestions?.length) host.append(el('p', { class: 'muted small' }, 'Nothing pressing today — enjoy it.'));
+  const allHandled = (out.suggestions || []).length && !live.length;
+  if (!out.headline && !out.notes?.length && !(out.suggestions || []).length) host.append(el('p', { class: 'muted small' }, 'Nothing pressing today — enjoy it.'));
+  else if (allHandled && !out.notes?.length) host.append(el('p', { class: 'muted small', style: 'margin-top: 8px' }, 'All caught up on Claudia’s suggestions.'));
 }

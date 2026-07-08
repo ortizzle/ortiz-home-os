@@ -51,6 +51,13 @@ export async function markBriefAdded(date, title) {
   if (!b) return;
   await put('briefs', { ...b, added: [...new Set([...(b.added || []), title])] });
 }
+// Dismissed brief suggestions drop off the brief AND feed Claudia's memory
+// (logSuggestionDismissed, called by the caller) so she stops re-suggesting.
+export async function markBriefDismissed(date, title) {
+  const b = await get('briefs', date);
+  if (!b) return;
+  await put('briefs', { ...b, dismissed: [...new Set([...(b.dismissed || []), title])] });
+}
 
 // ---------- shared weekly review (synced — a single "current" record) ----------
 // No expiry: it lives until either of you runs a fresh one (the ~2x/week
