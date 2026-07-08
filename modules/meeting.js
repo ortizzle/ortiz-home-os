@@ -16,7 +16,7 @@ import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtD
 import { appointmentsFor } from './calendar.js';
 import { errandWindow } from './suggest.js';
 import { hasApiKey, draftMeeting, AIError } from './ai.js';
-import { DEFAULT_HOUSEHOLD_NOTES, getMeetingDraft, saveMeetingDraft, markMeetingDraftAdded } from './hmcontext.js';
+import { DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -213,9 +213,12 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   }
   input.addEventListener('keydown', (e) => e.key === 'Enter' && add());
 
-  // ----- Claudia: create the agenda (one button, persisted so it survives
-  // any re-render — adding an item, ticking a task, anything) -----
-  const resultHost = el('div', {});
+  // ----- Claudia: create the agenda — one tap fills the list above with her
+  // full proposal (topics + icebreakers + activities for Family; a brisk
+  // task list for Admin), merged in alongside anything you've already typed.
+  // Nothing requires a second tap to "accept" — just delete what you don't
+  // want from the list, then Share.
+  const statusHost = el('div', {});
   const createLabel = () => `Create the ${type === 'admin' ? 'Admin' : 'Family'} agenda`;
   const createBtn = el('button', {
     class: 'btn btn-primary full',
@@ -227,7 +230,7 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       const label = createLabel();
       createBtn.disabled = 'disabled';
       createBtn.textContent = 'Creating…';
-      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is creating the agenda…')]));
+      clear(statusHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is creating the agenda…')]));
       try {
         const plan = await getAll('plan');
         const openItems = [
@@ -246,24 +249,27 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
           stillOpen,
           type,
         });
-        await saveMeetingDraft(type, out, meetingDate);
-        renderDraft(resultHost, out, rerender, new Set(), { type, cycleDate: meetingDate, meetingDateLabel: fmtDay(meetingDate) });
+        const added = await mergeDraftIntoAgenda(out, cycleAgenda, type, meetingDate);
+        clear(statusHost);
+        toast(added ? `Added ${added} item${added === 1 ? '' : 's'} from Claudia — remove anything you don’t want below` : 'Claudia didn’t have anything new to add', 'success');
+        rerender();
       } catch (err) {
-        clear(resultHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
-      } finally {
+        clear(statusHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
         createBtn.disabled = null;
         createBtn.textContent = label;
       }
     },
   }, createLabel());
 
-  // Restore a persisted draft for this type if it's still current (this
-  // cycle) — the whole reason this survives adding an agenda item, ticking a
-  // task, or anything else that redraws the page.
-  const cachedDraft = await getMeetingDraft(type);
-  if (cachedDraft && cachedDraft.cycleDate === meetingDate) {
-    renderDraft(resultHost, cachedDraft.data, rerender, new Set(cachedDraft.added || []), { type, cycleDate: meetingDate, meetingDateLabel: fmtDay(meetingDate) });
-  }
+  // ----- share the final, curated agenda (whatever's left after you've
+  // removed what you don't want) -----
+  const shareBtn = el('button', {
+    class: 'btn',
+    onclick: () => shareText({
+      title: `${type === 'admin' ? 'Admin' : 'Family'} meeting agenda`,
+      text: agendaToText(cycleAgenda, { type, meetingDateLabel: fmtDay(meetingDate) }),
+    }),
+  }, '📤 Share agenda');
 
   // ----- assemble as one unit -----
   root.append(
@@ -274,19 +280,43 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
 
       el('h5', { class: 'meeting-unit-heading' }, `Agenda (${cycleAgenda.filter((a) => !a.reviewed).length} open)`),
       el('div', { class: 'grocery-add' }, [input, el('button', { class: 'btn btn-primary', onclick: add }, 'Add')]),
-      ...(cycleAgenda.length ? cycleAgenda.map((a) => agendaRow(a, rerender)) : [el('p', { class: 'muted small' }, 'No agenda items yet. Jot down what you want to talk about.')]),
+      ...(cycleAgenda.length ? cycleAgenda.map((a) => agendaRow(a, rerender)) : [el('p', { class: 'muted small' }, 'No agenda items yet. Jot down what you want to talk about, or have Claudia create the agenda below.')]),
+      cycleAgenda.length ? el('div', { style: 'margin-top: 10px' }, [shareBtn]) : null,
 
       el('h5', { class: 'meeting-unit-heading' }, 'Plan with Claudia'),
       el('p', { class: 'muted small' },
         hasApiKey()
-          ? 'Claudia proposes an agenda from this week — plus icebreakers and activities for Family, or a brisk task-focused list for Admin — with one tap to add each. Carries forward anything left open from last time.'
+          ? 'One tap fills the agenda above with her full proposal — topics, plus icebreakers and activities for Family (or a brisk task list for Admin) — merged in with anything you’ve already typed. Delete what you don’t want, then Share. Carries forward anything left open from last time.'
           : 'Optional: add a Claude API key in Settings to have Claudia create the agenda. Everything above works without it.'),
       createBtn,
-      resultHost,
+      statusHost,
     ])
   );
 
   return nodes;
+}
+
+// Merge Claudia's proposal directly into the running agenda — topics,
+// icebreakers, and activities all become real agenda rows immediately (no
+// per-item "accept" step). Skips anything whose text already appears in the
+// current cycle (case-insensitive), so re-running this doesn't duplicate.
+// Returns how many new rows were actually added.
+async function mergeDraftIntoAgenda(out, cycleAgenda, type, cycleDate) {
+  const existing = new Set(cycleAgenda.map((a) => a.text.trim().toLowerCase()));
+  const candidates = [
+    ...(out.draftAgenda || []).map((s) => s.topic),
+    ...(out.icebreakers || []).map((t) => `Icebreaker: ${t}`),
+    ...(out.activities || []).map((t) => `Activity: ${t}`),
+  ];
+  let added = 0;
+  for (const text of candidates) {
+    const key = (text || '').trim().toLowerCase();
+    if (!key || existing.has(key)) continue;
+    existing.add(key);
+    await put('agenda', { text, reviewed: false, type, cycleDate });
+    added++;
+  }
+  return added;
 }
 
 // Standalone page for the legacy #/meeting route.
@@ -296,89 +326,10 @@ export async function renderMeeting(root) {
   root.append(...(await meetingSection(rerender, { embedded: false })));
 }
 
-// A "+ Agenda" chip that drops a drafted line onto the running agenda,
-// stamped for this meeting type + cycle. Marks itself added in the
-// persisted draft too, so the restored draft (after any re-render) still
-// shows it as "Added ✓" instead of re-arming the button.
-function agendaAddBtn(text, rerender, alreadyAdded, ctx) {
-  const btn = el('button', {
-    class: 'btn seg-btn hm-add',
-    disabled: alreadyAdded ? 'disabled' : null,
-    onclick: async () => {
-      await put('agenda', { text, reviewed: false, type: ctx.type, cycleDate: ctx.cycleDate });
-      await markMeetingDraftAdded(ctx.type, text);
-      btn.disabled = 'disabled';
-      btn.textContent = 'Added ✓';
-      toast('Added to agenda', 'success');
-      rerender();
-    },
-  }, alreadyAdded ? 'Added ✓' : '+ Agenda');
-  return el('div', { class: 'hm-actions' }, [btn]);
-}
-
-// Plain-text version of the draft, for Copy / Share (paste into email,
-// Notes, Google Docs, wherever) — no in-app formatting needed elsewhere.
-function draftToText(out, { type, meetingDateLabel } = {}) {
+// Plain-text version of the current (already-curated) agenda, for Copy /
+// Share (paste into email, Notes, Google Docs, wherever).
+function agendaToText(cycleAgenda, { type, meetingDateLabel } = {}) {
   const lines = [`${type === 'admin' ? 'Admin' : 'Family'} meeting${meetingDateLabel ? ` — ${meetingDateLabel}` : ''}`, ''];
-  if (out.draftAgenda?.length) {
-    lines.push('Agenda:');
-    for (const s of out.draftAgenda) lines.push(`- ${s.topic}${s.why ? ` (${s.why})` : ''}`);
-    lines.push('');
-  }
-  if (out.icebreakers?.length) {
-    lines.push('Icebreakers:');
-    for (const t of out.icebreakers) lines.push(`- ${t}`);
-    lines.push('');
-  }
-  if (out.activities?.length) {
-    lines.push('Activities:');
-    for (const t of out.activities) lines.push(`- ${t}`);
-  }
+  for (const a of cycleAgenda) lines.push(`- ${a.text}`);
   return lines.join('\n').trim();
-}
-
-function renderDraft(host, out, rerender, addedSet, ctx) {
-  clear(host);
-  const section = (title, node) => el('div', { class: 'meeting-section' }, [el('h5', {}, title), node]);
-  const addCtx = { type: ctx.type, cycleDate: ctx.cycleDate };
-
-  if (out.draftAgenda?.length) {
-    host.append(section('Proposed agenda', el('div', {}, out.draftAgenda.map((s) =>
-      el('div', { class: 'idea' }, [
-        el('div', { class: 'idea-title' }, s.topic),
-        s.why ? el('p', { class: 'idea-detail' }, s.why) : null,
-        agendaAddBtn(s.topic, rerender, addedSet.has(s.topic), addCtx),
-      ])
-    ))));
-  }
-  if (out.icebreakers?.length) {
-    host.append(section('Icebreakers', el('div', {}, out.icebreakers.map((t) => {
-      const label = `Icebreaker: ${t}`;
-      return el('div', { class: 'idea' }, [
-        el('div', { class: 'idea-title' }, t),
-        agendaAddBtn(label, rerender, addedSet.has(label), addCtx),
-      ]);
-    }))));
-  }
-  if (out.activities?.length) {
-    host.append(section('Activities', el('div', {}, out.activities.map((t) => {
-      const label = `Activity: ${t}`;
-      return el('div', { class: 'idea' }, [
-        el('div', { class: 'idea-title' }, t),
-        agendaAddBtn(label, rerender, addedSet.has(label), addCtx),
-      ]);
-    }))));
-  }
-  if (!host.children.length) {
-    host.append(el('p', { class: 'muted small' }, 'Claudia didn’t have a draft to add — try jotting a few week notes above.'));
-    return;
-  }
-  // Share/copy the whole draft as plain text — paste into email, Notes,
-  // Google Docs, wherever. Native share sheet first, clipboard fallback.
-  host.append(
-    el('button', {
-      class: 'btn full', style: 'margin-top: 10px',
-      onclick: () => shareText({ title: `${ctx.type === 'admin' ? 'Admin' : 'Family'} meeting agenda`, text: draftToText(out, ctx) }),
-    }, '📤 Share / copy draft')
-  );
 }

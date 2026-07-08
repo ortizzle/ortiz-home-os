@@ -59,24 +59,6 @@ export async function markBriefDismissed(date, title) {
   await put('briefs', { ...b, dismissed: [...new Set([...(b.dismissed || []), title])] });
 }
 
-// ---------- shared meeting draft (synced — one per meeting type) ----------
-// Keyed by type ('family' | 'admin') so switching types on the Claudia page
-// never loses the other's draft. Persisted so re-rendering the page (adding
-// an agenda item, ticking a task, anything that redraws the view) restores
-// it instead of losing it — this was the "costs tokens to reproduce" bug.
-
-export async function getMeetingDraft(type) {
-  return get('meetingDrafts', type);
-}
-export async function saveMeetingDraft(type, data, cycleDate) {
-  await put('meetingDrafts', { id: type, data, cycleDate, added: [] });
-}
-export async function markMeetingDraftAdded(type, title) {
-  const d = await get('meetingDrafts', type);
-  if (!d) return;
-  await put('meetingDrafts', { ...d, added: [...new Set([...(d.added || []), title])] });
-}
-
 // ---------- shared weekly review (synced — a single "current" record) ----------
 // No expiry: it lives until either of you runs a fresh one (the ~2x/week
 // rhythm), so both phones show the same plan, the same dismissals, and the
