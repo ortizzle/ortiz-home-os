@@ -29,6 +29,18 @@ export function clear(node) {
   return node;
 }
 
+// Wrap a full-page re-render (clear(root) + rebuild) so it doesn't reset
+// scroll to the top — replacing DOM nodes loses the browser's scroll anchor
+// even though the content looks the same. Every view's `rerender` should be
+// wrapped with this; forgetting it is exactly what sends you back to the top
+// after adding an agenda item, ticking a task, etc.
+export function preserveScroll(renderFn) {
+  return (...args) => {
+    const y = window.scrollY;
+    return Promise.resolve(renderFn(...args)).then(() => window.scrollTo(0, y));
+  };
+}
+
 // Horizontal swipe navigation (e.g. Calendar's day/week paging). Fires onLeft
 // (finger moved left → "go forward", like flipping to the next page) or
 // onRight ("go back") once the gesture clearly reads as horizontal — a big

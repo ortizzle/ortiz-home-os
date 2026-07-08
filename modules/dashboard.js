@@ -4,7 +4,7 @@
 // household app that scores spouses is a divorce app).
 
 import { getAll, put, getSettings } from './store.js';
-import { el, clear, navigate, toast, todayStr, addDays, fmtDay } from './ui.js';
+import { el, clear, navigate, toast, todayStr, addDays, fmtDay, preserveScroll } from './ui.js';
 import { choreRow } from './chores.js';
 import { addGroceryItem } from './grocery.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
@@ -25,7 +25,7 @@ function greeting() {
 
 export async function renderDashboard(root) {
   clear(root);
-  const rerender = () => renderDashboard(root);
+  const rerender = preserveScroll(() => renderDashboard(root));
   const today = todayStr();
   const settings = getSettings();
 

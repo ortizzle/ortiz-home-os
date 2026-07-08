@@ -2,7 +2,7 @@
 // grammar as Focus OS tasks.
 
 import { getAll, put, remove, now, deviceName } from './store.js';
-import { el, clear, toast, openModal, todayStr, fmtDue } from './ui.js';
+import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll } from './ui.js';
 import { parseImport } from './grocery.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -101,7 +101,7 @@ export async function editChoreModal(chore, onchange) {
 export async function renderChores(root) {
   clear(root);
   const chores = await getAll('chores');
-  const rerender = () => renderChores(root);
+  const rerender = preserveScroll(() => renderChores(root));
 
   const today = todayStr();
   const open = chores.filter((c) => !c.done).sort(byDue);

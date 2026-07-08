@@ -1,14 +1,22 @@
-// meeting.js — the weekly family meeting: pick Family (kids included, fun
-// + togetherness) or Admin (Chris + Kat, household ops), keep a running
-// agenda, and have Claude draft or review it. No calendar summary here —
-// Calendar is the place for that; this stays focused on the agenda + draft.
+// meeting.js — the weekly family meeting, as one unit: pick Family (kids
+// included, fun + togetherness) or Admin (Chris + Kat, household ops), keep
+// a running agenda scoped to that type and this meeting cycle, and have
+// Claudia create the agenda in one shot. No calendar summary here — Calendar
+// already covers that; this stays focused on the agenda + the draft.
+//
+// Agenda items carry `type` (family/admin) and `cycleDate` (which meeting
+// they belong to — YYYY-MM-DD). The visible list is always just THIS type +
+// THIS cycle; once the meeting date passes, `nextMeetingDate()` advances and
+// the list naturally starts empty for the new cycle. Anything left un-
+// checked from the previous cycle isn't shown, but it IS fed to Claudia as
+// follow-through context so it's not just quietly forgotten.
 
 import { getAll, put, remove, getSettings, deviceName } from './store.js';
-import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtDay, shareText } from './ui.js';
+import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtDay, shareText, preserveScroll } from './ui.js';
 import { appointmentsFor } from './calendar.js';
 import { errandWindow } from './suggest.js';
-import { hasApiKey, reviewFamilyMeeting, draftMeeting, AIError } from './ai.js';
-import { DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
+import { hasApiKey, draftMeeting, AIError } from './ai.js';
+import { DEFAULT_HOUSEHOLD_NOTES, getMeetingDraft, saveMeetingDraft, markMeetingDraftAdded } from './hmcontext.js';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -30,8 +38,6 @@ function wkShort(dateStr) {
 
 // Split week-ahead appointments into one-offs (the interesting stuff) and
 // recurring series that land on multiple days (shown once, with a day range).
-// Series are keyed by seriesId when present (mirrored Google events carry it),
-// falling back to title for anything else.
 function collapseAppts(appts) {
   const groups = new Map();
   for (const a of appts) {
@@ -64,7 +70,9 @@ function meetingDay() {
   return Number.isInteger(d) && d >= 0 && d <= 6 ? d : 3; // default Wednesday
 }
 
-// The date of this week's meeting: today if it's meeting day, else the next one.
+// The date of this week's meeting: today if it's meeting day, else the next
+// one. Doubles as the "cycle" key for agenda items — the day after this date
+// passes, a fresh nextMeetingDate() starts a new, empty cycle.
 function nextMeetingDate() {
   const today = parseDate(todayStr());
   const delta = (meetingDay() - today.getDay() + 7) % 7;
@@ -145,77 +153,77 @@ function agendaRow(item, rerender) {
 export async function meetingSection(rerender, { embedded = true } = {}) {
   const nodes = [];
   const root = { append: (...n) => nodes.push(...n.filter(Boolean)) }; // collect instead of mount
-  const agenda = (await getAll('agenda')).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
-  const week = await gatherWeekAhead();
   const meetingDate = nextMeetingDate();
   const isToday = meetingDate === todayStr();
 
-  const meta = `${isToday ? 'Today' : DAY_NAMES[meetingDay()]} · ${fmtDay(meetingDate)} — ${familyMembers().join(', ')}`;
-  if (embedded) {
-    root.append(
-      el('div', { class: 'panel-head', style: 'margin-top: 20px' }, [el('h4', {}, 'Family meeting')]),
-      el('p', { class: 'muted small', style: 'margin: -4px 0 8px' }, meta)
-    );
-  } else {
-    root.append(el('div', { class: 'view-head' }, [el('h1', {}, 'Family Meeting'), el('p', { class: 'muted' }, meta)]));
+  // Lazy-migrate legacy agenda items (from before type/cycleDate existed)
+  // onto the current cycle, once, so nothing old just vanishes.
+  const rawAgenda = await getAll('agenda');
+  for (const a of rawAgenda) {
+    if (!a.cycleDate) {
+      a.type = a.type || 'family';
+      a.cycleDate = meetingDate;
+      await put('agenda', a, { touch: false });
+    }
   }
+  const agenda = rawAgenda.sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
+  const week = await gatherWeekAhead();
+
+  const meta = `${isToday ? 'Today' : DAY_NAMES[meetingDay()]} · ${fmtDay(meetingDate)} — ${familyMembers().join(', ')}`;
+  const headEl = embedded
+    ? el('div', { class: 'panel-head', style: 'margin-top: 20px' }, [el('h4', {}, 'Family meeting')])
+    : el('div', { class: 'view-head' }, [el('h1', {}, 'Family Meeting')]);
 
   // ----- meeting type: Family (kids, fun) or Admin (Chris + Kat, household ops) -----
   let type = getMeetingType();
   const typeBtn = (t, label) =>
     el('button', {
       class: 'btn seg-btn' + (type === t ? ' active' : ''),
-      onclick: (e) => {
-        type = t;
-        setMeetingType(t);
-        e.currentTarget.parentElement.querySelectorAll('.seg-btn').forEach((b) => b.classList.toggle('active', b === e.currentTarget));
-        draftBtn.textContent = draftLabel();
-      },
+      onclick: () => { type = t; setMeetingType(t); rerender(); },
     }, label);
-  root.append(el('div', { class: 'seg' }, [typeBtn('family', 'Family'), typeBtn('admin', 'Admin')]));
 
-  // ----- agenda -----
+  // Agenda scoped to this type + this cycle only — a new cycle starts empty
+  // the day after the meeting date passes.
+  const cycleAgenda = agenda.filter((a) => a.cycleDate === meetingDate && (a.type || 'family') === type);
+  // Un-checked items from the previous cycle, same type — not shown as rows,
+  // but fed to Claudia so a dropped topic doesn't just disappear.
+  const stillOpenItems = agenda.filter((a) => !a.reviewed && a.cycleDate && a.cycleDate < meetingDate && (a.type || 'family') === type);
+
+  // ----- agenda input -----
   const input = el('input', { class: 'input', placeholder: 'Add an agenda item…' });
   async function add() {
     const text = input.value.trim();
     if (!text) return;
-    await put('agenda', { text, reviewed: false });
+    await put('agenda', { text, reviewed: false, type, cycleDate: meetingDate });
     input.value = '';
     input.focus();
     rerender();
   }
   input.addEventListener('keydown', (e) => e.key === 'Enter' && add());
-  root.append(
-    el('div', { class: 'panel-head' }, [el('h4', {}, `Agenda (${agenda.filter((a) => !a.reviewed).length} open)`)]),
-    el('section', { class: 'panel' }, [
-      el('div', { class: 'grocery-add' }, [input, el('button', { class: 'btn btn-primary', onclick: add }, 'Add')]),
-      ...(agenda.length ? agenda.map((a) => agendaRow(a, rerender)) : [el('p', { class: 'muted small' }, 'No agenda items yet. Jot down what you want to talk about this week.')]),
-    ])
-  );
 
-  // ----- Claude: draft the meeting / review the agenda -----
-  root.append(el('div', { class: 'panel-head' }, [el('h4', {}, 'Plan with Claudia')]));
+  // ----- Claudia: create the agenda (one button, persisted so it survives
+  // any re-render — adding an item, ticking a task, anything) -----
   const resultHost = el('div', {});
-  const draftLabel = () => `Draft the ${type === 'admin' ? 'Admin' : 'Family'} meeting`;
-
-  const draftBtn = el('button', {
+  const createLabel = () => `Create the ${type === 'admin' ? 'Admin' : 'Family'} agenda`;
+  const createBtn = el('button', {
     class: 'btn btn-primary full',
     onclick: async () => {
       if (!hasApiKey()) {
         toast('Add a Claude API key in Settings first', 'warn');
         return navigate('#/settings');
       }
-      const label = draftLabel();
-      draftBtn.disabled = 'disabled';
-      draftBtn.textContent = 'Drafting…';
-      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is drafting your meeting…')]));
+      const label = createLabel();
+      createBtn.disabled = 'disabled';
+      createBtn.textContent = 'Creating…';
+      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is creating the agenda…')]));
       try {
         const plan = await getAll('plan');
         const openItems = [
           ...week.dueChores.map((c) => `- ${c.title} (due ${fmtDay(c.dueDate)})`),
           ...plan.filter((p) => !p.done).map((p) => `- ${p.title || p.text}`),
         ].join('\n');
-        const currentAgenda = agenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
+        const currentAgenda = cycleAgenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
+        const stillOpen = stillOpenItems.map((a) => `- ${a.text}`).join('\n');
         const out = await draftMeeting({
           family: familyMembers(),
           notes: getSettings().householdNotes || DEFAULT_HOUSEHOLD_NOTES,
@@ -223,53 +231,45 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
           weekAhead: week.summary,
           openItems,
           currentAgenda,
+          stillOpen,
           type,
         });
-        renderDraft(resultHost, out, rerender, { type, meetingDate: fmtDay(meetingDate) });
+        await saveMeetingDraft(type, out, meetingDate);
+        renderDraft(resultHost, out, rerender, new Set(), { type, cycleDate: meetingDate, meetingDateLabel: fmtDay(meetingDate) });
       } catch (err) {
         clear(resultHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
       } finally {
-        draftBtn.disabled = null;
-        draftBtn.textContent = label;
+        createBtn.disabled = null;
+        createBtn.textContent = label;
       }
     },
-  }, draftLabel());
+  }, createLabel());
 
-  const reviewBtn = el('button', {
-    class: 'btn full',
-    onclick: async () => {
-      if (!hasApiKey()) {
-        toast('Add a Claude API key in Settings first', 'warn');
-        return navigate('#/settings');
-      }
-      reviewBtn.disabled = 'disabled';
-      reviewBtn.textContent = 'Reviewing…';
-      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reviewing the agenda…')]));
-      try {
-        const out = await reviewFamilyMeeting({
-          family: familyMembers(),
-          meetingDate: fmtDay(meetingDate),
-          agenda,
-          weekAhead: week.summary,
-        });
-        renderReview(resultHost, out);
-      } catch (err) {
-        clear(resultHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
-      } finally {
-        reviewBtn.disabled = null;
-        reviewBtn.textContent = 'Review our meeting';
-      }
-    },
-  }, 'Review our meeting');
+  // Restore a persisted draft for this type if it's still current (this
+  // cycle) — the whole reason this survives adding an agenda item, ticking a
+  // task, or anything else that redraws the page.
+  const cachedDraft = await getMeetingDraft(type);
+  if (cachedDraft && cachedDraft.cycleDate === meetingDate) {
+    renderDraft(resultHost, cachedDraft.data, rerender, new Set(cachedDraft.added || []), { type, cycleDate: meetingDate, meetingDateLabel: fmtDay(meetingDate) });
+  }
 
+  // ----- assemble as one unit -----
   root.append(
+    headEl,
     el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top:0' },
+      el('p', { class: 'muted small', style: 'margin: 0 0 10px' }, meta),
+      el('div', { class: 'seg' }, [typeBtn('family', 'Family'), typeBtn('admin', 'Admin')]),
+
+      el('h5', { class: 'meeting-unit-heading' }, `Agenda (${cycleAgenda.filter((a) => !a.reviewed).length} open)`),
+      el('div', { class: 'grocery-add' }, [input, el('button', { class: 'btn btn-primary', onclick: add }, 'Add')]),
+      ...(cycleAgenda.length ? cycleAgenda.map((a) => agendaRow(a, rerender)) : [el('p', { class: 'muted small' }, 'No agenda items yet. Jot down what you want to talk about.')]),
+
+      el('h5', { class: 'meeting-unit-heading' }, 'Plan with Claudia'),
+      el('p', { class: 'muted small' },
         hasApiKey()
-          ? 'Draft the meeting: Claudia proposes an agenda from this week, plus icebreakers and activities to add with one tap. Review: she checks what you’ve covered and what’s still open.'
-          : 'Optional: add a Claude API key in Settings to have Claudia draft and review the meeting. Everything above works without it.'),
-      draftBtn,
-      hasApiKey() ? reviewBtn : null,
+          ? 'Claudia proposes an agenda from this week — plus icebreakers and activities for Family, or a brisk task-focused list for Admin — with one tap to add each. Carries forward anything left open from last time.'
+          : 'Optional: add a Claude API key in Settings to have Claudia create the agenda. Everything above works without it.'),
+      createBtn,
       resultHost,
     ])
   );
@@ -279,30 +279,35 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
 
 // Standalone page for the legacy #/meeting route.
 export async function renderMeeting(root) {
+  const rerender = preserveScroll(() => renderMeeting(root));
   clear(root);
-  root.append(...(await meetingSection(() => renderMeeting(root), { embedded: false })));
+  root.append(...(await meetingSection(rerender, { embedded: false })));
 }
 
-// A "+ Agenda" chip that drops a drafted line onto the running agenda. It
-// flips to "Added ✓" in place rather than re-rendering, so the whole draft
-// stays on screen while you cherry-pick from it.
-function agendaAddBtn(text) {
+// A "+ Agenda" chip that drops a drafted line onto the running agenda,
+// stamped for this meeting type + cycle. Marks itself added in the
+// persisted draft too, so the restored draft (after any re-render) still
+// shows it as "Added ✓" instead of re-arming the button.
+function agendaAddBtn(text, rerender, alreadyAdded, ctx) {
   const btn = el('button', {
     class: 'btn seg-btn hm-add',
+    disabled: alreadyAdded ? 'disabled' : null,
     onclick: async () => {
-      await put('agenda', { text, reviewed: false });
+      await put('agenda', { text, reviewed: false, type: ctx.type, cycleDate: ctx.cycleDate });
+      await markMeetingDraftAdded(ctx.type, text);
       btn.disabled = 'disabled';
       btn.textContent = 'Added ✓';
       toast('Added to agenda', 'success');
+      rerender();
     },
-  }, '+ Agenda');
+  }, alreadyAdded ? 'Added ✓' : '+ Agenda');
   return el('div', { class: 'hm-actions' }, [btn]);
 }
 
 // Plain-text version of the draft, for Copy / Share (paste into email,
 // Notes, Google Docs, wherever) — no in-app formatting needed elsewhere.
-function draftToText(out, { type, meetingDate } = {}) {
-  const lines = [`${type === 'admin' ? 'Admin' : 'Family'} meeting${meetingDate ? ` — ${meetingDate}` : ''}`, ''];
+function draftToText(out, { type, meetingDateLabel } = {}) {
+  const lines = [`${type === 'admin' ? 'Admin' : 'Family'} meeting${meetingDateLabel ? ` — ${meetingDateLabel}` : ''}`, ''];
   if (out.draftAgenda?.length) {
     lines.push('Agenda:');
     for (const s of out.draftAgenda) lines.push(`- ${s.topic}${s.why ? ` (${s.why})` : ''}`);
@@ -320,34 +325,37 @@ function draftToText(out, { type, meetingDate } = {}) {
   return lines.join('\n').trim();
 }
 
-function renderDraft(host, out, rerender, ctx = {}) {
+function renderDraft(host, out, rerender, addedSet, ctx) {
   clear(host);
   const section = (title, node) => el('div', { class: 'meeting-section' }, [el('h5', {}, title), node]);
+  const addCtx = { type: ctx.type, cycleDate: ctx.cycleDate };
 
   if (out.draftAgenda?.length) {
     host.append(section('Proposed agenda', el('div', {}, out.draftAgenda.map((s) =>
       el('div', { class: 'idea' }, [
         el('div', { class: 'idea-title' }, s.topic),
         s.why ? el('p', { class: 'idea-detail' }, s.why) : null,
-        agendaAddBtn(s.topic),
+        agendaAddBtn(s.topic, rerender, addedSet.has(s.topic), addCtx),
       ])
     ))));
   }
   if (out.icebreakers?.length) {
-    host.append(section('Icebreakers', el('div', {}, out.icebreakers.map((t) =>
-      el('div', { class: 'idea' }, [
+    host.append(section('Icebreakers', el('div', {}, out.icebreakers.map((t) => {
+      const label = `Icebreaker: ${t}`;
+      return el('div', { class: 'idea' }, [
         el('div', { class: 'idea-title' }, t),
-        agendaAddBtn(`Icebreaker: ${t}`),
-      ])
-    ))));
+        agendaAddBtn(label, rerender, addedSet.has(label), addCtx),
+      ]);
+    }))));
   }
   if (out.activities?.length) {
-    host.append(section('Activities', el('div', {}, out.activities.map((t) =>
-      el('div', { class: 'idea' }, [
+    host.append(section('Activities', el('div', {}, out.activities.map((t) => {
+      const label = `Activity: ${t}`;
+      return el('div', { class: 'idea' }, [
         el('div', { class: 'idea-title' }, t),
-        agendaAddBtn(`Activity: ${t}`),
-      ])
-    ))));
+        agendaAddBtn(label, rerender, addedSet.has(label), addCtx),
+      ]);
+    }))));
   }
   if (!host.children.length) {
     host.append(el('p', { class: 'muted small' }, 'Claudia didn’t have a draft to add — try jotting a few week notes above.'));
@@ -361,31 +369,4 @@ function renderDraft(host, out, rerender, ctx = {}) {
       onclick: () => shareText({ title: 'Family meeting draft', text: draftToText(out, ctx) }),
     }, '📤 Share / copy draft')
   );
-}
-
-function bulletList(items) {
-  return el('ul', { class: 'meeting-list' }, (items || []).map((t) => el('li', {}, t)));
-}
-
-function renderReview(host, out) {
-  clear(host);
-  const section = (title, node) => el('div', { class: 'meeting-section' }, [el('h5', {}, title), node]);
-
-  if (out.alreadyCovered?.length) {
-    host.append(section('Already reviewed', bulletList(out.alreadyCovered)));
-  }
-  if (out.needsReview?.length) {
-    host.append(section('Still needs discussion', bulletList(out.needsReview)));
-  }
-  if (out.suggestedAgenda?.length) {
-    host.append(section('Suggested agenda', el('ol', { class: 'meeting-list' }, out.suggestedAgenda.map((s) =>
-      el('li', {}, [el('strong', {}, s.topic), s.why ? el('span', { class: 'muted' }, ` — ${s.why}`) : null])
-    ))));
-  }
-  if (out.tips?.length) {
-    host.append(section('Tips', bulletList(out.tips)));
-  }
-  if (!host.children.length) {
-    host.append(el('p', { class: 'muted small' }, 'Claudia didn’t have much to add — your agenda looks in good shape.'));
-  }
 }

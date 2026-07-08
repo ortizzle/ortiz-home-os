@@ -3,7 +3,7 @@
 // item carries its intended store but you can check it off anywhere.
 
 import { getAll, put, remove, now } from './store.js';
-import { el, clear, toast, todayStr, tableOfContents } from './ui.js';
+import { el, clear, toast, todayStr, tableOfContents, preserveScroll } from './ui.js';
 import { dinnersSection } from './meals.js';
 
 export const STORES = ['Costco', 'Walmart', "Trader Joe's"];
@@ -88,7 +88,7 @@ function storePicker(initial) {
 export async function renderGrocery(root) {
   clear(root);
   const [items, meals] = await Promise.all([getAll('groceries'), getAll('meals')]);
-  const rerender = () => renderGrocery(root);
+  const rerender = preserveScroll(() => renderGrocery(root));
 
   const open = items.filter((g) => !g.gotAt).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const got = items.filter(gotToday);
@@ -120,8 +120,7 @@ export async function renderGrocery(root) {
     const sortBtn = (v, label) =>
       el('button', {
         class: 'btn seg-btn' + (sort === v ? ' active' : ''),
-        // Keep your place instead of jumping to the top of the page.
-        onclick: async () => { const y = window.scrollY; setSort(v); await rerender(); window.scrollTo(0, y); },
+        onclick: () => { setSort(v); rerender(); },
       }, label);
     root.append(
       el('div', { class: 'grocery-head' }, [

@@ -5,7 +5,7 @@
 // maintenance-schedule feature.
 
 import { getAll, put, remove } from './store.js';
-import { el, clear, toast, navigate, openModal, todayStr, addDays, parseDate, dateStr, fmtDay, onSwipe } from './ui.js';
+import { el, clear, toast, navigate, openModal, todayStr, addDays, parseDate, dateStr, fmtDay, onSwipe, preserveScroll } from './ui.js';
 import { choreRow, editChoreModal } from './chores.js';
 import { isConnected, everConnected, connect, eventsForRange, GcalError, canWrite, writableCalendars, createEvent, getWriteCalendar, setWriteCalendar } from './gcal.js';
 
@@ -199,7 +199,7 @@ export async function renderCalendar(root, { mode = 'day', date = todayStr() } =
 
 async function renderDay(root, date) {
   // Modals mutate data, then redraw the whole view (head + seg included).
-  const rerender = () => renderCalendar(root, { mode: 'day', date });
+  const rerender = preserveScroll(() => renderCalendar(root, { mode: 'day', date }));
   const [chores, appointments] = await Promise.all([
     getAll('chores'),
     appointmentsFor(date, addDays(date, 1)),

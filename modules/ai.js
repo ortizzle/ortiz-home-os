@@ -131,50 +131,17 @@ async function generateJSON({ system, prompt, maxTokens, tools }) {
 
 // ---------- Family meeting advisor ----------
 
-// Reviews the agenda + the week ahead and returns structured guidance:
-// what's already been reviewed, what still needs discussion (including
-// upcoming things not yet on the agenda), a suggested meeting structure,
-// and a couple of facilitation tips.
-export async function reviewFamilyMeeting({ family = [], meetingDate, agenda = [], weekAhead = '' }) {
-  const system = `You are Claudia, the Ortiz family's AI house manager. You help them run a good weekly family meeting. The family members are: ${family.join(', ') || 'the family'}. Keep advice warm, concrete, and brief — this is a household ritual, not a corporate standup. Ground every suggestion in the agenda and week-ahead data provided; do not invent events, people, or commitments that aren't given. Respond with JSON only — no markdown, no fences.`;
-
-  const reviewed = agenda.filter((a) => a.reviewed).map((a) => a.text);
-  const open = agenda.filter((a) => !a.reviewed).map((a) => a.text);
-
-  const prompt = `It's the family meeting${meetingDate ? ` for ${meetingDate}` : ''}. Help us run it well.
-
-AGENDA ITEMS ALREADY MARKED REVIEWED:
-${reviewed.length ? reviewed.map((t) => `- ${t}`).join('\n') : '(none yet)'}
-
-AGENDA ITEMS STILL OPEN (not yet reviewed):
-${open.length ? open.map((t) => `- ${t}`).join('\n') : '(none yet)'}
-
-THE WEEK AHEAD (from our household app):
-${weekAhead || '(nothing logged for the coming week)'}
-
-Return JSON with exactly this shape:
-{
-  "alreadyCovered": ["short restatement of each agenda item already reviewed"],
-  "needsReview": ["each still-open agenda item, PLUS anything from the week ahead that deserves a family conversation but isn't on the agenda yet — say briefly why"],
-  "suggestedAgenda": [ { "topic": "short agenda topic", "why": "one sentence on why it belongs and roughly when in the meeting" } ],
-  "tips": ["2-3 brief, practical tips for making this specific meeting go well"]
-}
-
-Keep the suggested agenda to a realistic 20-30 minute family meeting (4-6 topics). If a section has nothing, return an empty array.`;
-
-  return generateJSON({ system, prompt, maxTokens: 1800 });
-}
-
 // Drafts a full family-meeting plan from the week — a proposed agenda drawn
 // from real events and open items, plus fun icebreakers and togetherness
 // activities that get everyone (including the kids) participating.
 // `type`: 'family' (Wednesday-style, kids included — warm, icebreakers,
 // togetherness activities) or 'admin' (Chris + Kat only — brisk, household
 // ops/projects/finances, no kid content).
-export async function draftMeeting({ family = [], notes = '', meetingDate, weekAhead = '', openItems = '', currentAgenda = '', type = 'family' } = {}) {
-  const system = type === 'admin'
+export async function draftMeeting({ family = [], notes = '', meetingDate, weekAhead = '', openItems = '', currentAgenda = '', stillOpen = '', type = 'family' } = {}) {
+  const system = (type === 'admin'
     ? `You are Claudia, the Ortiz house manager, helping Chris and Kat run a quick admin meeting — just the two of them, no kids. Draft an agenda drawn from real open household items: tasks, the weekly plan, projects, decisions, budgeting — never invent anything not in the data. Keep it brisk and businesslike, like a well-run status check between two people running a household together, not a family gathering. No icebreakers or kid activities. Respond with JSON only — no markdown, no fences.`
-    : `You are Claudia, the Ortiz family's AI house manager, helping them run a warm, fun weekly family meeting. Family: ${family.join(', ') || 'the family'} (Sedona and River are kids). Draft an agenda drawn from the week's real events and open items — never invent events, people, or commitments. Make it feel like a family moment, not a status meeting: include quick icebreakers the kids will enjoy and short activities that build participation and togetherness. Keep everything concrete and kid-friendly. Respond with JSON only — no markdown, no fences.`;
+    : `You are Claudia, the Ortiz family's AI house manager, helping them run a warm, fun weekly family meeting. Family: ${family.join(', ') || 'the family'} (Sedona and River are kids). Draft an agenda drawn from the week's real events and open items — never invent events, people, or commitments. Make it feel like a family moment, not a status meeting: include quick icebreakers the kids will enjoy and short activities that build participation and togetherness. Keep everything concrete and kid-friendly. Respond with JSON only — no markdown, no fences.`)
+    + ' FOLLOW-THROUGH: some topics from last meeting were never checked off — genuinely fold in the ones that still matter (it\'s fine to drop something that clearly resolved itself), so nothing quietly falls through the cracks.';
 
   const prompt = `Draft this week's ${type === 'admin' ? 'admin' : 'family'} meeting${meetingDate ? ` for ${meetingDate}` : ''}.
 
@@ -186,6 +153,9 @@ ${weekAhead || '(nothing logged)'}
 
 OPEN ITEMS FROM DURING THE WEEK (tasks, plans worth raising):
 ${openItems || '(none)'}
+
+STILL OPEN FROM LAST MEETING (never checked off — follow up on what still matters):
+${stillOpen || '(nothing carried over)'}
 
 ALREADY ON THE AGENDA (do not repeat):
 ${currentAgenda || '(nothing yet)'}
