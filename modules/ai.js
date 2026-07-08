@@ -296,48 +296,6 @@ One meal per empty night, dated correctly. Empty arrays are fine.`;
   return generateJSON({ system, prompt, maxTokens: 2400 });
 }
 
-// Free-form Q&A for the Manager tab — answers a question grounded in the
-// family's calendar, email, tasks, plan, and groceries. Returns a short
-// answer plus any concrete one-tap actions it wants to offer. `briefNote`
-// is a one-line version the family can pin to tomorrow's morning brief.
-export async function askManager({ family = [], notes = '', interests = '', today, weekday = '', question, events = '', email = '', chores = '', groceries = '', plan = '', meals = '' } = {}) {
-  const system = HM_ROLE(family) + ' Answer the question directly and concretely from the family data below. If the question needs current outside information (showtimes, local events, hours, weather, news), use web search and cite real dates/times/venues from what you find. If neither the data nor a search answers it, say so plainly rather than guessing. Keep the answer to a few sentences.';
-  const prompt = `Today is ${weekday} ${today}. Answer this question for the family:
-
-"${question}"
-
-FAMILY INTERESTS:
-${interests || '(none listed)'}
-
-CALENDAR (upcoming):
-${events || '(no calendar events available)'}
-
-RECENT EMAIL (sender — subject: snippet):
-${email || '(no email available)'}
-
-OPEN CHORES:
-${chores || '(none)'}
-
-GROCERY LIST:
-${groceries || '(empty)'}
-
-WEEKLY PLAN:
-${plan || '(nothing planned)'}
-
-DINNERS PLANNED:
-${meals || '(none planned)'}
-
-Return JSON with exactly this shape:
-{
-  "answer": "a direct, few-sentence answer grounded in the data above",
-  "briefNote": "one short line suitable for tomorrow's morning brief, or empty if not worth surfacing",
-  "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative action", "date": "YYYY-MM-DD (optional)", "detail": "one short clause", "store": "Costco | Walmart | Trader Joe's (REQUIRED for type grocery — match the store it's actually for; never leave it to default)" } ]
-}
-Offer 0-3 suggestions, only genuinely useful ones. Never suggest a grocery item already on the list above; for grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Empty arrays/strings are fine.`;
-
-  return generateJSON({ system, prompt, maxTokens: 2400, tools: [webSearchTool()] });
-}
-
 // "Claudify" a single plan item: expand a one-line plan item into a fuller,
 // concrete write-up — steps, considerations, a rough timeline — something
 // you could actually hand to someone or paste into email/Notes/wherever.

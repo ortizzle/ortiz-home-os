@@ -1,15 +1,14 @@
-// manager.js — the Claudia tab: ask her anything, have her plan the week
-// (a persistent review whose items add/dismiss with one tap), the family's
-// shared weekly checklist, and the family meeting. Recurring upkeep and
-// vendor contacts live as plain Calendar appointments now — no separate
-// maintenance/vendor feature.
+// manager.js — the Claudia tab: have her plan the week (a persistent review
+// whose items add/dismiss with one tap), the family's shared weekly
+// checklist, and the family meeting. Recurring upkeep and vendor contacts
+// live as plain Calendar appointments now — no separate maintenance/vendor
+// feature.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, addDays, fmtDay, openModal, tableOfContents, shareText, preserveScroll } from './ui.js';
+import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, preserveScroll } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
-import { reviewWeek, askManager, claudifyPlanItem, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinToBrief, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
-import { isConnected, canReadEmail } from './gcal.js';
+import { reviewWeek, claudifyPlanItem, hasApiKey, AIError } from './ai.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
 import { meetingSection } from './meeting.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -149,58 +148,6 @@ export async function renderManager(root) {
     el('p', { class: 'muted' }, 'your house manager'),
   ]));
 
-  // ----- ask Claudia (Q&A over calendar + email + lists) -----
-  const askInput = el('input', { class: 'input', placeholder: 'Ask about your week, email, plans…' });
-  const askHost = el('div', {});
-  const askBtn = el('button', { class: 'btn btn-primary', onclick: runAsk }, 'Ask');
-  async function runAsk() {
-    const q = askInput.value.trim();
-    if (!q) return;
-    if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
-    askBtn.disabled = 'disabled';
-    askBtn.textContent = 'Thinking…';
-    clear(askHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is looking through your week…')]));
-    try {
-      const settings = getSettings();
-      const ctx = await gatherContext({ start: todayStr(), days: 14, email: true });
-      const out = await askManager({
-        family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
-        notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
-        interests: settings.familyInterests || '',
-        today: todayStr(),
-        weekday: new Date().toLocaleDateString(undefined, { weekday: 'long' }),
-        question: q,
-        events: ctx.eventsText,
-        email: ctx.emailsText,
-        chores: ctx.choresText,
-        groceries: ctx.groceriesText,
-        plan: ctx.planText,
-        meals: ctx.mealsText,
-      });
-      logShownSuggestions(out.suggestions, 'ask').catch(() => {});
-      renderAnswer(askHost, out);
-    } catch (err) {
-      clear(askHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
-    } finally {
-      askBtn.disabled = null;
-      askBtn.textContent = 'Ask';
-    }
-  }
-  askInput.addEventListener('keydown', (e) => e.key === 'Enter' && runAsk());
-  const askHint = !hasApiKey()
-    ? 'Add a Claude API key in Settings to ask Claudia.'
-    : isConnected() && canReadEmail()
-      ? 'Ask about your calendar, email, tasks, and plans — then pin any answer to tomorrow’s morning brief.'
-      : 'Ask about your calendar, tasks, and plans. Connect Google in Settings (and reconnect to grant email) so she can read recent mail too.';
-  root.append(
-    el('div', { class: 'panel-head' }, [el('h4', {}, 'Ask Claudia')]),
-    el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top:0' }, askHint),
-      el('div', { class: 'grocery-add' }, [askInput, askBtn]),
-      askHost,
-    ])
-  );
-
   // ----- plan the week with Claudia (the persistent review, near the top) -----
   const host = el('div', {});
   const reviewBtn = el('button', {
@@ -288,42 +235,10 @@ export async function renderManager(root) {
 
   // jump-to menu for this long tab
   tableOfContents(root, [
-    { label: 'Ask', at: 'Ask Claudia' },
     { label: 'Plan week', at: 'Plan the week' },
     { label: 'Checklist', at: "This week's plan" },
     { label: 'Meeting', at: 'Family meeting' },
   ]);
-}
-
-function renderAnswer(host, out) {
-  clear(host);
-  if (out.answer) host.append(el('p', { class: 'hm-overview' }, out.answer));
-  for (const s of out.suggestions || []) {
-    host.append(
-      el('div', { class: 'idea' }, [
-        el('div', { class: 'idea-title' }, s.title),
-        s.detail ? el('p', { class: 'idea-detail' }, s.detail) : null,
-        // No onAdded re-render: what Ask adds (tasks/calendar/grocery) isn't
-        // shown on this screen, and a re-render would wipe the answer.
-        addButtons(s, { today: todayStr(), includePlan: false }),
-      ])
-    );
-  }
-  // Pin the takeaway to tomorrow's morning brief on the Home tab.
-  const noteText = (out.briefNote || out.answer || '').trim();
-  if (noteText) {
-    const pinBtn = el('button', {
-      class: 'btn seg-btn hm-add',
-      onclick: async () => {
-        await pinToBrief(addDays(todayStr(), 1), noteText);
-        pinBtn.disabled = 'disabled';
-        pinBtn.textContent = 'Pinned to brief ✓';
-        toast('Pinned to tomorrow’s brief — Kat will see it too', 'success');
-      },
-    }, '📌 Pin to tomorrow’s brief');
-    host.append(el('div', { class: 'hm-actions' }, [pinBtn]));
-  }
-  if (!out.answer) host.append(el('p', { class: 'muted small' }, 'No answer came back — try rephrasing.'));
 }
 
 // One review suggestion: add buttons plus a clear (✓) that just clears it
