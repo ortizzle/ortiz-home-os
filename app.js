@@ -17,17 +17,17 @@ import { renderGrocery } from './modules/grocery.js';
 import { renderCalendar } from './modules/calendar.js';
 import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
-import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS } from './modules/hmcontext.js';
+import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestionMemory } from './modules/hmcontext.js';
 import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { diagnosticsSection } from './modules/diag.js';
-import { el, clear, toast, navigate, openModal, todayStr, tableOfContents } from './modules/ui.js';
+import { el, clear, toast, navigate, openModal, todayStr, fmtDay, tableOfContents } from './modules/ui.js';
 
 const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v29';
+const APP_VERSION = 'v30';
 
 // ---------- theme ----------
 
@@ -100,9 +100,60 @@ async function router() {
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 const FULL_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-function renderSettings(root) {
+// Read-only recap of everything that shapes Claudia: the fields above,
+// plus what she's picked up from actual use (accepted suggestions, answered
+// questions, things suggested repeatedly but never taken). Settings →
+// Export JSON has the raw data; this is the readable version.
+function memorySection(s, memory) {
+  const row = (label, value, wrap = false) =>
+    value ? el('p', { class: 'muted small', style: `margin: 2px 0${wrap ? '; white-space: pre-wrap' : ''}` }, [el('strong', {}, label + ': '), value]) : null;
+
+  const heading = (text) => el('h5', { style: 'margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2)' }, text);
+
+  const memNodes = [];
+  if (memory.resolved.length) {
+    memNodes.push(
+      heading('Questions you’ve answered'),
+      el('ul', { class: 'meeting-list' }, memory.resolved.map((r) =>
+        el('li', {}, [el('strong', {}, r.question), r.answer ? ` — ${r.answer}` : ' — resolved'])
+      ))
+    );
+  }
+  if (memory.added.length) {
+    memNodes.push(
+      heading('Suggestions you’ve added'),
+      el('ul', { class: 'meeting-list' }, memory.added.slice(0, 15).map((a) =>
+        el('li', {}, `${a.title} — added ${fmtDay(a.addedAt)}${a.done ? ', done ✓' : ''}`)
+      ))
+    );
+  }
+  if (memory.repeated.length) {
+    memNodes.push(
+      heading('Suggested more than once, not added'),
+      el('ul', { class: 'meeting-list' }, memory.repeated.map((r) => el('li', {}, `${r.title} (×${r.shownCount})`)))
+    );
+  }
+  if (!memNodes.length) {
+    memNodes.push(el('p', { class: 'muted small' }, 'No follow-through history yet — this fills in as you use Ask, the weekly review, and the daily brief.'));
+  }
+
+  return el('section', { class: 'panel' }, [
+    el('h4', {}, 'What Claudia knows'),
+    el('p', { class: 'muted small', style: 'margin-top: 0' }, 'A readable recap of what shapes Claudia’s answers — the fields above, plus what she’s picked up from actual use. Settings → Export JSON has the full raw data.'),
+    row('Family', s.familyMembers || 'Chris, Kat, Sedona, River'),
+    row('Kids & ages', s.kidsAges || DEFAULT_KIDS),
+    row('Interests', s.familyInterests || '(not set)'),
+    row('City', s.homeCity || '(not set)'),
+    row('Food rules', s.foodNotes || DEFAULT_FOOD_NOTES, true),
+    row('Household notes', s.householdNotes || DEFAULT_HOUSEHOLD_NOTES, true),
+    ...memNodes,
+  ]);
+}
+
+async function renderSettings(root) {
   clear(root);
   const s = getSettings();
+  const memory = await getSuggestionMemory();
 
   const deviceNameInput = el('input', { class: 'input', placeholder: 'e.g. Chris', value: s.deviceName || '' });
   const familyInput = el('input', { class: 'input', placeholder: 'Chris, Kat, Sedona, River', value: s.familyMembers || 'Chris, Kat, Sedona, River' });
@@ -178,6 +229,8 @@ function renderSettings(root) {
       kidsInput,
       el('p', { class: 'muted small' }, 'Claudia (powered by Claude) runs the daily brief, weekly review, dinner plans, meeting drafts, and Ask. Notes are background context so her ideas fit your family; interests + city let her search the web for real nearby things — a movie you’d love this week, local events — with actual dates and times. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
     ]),
+
+    memorySection(s, memory),
 
     el('section', { class: 'panel' }, [
       el('h4', {}, 'Google (Calendar + Email, optional)'),
@@ -272,6 +325,7 @@ function renderSettings(root) {
     { label: 'Device', at: 'This device' },
     { label: 'Family', at: 'Family & meeting' },
     { label: 'Claudia', at: 'Claudia' },
+    { label: 'Memory', at: 'What Claudia knows' },
     { label: 'Google', at: 'Google' },
     { label: 'Theme', at: 'Appearance' },
     { label: 'Sync', at: 'Household sync' },

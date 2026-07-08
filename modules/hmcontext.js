@@ -192,6 +192,29 @@ export async function followUpText() {
   return lines.join('\n');
 }
 
+// Read-only, human-facing view of Claudia's follow-through memory (for the
+// Settings "What Claudia knows" page). Same underlying data as
+// followUpText() but grouped for display and WITHOUT the pruning
+// side-effect — viewing your memory should never delete it.
+export async function getSuggestionMemory() {
+  const log = await getAll('suggLog');
+  const resolved = [];
+  const added = [];
+  const repeated = [];
+  for (const r of log) {
+    if (r.type === 'question' && r.resolvedAt) {
+      resolved.push({ question: r.title, answer: r.answer || null, resolvedAt: r.resolvedAt });
+    } else if (r.addedAt) {
+      added.push({ title: r.title, addedAt: r.addedAt, done: await targetDone(r.targetStore, r.targetId) });
+    } else if ((r.shownCount || 1) >= 2) {
+      repeated.push({ title: r.title, shownCount: r.shownCount });
+    }
+  }
+  resolved.sort((a, b) => (b.resolvedAt || '').localeCompare(a.resolvedAt || ''));
+  added.sort((a, b) => (b.addedAt || '').localeCompare(a.addedAt || ''));
+  return { resolved, added, repeated };
+}
+
 // Format recent email into a compact block for the prompt. Sender + subject +
 // a short snippet is enough for the AI to flag what needs attention.
 export function emailText(emails) {
