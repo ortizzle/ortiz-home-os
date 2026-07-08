@@ -27,7 +27,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v27';
+const APP_VERSION = 'v28';
 
 // ---------- theme ----------
 
@@ -174,7 +174,7 @@ function renderSettings(root) {
       cityInput,
       el('label', { class: 'field-label' }, 'Food rules — for the dinner planner'),
       foodNotes,
-      el('label', { class: 'field-label' }, 'Kids & ages — for age-fit chore ideas'),
+      el('label', { class: 'field-label' }, 'Kids & ages — for age-fit task ideas'),
       kidsInput,
       el('p', { class: 'muted small' }, 'Claudia (powered by Claude) runs the daily brief, weekly review, dinner plans, meeting drafts, and Ask. Notes are background context so her ideas fit your family; interests + city let her search the web for real nearby things — a movie you’d love this week, local events — with actual dates and times. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
     ]),
@@ -388,6 +388,25 @@ async function boot() {
   // blocked popup just resolves false). When it works, the calendar overlay
   // and email are simply live again without anyone tapping anything.
   gcalSilentRenew().then((ok) => { if (ok) router(); }).catch(() => {});
+
+  // Two-user household: without this, a chore Chris marks done on his phone
+  // sits in the Gist until Kat's phone happens to relaunch or she taps Sync
+  // Now — her already-open session just keeps showing the stale state. Pull
+  // quietly (a) whenever the app regains focus (phone unlocked, switched back
+  // from another app) and (b) every 45s while it stays open and visible, then
+  // redraw the current screen so the update actually appears without anyone
+  // asking for it.
+  let bgSyncTimer = null;
+  async function backgroundSync() {
+    if (!syncConfigured() || document.visibilityState !== 'visible') return;
+    await pullFromGist();
+    await router();
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') backgroundSync();
+  });
+  bgSyncTimer = setInterval(backgroundSync, 45_000);
+  window.addEventListener('beforeunload', () => clearInterval(bgSyncTimer));
 }
 
 boot();

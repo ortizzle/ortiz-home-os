@@ -9,7 +9,7 @@ import { getMaintenance, maintenanceRow, editMaintenanceModal } from './maintena
 import { vendorsSection } from './vendors.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, askManager, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinToBrief, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logSuggestionDismissed, logQuestionResolved, followUpText } from './hmcontext.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinToBrief, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
 import { isConnected, canReadEmail } from './gcal.js';
 import { meetingSection } from './meeting.js';
 
@@ -303,8 +303,9 @@ function renderAnswer(host, out) {
   if (!out.answer) host.append(el('p', { class: 'muted small' }, 'No answer came back — try rephrasing.'));
 }
 
-// One review suggestion: add buttons plus a dismiss (✕) that declines it for
-// good — Claudia logs it and never suggests it again.
+// One review suggestion: add buttons plus a clear (✓) that just clears it
+// from THIS review — a satisfying checked-off feeling, not a permanent veto.
+// Claudia keeps no memory of it, so it's fair game for a future review.
 function reviewIdea(item, rerender, state) {
   const actions = addButtons(item, {
     today: todayStr(),
@@ -315,17 +316,16 @@ function reviewIdea(item, rerender, state) {
     onAdded: async () => { await markReviewAdded(item.title); rerender(); },
   });
   if (!state.added.has(item.title)) {
-    const dismissBtn = el('button', {
+    const clearBtn = el('button', {
       class: 'btn seg-btn hm-add',
-      'aria-label': 'Dismiss — don’t suggest again',
+      'aria-label': 'Not needed — clear from this review',
       onclick: async () => {
         await markReviewDismissed(item.title);
-        logSuggestionDismissed(item.title).catch(() => {});
-        toast('Got it — Claudia won’t suggest that again');
+        toast('Cleared');
         rerender();
       },
-    }, '✕ No thanks');
-    actions.append(dismissBtn);
+    }, '✓ Not needed');
+    actions.append(clearBtn);
   }
   return el('div', { class: 'idea' }, [
     el('div', { class: 'idea-title' }, [item.title, item.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, item.who) : null]),

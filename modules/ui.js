@@ -29,6 +29,27 @@ export function clear(node) {
   return node;
 }
 
+// Horizontal swipe navigation (e.g. Calendar's day/week paging). Fires onLeft
+// (finger moved left → "go forward", like flipping to the next page) or
+// onRight ("go back") once the gesture clearly reads as horizontal — a big
+// enough X move that also dominates any Y move, so vertical page scrolling
+// is never hijacked. Passive listeners: never blocks native scroll.
+export function onSwipe(node, { onLeft, onRight, threshold = 50 } = {}) {
+  let x0 = null, y0 = null;
+  node.addEventListener('touchstart', (e) => {
+    x0 = e.touches[0].clientX;
+    y0 = e.touches[0].clientY;
+  }, { passive: true });
+  node.addEventListener('touchend', (e) => {
+    if (x0 == null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    const dy = e.changedTouches[0].clientY - y0;
+    x0 = y0 = null;
+    if (Math.abs(dx) < threshold || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    (dx < 0 ? onLeft : onRight)?.();
+  }, { passive: true });
+}
+
 export function escapeHtml(s = '') {
   return s
     .replace(/&/g, '&amp;')

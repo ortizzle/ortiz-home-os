@@ -71,7 +71,7 @@ export async function editChoreModal(chore, onchange) {
         class: 'btn btn-danger',
         onclick: async () => {
           await remove('chores', c.id);
-          toast('Chore deleted');
+          toast('Task deleted');
           m.close();
           onchange?.();
         },
@@ -81,7 +81,7 @@ export async function editChoreModal(chore, onchange) {
       class: 'btn btn-primary',
       onclick: async () => {
         const name = title.value.trim();
-        if (!name) return toast('Give the chore a title', 'warn');
+        if (!name) return toast('Give the task a title', 'warn');
         await put('chores', {
           ...c,
           title: name,
@@ -93,10 +93,10 @@ export async function editChoreModal(chore, onchange) {
         m.close();
         onchange?.();
       },
-    }, isNew ? 'Add chore' : 'Save'),
+    }, isNew ? 'Add task' : 'Save'),
   ];
 
-  const m = openModal(isNew ? 'New chore' : 'Edit chore', [
+  const m = openModal(isNew ? 'New task' : 'Edit task', [
     el('label', { class: 'field-label' }, 'Title'),
     title,
     el('div', { class: 'field-row' }, [
@@ -130,14 +130,14 @@ export async function renderChores(root) {
   root.append(
     el('div', { class: 'view-head-row' }, [
       el('h1', {}, 'Tasks'),
-      el('button', { class: 'btn btn-primary', onclick: () => editChoreModal(null, rerender) }, '+ New chore'),
+      el('button', { class: 'btn btn-primary', onclick: () => editChoreModal(null, rerender) }, '+ New task'),
     ])
   );
 
   if (!chores.length) {
     root.append(
       el('div', { class: 'empty compact' }, [
-        el('p', {}, 'No chores yet.'),
+        el('p', {}, 'No tasks yet.'),
         el('p', { class: 'muted' }, 'One-off household tasks live here. Recurring upkeep has its own tab.'),
       ])
     );
@@ -173,8 +173,8 @@ export async function renderChores(root) {
           toast(`Imported ${names.length} chore${names.length === 1 ? '' : 's'}`, 'success');
           rerender();
         },
-      }, 'Import as chores'),
-      el('p', { class: 'muted small' }, 'Keep has no API for personal accounts, so this paste box is the bridge. Copy a Keep note, paste here, and each line becomes a chore.'),
+      }, 'Import as tasks'),
+      el('p', { class: 'muted small' }, 'Keep has no API for personal accounts, so this paste box is the bridge. Copy a Keep note, paste here, and each line becomes a task.'),
     ])
   );
 }

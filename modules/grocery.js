@@ -23,9 +23,14 @@ function gotToday(g) {
   return g.gotAt && g.gotAt.slice(0, 10) === todayStr();
 }
 
+// Case-insensitive dedupe against the open list — a re-suggested or
+// re-typed item (Claudia's or your own) just returns the existing row
+// instead of creating a second one.
 export async function addGroceryItem(name, store = STORES[0]) {
   const n = name.trim();
   if (!n) return null;
+  const existing = (await getAll('groceries')).find((g) => !g.gotAt && g.name.toLowerCase() === n.toLowerCase());
+  if (existing) return existing;
   return put('groceries', { name: n, store, gotAt: null });
 }
 

@@ -4,7 +4,7 @@
 // composable so overlay events can slot into these same lists.
 
 import { getAll, put, remove } from './store.js';
-import { el, clear, toast, navigate, openModal, todayStr, addDays, parseDate, dateStr, fmtDay } from './ui.js';
+import { el, clear, toast, navigate, openModal, todayStr, addDays, parseDate, dateStr, fmtDay, onSwipe } from './ui.js';
 import { choreRow, editChoreModal } from './chores.js';
 import { getMaintenance, nextDue, maintenanceRow } from './maintenance.js';
 import { isConnected, everConnected, connect, eventsForRange, GcalError, canWrite, writableCalendars, createEvent, getWriteCalendar, setWriteCalendar } from './gcal.js';
@@ -44,7 +44,20 @@ export async function appointmentsFor(start, end) {
     connected ? eventsForRange(start, end).catch(() => []) : Promise.resolve([]),
   ]);
   const base = connected ? stored.filter((a) => a.source !== 'gcal') : stored;
-  return [...base, ...live];
+  // De-dupe a local appointment against a live Google event with the same
+  // title/date/time — catches leftover copies from before Google was
+  // connected (or the old weekly mirror) now shadowed by the live one. Live
+  // wins, since it reflects the real calendar; genuinely distinct events
+  // (different titles/times) are untouched either way.
+  const key = (a) => `${(a.title || '').trim().toLowerCase()}|${a.date}|${a.allDay ? 'allday' : (a.startTime || '')}`;
+  const seen = new Set(live.map(key));
+  const dedupedBase = base.filter((a) => {
+    const k = key(a);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  return [...dedupedBase, ...live];
 }
 
 function fmtTime(t) {
@@ -201,7 +214,17 @@ async function renderDay(root, date) {
     .sort((a, b) => ((a.allDay ? '' : a.startTime || '') < (b.allDay ? '' : b.startTime || '') ? -1 : 1));
   const dayMaint = maintenance.filter((it) => nextDue(it) === date);
 
-  root.append(
+  // Swipe container: fresh node each render, so listeners never pile up or
+  // outlive this view (clear(root) drops it, old + new both, automatically).
+  const wrap = el('div', { class: 'cal-swipe' });
+  onSwipe(wrap, {
+    onLeft: () => navigate(`#/calendar/day/${addDays(date, 1)}`), // swipe left → tomorrow
+    onRight: () => navigate(`#/calendar/day/${addDays(date, -1)}`), // swipe right → yesterday
+  });
+  root.append(wrap);
+  const append = (...nodes) => wrap.append(...nodes);
+
+  append(
     calNav(fmtDay(date), {
       mode: 'day',
       date,
@@ -237,8 +260,8 @@ async function renderDay(root, date) {
     ),
 
     el('div', { class: 'panel-head' }, [
-      el('h4', {}, 'Chores due'),
-      el('button', { class: 'link', onclick: () => editChoreModal({ dueDate: date }, rerender) }, '+ Chore'),
+      el('h4', {}, 'Tasks due'),
+      el('button', { class: 'link', onclick: () => editChoreModal({ dueDate: date }, rerender) }, '+ Task'),
     ]),
     el('section', { class: 'panel' },
       dayChores.length
@@ -248,7 +271,7 @@ async function renderDay(root, date) {
   );
 
   if (dayMaint.length) {
-    root.append(
+    append(
       el('div', { class: 'panel-head' }, [el('h4', {}, 'Upkeep falling due')]),
       el('section', { class: 'panel' }, dayMaint.map((it) => maintenanceRow(it, { onchange: rerender, vendorById })))
     );
@@ -271,7 +294,14 @@ async function renderWeek(root, date) {
     appointmentsFor(days[0], addDays(days[6], 1)),
   ]);
 
-  root.append(
+  const wrap = el('div', { class: 'cal-swipe' });
+  onSwipe(wrap, {
+    onLeft: () => navigate(`#/calendar/week/${addDays(date, 7)}`), // swipe left → next week
+    onRight: () => navigate(`#/calendar/week/${addDays(date, -7)}`), // swipe right → previous week
+  });
+  root.append(wrap);
+
+  wrap.append(
     calNav(`Week of ${fmtDay(days[0])}`, {
       mode: 'week',
       date,
@@ -282,7 +312,7 @@ async function renderWeek(root, date) {
   );
 
   const today = todayStr();
-  root.append(
+  wrap.append(
     el('div', { class: 'week-list' }, days.map((day) => {
       const dayAppts = appointments
         .filter((a) => a.date === day)

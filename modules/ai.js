@@ -233,9 +233,9 @@ Return JSON with exactly this shape:
 {
   "headline": "one warm sentence reading the shape of the day",
   "notes": ["1-3 short lines: what matters today, timing to watch, a heads-up"],
-  "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative, e.g. 'Prep gym bag for River'", "date": "YYYY-MM-DD (optional; for a task due date or appointment date)", "who": "family member name (optional; who should do it)", "detail": "one short clause on why" } ]
+  "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative, e.g. 'Prep gym bag for River'", "date": "YYYY-MM-DD (optional; for a task due date or appointment date)", "who": "family member name (optional; who should do it)", "detail": "one short clause on why", "store": "Costco | Walmart | Trader Joe's (REQUIRED for type grocery — match the store it's actually for; never leave it to default)" } ]
 }
-Give 0-4 suggestions, only genuinely useful ones for today or the next day. Empty arrays are fine.`;
+Give 0-4 suggestions, only genuinely useful ones for today or the next day. Never suggest a grocery item already on the list above. Empty arrays are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 1400 });
 }
@@ -249,7 +249,8 @@ export async function reviewWeek({ family = [], notes = '', interests = '', kids
     ' If recent email surfaces something worth planning around (an RSVP, a bill due, a school notice, an invite), fold it into the plan — only when it\'s genuinely actionable, not just noise.' +
     ' Also look OUTWARD: use web search to find 1-2 timely, real things this family would genuinely enjoy this week — a movie they\'d love playing nearby, a local event, a seasonal activity — matched to their interests and their open evenings. Include the real date, time, and venue from the search results, and only suggest what you actually verified. If nothing good is on, say nothing rather than padding.' +
     ` Kids (${kids || 'none listed'}) don't use the app — when a chore genuinely fits one of them (age-appropriate: dishes, trash, room care, packing their own bags), suggest it with their name in "who" so the parents can assign it. One kid chore per review at most; this is help, not a chore chart.` +
-    ' FOLLOW-THROUGH: you get a log of your own past suggestions. Anything marked DECLINED is off the table permanently — never suggest it again, in any wording. Never re-ask a question the family already answered; build on their answer instead. Follow up ONCE, gently, on something that was added but never finished ("still want to get to X?"). Don\'t re-suggest something ignored twice — let it go unless it becomes genuinely urgent. Briefly acknowledge a win if something you suggested got done. No nagging, no guilt, no scorekeeping.';
+    ' FOLLOW-THROUGH: you get a log of your own past suggestions. Never re-ask a question the family already answered; build on their answer instead. Follow up ONCE, gently, on something that was added but never finished ("still want to get to X?"). Don\'t re-suggest something ignored twice in a row — let it go unless it becomes genuinely urgent. Briefly acknowledge a win if something you suggested got done. No nagging, no guilt, no scorekeeping.' +
+    ' Do NOT suggest a grocery item that is already on the list below — check it first.';
   const prompt = `Today is ${today}. Propose a plan of what's worth getting done for the rest of this week — and anything fun worth planning around.
 
 HOUSEHOLD NOTES / PREFERENCES (background only — do not repeat back):
@@ -285,10 +286,10 @@ ${plan || '(nothing planned yet)'}
 Return JSON with exactly this shape:
 {
   "overview": "2-3 sentences reading the week and what to prioritize",
-  "planItems": [ { "title": "short imperative plan item", "detail": "one sentence: what, why, and roughly when", "suggestedType": "plan" | "task" | "appointment" | "grocery", "day": "YYYY-MM-DD (optional)", "who": "family member name (optional)" } ],
+  "planItems": [ { "title": "short imperative plan item", "detail": "one sentence: what, why, and roughly when", "suggestedType": "plan" | "task" | "appointment" | "grocery", "day": "YYYY-MM-DD (optional)", "who": "family member name (optional)", "store": "Costco | Walmart | Trader Joe's (REQUIRED for suggestedType grocery — match the store it's actually for; never leave it to default)" } ],
   "questions": ["a short question whose answer would sharpen the plan"]
 }
-Give 3-8 plan items, most time-sensitive first — quality over quantity; never pad with generic errands. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.`;
+Give 3-8 plan items, most time-sensitive first — quality over quantity; never pad with generic errands. Never suggest a grocery item already on the list above. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 3000, tools: [webSearchTool()] });
 }
@@ -362,9 +363,9 @@ Return JSON with exactly this shape:
 {
   "answer": "a direct, few-sentence answer grounded in the data above",
   "briefNote": "one short line suitable for tomorrow's morning brief, or empty if not worth surfacing",
-  "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative action", "date": "YYYY-MM-DD (optional)", "detail": "one short clause" } ]
+  "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative action", "date": "YYYY-MM-DD (optional)", "detail": "one short clause", "store": "Costco | Walmart | Trader Joe's (REQUIRED for type grocery — match the store it's actually for; never leave it to default)" } ]
 }
-Offer 0-3 suggestions, only genuinely useful ones. Empty arrays/strings are fine.`;
+Offer 0-3 suggestions, only genuinely useful ones. Never suggest a grocery item already on the list above. Empty arrays/strings are fine.`;
 
   return generateJSON({ system, prompt, maxTokens: 2400, tools: [webSearchTool()] });
 }

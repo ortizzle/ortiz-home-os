@@ -10,7 +10,7 @@ import { addGroceryItem } from './grocery.js';
 import { getMaintenance } from './maintenance.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions, logSuggestionDismissed } from './hmcontext.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions } from './hmcontext.js';
 import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
 
@@ -104,7 +104,7 @@ export async function renderDashboard(root) {
 
   // ----- quick capture -----
   let kind = 'chore';
-  const input = el('input', { class: 'input', placeholder: 'Add a chore for today…' });
+  const input = el('input', { class: 'input', placeholder: 'Add a task for today…' });
   const kindBtn = (k, label, placeholder) =>
     el('button', {
       class: 'btn seg-btn' + (kind === k ? ' active' : ''),
@@ -136,7 +136,7 @@ export async function renderDashboard(root) {
     el('section', { class: 'panel' }, [
       el('h4', {}, 'Quick capture'),
       el('div', { class: 'capture-kind' }, [
-        kindBtn('chore', 'Chore', 'Add a chore for today…'),
+        kindBtn('chore', 'Task', 'Add a task for today…'),
         kindBtn('grocery', 'Grocery', 'Add to the grocery list…'),
         kindBtn('appt', 'Appointment', 'Appointment title, then details…'),
       ]),
@@ -270,8 +270,9 @@ function renderBrief(host, out, rerender, addedSet, dismissedSet, pins, today) {
   host.append(...pinNodes(pins, rerender));
   if (out.headline) host.append(el('p', { class: 'brief-headline' }, out.headline));
   if (out.notes?.length) host.append(el('ul', { class: 'brief-notes' }, out.notes.map((n) => el('li', {}, n))));
-  // Added suggestions become real tasks (drop off the brief); dismissed ones
-  // are declined for good (drop off + Claudia stops re-suggesting them).
+  // Added suggestions become real tasks (drop off the brief); "Not needed"
+  // just clears the item from view with no permanent memory — satisfying,
+  // like checking something off, but fair game for a future brief.
   const live = (out.suggestions || []).filter((s) => !addedSet.has(s.title) && !dismissedSet.has(s.title));
   for (const s of live) {
     const actions = addButtons(s, {
@@ -281,14 +282,13 @@ function renderBrief(host, out, rerender, addedSet, dismissedSet, pins, today) {
     });
     actions.append(el('button', {
       class: 'btn seg-btn hm-add',
-      'aria-label': 'Not needed — don’t suggest again',
+      'aria-label': 'Not needed — clear from today’s brief',
       onclick: async () => {
         await markBriefDismissed(today, s.title);
-        logSuggestionDismissed(s.title).catch(() => {});
-        toast('Got it — Claudia won’t suggest that again');
+        toast('Cleared');
         rerender();
       },
-    }, '✕ No thanks'));
+    }, '✓ Not needed'));
     host.append(
       el('div', { class: 'idea' }, [
         el('div', { class: 'idea-title' }, [s.title, s.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, s.who) : null]),
