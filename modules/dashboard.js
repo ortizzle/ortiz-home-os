@@ -97,9 +97,6 @@ export async function renderDashboard(root) {
     );
   }
 
-  // ----- daily brief (Claude, auto once each morning, shared with Kat) -----
-  root.append(...(await dailyBriefSection(rerender, { today, settings })));
-
   // ----- quick capture -----
   let kind = 'chore';
   const input = el('input', { class: 'input', placeholder: 'Add a task for today…' });
@@ -144,6 +141,9 @@ export async function renderDashboard(root) {
       ]),
     ])
   );
+
+  // ----- daily brief (Claude, auto once each morning, shared with Kat) -----
+  root.append(...(await dailyBriefSection(rerender, { today, settings })));
 
   // ----- today (events sorted by time, then chores) -----
   const todayList = [...overdue, ...dueToday];
