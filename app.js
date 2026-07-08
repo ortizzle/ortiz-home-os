@@ -18,7 +18,7 @@ import { renderCalendar } from './modules/calendar.js';
 import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
 import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS } from './modules/hmcontext.js';
-import { isConnected as gcalConnected, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
+import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { diagnosticsSection } from './modules/diag.js';
 import { el, clear, toast, navigate, openModal, todayStr, tableOfContents } from './modules/ui.js';
@@ -27,7 +27,7 @@ const view = document.getElementById('view');
 
 // Shown in Settings so any phone can be checked at a glance. Keep in step
 // with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v25';
+const APP_VERSION = 'v26';
 
 // ---------- theme ----------
 
@@ -183,7 +183,9 @@ function renderSettings(root) {
       el('h4', {}, 'Google (Calendar + Email, optional)'),
       el('div', { class: 'sync-status' }, [
         el('span', { class: 'sync-dot ' + (gcalConnected() ? 'on' : 'off') }),
-        el('span', { class: 'muted' }, gcalConnected() ? (gcalCanEmail() ? 'Connected — calendar + email (read-only)' : 'Connected — calendar only') : 'Not connected'),
+        el('span', { class: 'muted' }, gcalConnected()
+          ? (gcalCanEmail() ? 'Connected — calendar + email (read-only)' : 'Connected — calendar only')
+          : (gcalEverConnected() ? 'Session expired — renews on next use, or reconnect (one tap)' : 'Not connected')),
       ]),
       gcalConnected() && !gcalCanEmail()
         ? el('p', { class: 'muted small', style: 'color: var(--accent)' }, 'Reconnect to grant Gmail read access so Claudia can factor recent email into your brief and answers.')
@@ -207,6 +209,7 @@ function renderSettings(root) {
             class: 'btn btn-primary',
             onclick: async (e) => {
               const b = e.currentTarget;
+              const label = b.textContent;
               b.disabled = 'disabled';
               b.textContent = 'Connecting…';
               try {
@@ -216,11 +219,11 @@ function renderSettings(root) {
               } catch (err) {
                 toast(err instanceof GcalError ? `Couldn't connect: ${err.message}` : 'Connection cancelled', 'warn');
                 b.disabled = null;
-                b.textContent = 'Connect Google Calendar';
+                b.textContent = label;
               }
             },
-          }, 'Connect Google Calendar'),
-      el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs, plus read-only access to recent Gmail so Claudia can factor email into your morning brief and answers. The app can only read — it never changes your calendar or sends mail. Sign in again occasionally (Google access expires ~hourly).'),
+          }, gcalEverConnected() ? 'Reconnect Google (one tap)' : 'Connect Google Calendar'),
+      el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs, plus read-only access to recent Gmail so Claudia can factor email into your morning brief and answers. The app can only read — it never changes your calendar or sends mail. Google access expires hourly, but the app renews it silently in the background — you should only need to sign in again after clearing browser data or on a new device.'),
     ]),
 
     el('section', { class: 'panel' }, [
@@ -380,6 +383,11 @@ async function boot() {
 
   window.addEventListener('hashchange', router);
   await router();
+
+  // Renew an expired Google session in the background (no prompting; a
+  // blocked popup just resolves false). When it works, the calendar overlay
+  // and email are simply live again without anyone tapping anything.
+  gcalSilentRenew().then((ok) => { if (ok) router(); }).catch(() => {});
 }
 
 boot();

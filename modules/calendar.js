@@ -7,11 +7,13 @@ import { getAll, put, remove } from './store.js';
 import { el, clear, toast, navigate, openModal, todayStr, addDays, parseDate, dateStr, fmtDay } from './ui.js';
 import { choreRow, editChoreModal } from './chores.js';
 import { getMaintenance, nextDue, maintenanceRow } from './maintenance.js';
-import { isConnected, connect, eventsForRange, GcalError, canWrite, writableCalendars, createEvent, getWriteCalendar, setWriteCalendar } from './gcal.js';
+import { isConnected, everConnected, connect, eventsForRange, GcalError, canWrite, writableCalendars, createEvent, getWriteCalendar, setWriteCalendar } from './gcal.js';
 
-// A "Connect Google Calendar" prompt, shown when not yet connected. Tapping it
-// pops Google's read-only consent, then re-renders so live events appear.
+// A "Connect Google Calendar" prompt, shown when not yet connected. First
+// connect shows Google's consent; after that (session merely expired and the
+// silent renewal couldn't run) it's a single tap with a self-closing popup.
 function gcalConnectBar(rerender) {
+  const label = everConnected() ? 'Reconnect Google (one tap)' : 'Connect Google Calendar';
   const btn = el('button', {
     class: 'btn btn-primary full',
     onclick: async () => {
@@ -24,10 +26,10 @@ function gcalConnectBar(rerender) {
       } catch (err) {
         toast(err instanceof GcalError ? `Couldn't connect: ${err.message}` : 'Connection cancelled', 'warn');
         btn.disabled = null;
-        btn.textContent = 'Connect Google Calendar';
+        btn.textContent = label;
       }
     },
-  }, 'Connect Google Calendar');
+  }, label);
   return el('div', {}, [btn, el('p', { class: 'muted small', style: 'margin-top:-8px' }, 'Read-only — overlays your family Google Calendar events here. The app can never change your calendar.')]);
 }
 

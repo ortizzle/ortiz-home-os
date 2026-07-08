@@ -45,18 +45,38 @@ export class GcalError extends Error {
 }
 
 // ---------- token (on-device, short-lived) ----------
+// The access token expires ~hourly (Google's rule; no server = no refresh
+// token). But the GRANT — the fact this browser already said yes to these
+// scopes — persists on Google's side, so we keep the expired record as grant
+// memory and renew silently (prompt: '') instead of re-asking for consent.
 
+// The raw stored record, even when the token inside has expired.
+function readGrant() {
+  try { return JSON.parse(localStorage.getItem(TOKEN_KEY)); } catch { return null; }
+}
 function readToken() {
-  try {
-    const t = JSON.parse(localStorage.getItem(TOKEN_KEY));
-    if (t && t.accessToken && t.expiresAt > Date.now() + 60_000) return t;
-  } catch {}
-  return null;
+  const t = readGrant();
+  return t && t.accessToken && t.expiresAt > Date.now() + 60_000 ? t : null;
 }
 function writeToken(accessToken, expiresInSec, scope) {
   localStorage.setItem(TOKEN_KEY, JSON.stringify({ accessToken, expiresAt: Date.now() + (expiresInSec || 3600) * 1000, scope: scope || '' }));
 }
+// Token died (expired / 401) — keep the grant memory, drop the credential.
+function expireToken() {
+  const g = readGrant();
+  if (g) { g.accessToken = ''; g.expiresAt = 0; localStorage.setItem(TOKEN_KEY, JSON.stringify(g)); }
+  clearCache();
+  writableCache = null;
+}
 export function isConnected() { return !!readToken(); }
+// Ever granted access on this device (even if the current token expired)?
+export function everConnected() { return Boolean(readGrant()?.scope); }
+// Does the app now want scopes the stored grant never covered? Then the next
+// connect must show the consent screen; otherwise a silent/one-tap renewal.
+function needsConsent() {
+  const granted = (readGrant()?.scope || '').split(/\s+/).filter(Boolean);
+  return SCOPE.split(/\s+/).some((s) => !granted.includes(s));
+}
 // Whether the granted token actually includes write access to events.
 export function canWrite() {
   const t = readToken();
@@ -68,6 +88,7 @@ export function canReadEmail() {
   const t = readToken();
   return !!t && /gmail\.readonly|gmail\.metadata/.test(t.scope || '');
 }
+// Explicit user action: forget the grant entirely.
 export function disconnect() { localStorage.removeItem(TOKEN_KEY); clearCache(); writableCache = null; }
 
 // The Google calendar new events are written to (default: Family).
@@ -98,6 +119,10 @@ function loadGsi() {
   return gsiReady;
 }
 
+// error_callback must be fixed at init; route it through a mutable handler so
+// each request can catch its own failures (popup blocked, window closed).
+let onTokenError = null;
+
 async function ensureClient() {
   await loadGsi();
   if (!tokenClient) {
@@ -105,25 +130,65 @@ async function ensureClient() {
       client_id: CLIENT_ID,
       scope: SCOPE,
       callback: () => {}, // replaced per request
+      error_callback: (err) => onTokenError?.(err),
     });
   }
   return tokenClient;
 }
 
-// Interactive connect (the button). Pops Google's consent, stores the token.
+// Interactive connect (the button). Shows Google's consent screen only when
+// it must (first connect on this device, or the app needs scopes the stored
+// grant never covered). Otherwise prompt:'' — the popup opens and closes
+// itself without asking anything.
 export async function connect() {
   const client = await ensureClient();
   return new Promise((resolve, reject) => {
+    onTokenError = (err) => reject(new GcalError(err?.message || 'Sign-in window was blocked or closed', 'oauth'));
     client.callback = (resp) => {
       if (resp.error) return reject(new GcalError(resp.error_description || resp.error, 'oauth'));
       writeToken(resp.access_token, resp.expires_in, resp.scope);
       clearCache();
       resolve(true);
     };
-    // 'consent' so an existing read-only grant is re-prompted for the added
-    // write scope; Google still remembers the account, so it's one tap.
-    client.requestAccessToken({ prompt: 'consent' });
+    client.requestAccessToken({ prompt: !everConnected() || needsConsent() ? 'consent' : '' });
   });
+}
+
+// Silent renewal: when the hourly token has lapsed but this device already
+// granted everything the app wants, ask Google for a fresh token with no
+// prompting — the popup self-closes if the browser has a live Google
+// session. Resolves false (never throws) when it can't: popup blocked, no
+// session, consent actually needed. Callers just fall back to disconnected.
+let renewInFlight = null;
+let renewFailedAt = 0; // back off after a failure (blocked popup, no session)
+export function silentRenew() {
+  if (readToken()) return Promise.resolve(true);
+  if (!everConnected() || needsConsent()) return Promise.resolve(false);
+  if (Date.now() - renewFailedAt < 120_000) return Promise.resolve(false);
+  if (renewInFlight) return renewInFlight;
+  renewInFlight = (async () => {
+    try {
+      const client = await ensureClient();
+      const ok = await new Promise((resolve) => {
+        onTokenError = () => resolve(false);
+        client.callback = (resp) => {
+          if (resp.error) return resolve(false);
+          writeToken(resp.access_token, resp.expires_in, resp.scope);
+          clearCache();
+          resolve(true);
+        };
+        client.requestAccessToken({ prompt: '' });
+      });
+      if (!ok) renewFailedAt = Date.now();
+      return ok;
+    } catch {
+      renewFailedAt = Date.now();
+      return false;
+    } finally {
+      renewInFlight = null;
+    }
+  })();
+  return renewInFlight;
 }
 
 // ---------- events ----------
@@ -162,7 +227,7 @@ async function apiGet(url) {
   const t = readToken();
   if (!t) throw new GcalError('Not connected to Google Calendar', 'not-connected');
   const res = await fetch(url, { headers: { Authorization: 'Bearer ' + t.accessToken } });
-  if (res.status === 401) { disconnect(); throw new GcalError('Google sign-in expired', 'expired'); }
+  if (res.status === 401) { expireToken(); throw new GcalError('Google sign-in expired', 'expired'); }
   if (!res.ok) throw new GcalError(`Calendar API ${res.status}`, 'api');
   return res.json();
 }
@@ -207,7 +272,7 @@ export async function createEvent(calendarId, { title, date, startTime, endTime,
     `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
     { method: 'POST', headers: { Authorization: 'Bearer ' + t.accessToken, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
   );
-  if (res.status === 401) { disconnect(); throw new GcalError('Google sign-in expired — reconnect', 'expired'); }
+  if (res.status === 401) { expireToken(); throw new GcalError('Google sign-in expired — reconnect', 'expired'); }
   if (res.status === 403) throw new GcalError('No write access — disconnect and reconnect to grant it', 'no-write');
   if (!res.ok) throw new GcalError(`Calendar API ${res.status}`, 'api');
   clearCache();
@@ -227,8 +292,11 @@ function addDaysStr(dateStr, n) {
 
 // Overlay events for [start, end) (local YYYY-MM-DD). Cached per session.
 // Returns [] when not connected, so callers can always await it safely.
+// Self-heals: an expired token with an existing grant renews silently first
+// (calls usually run right after a user tap, so the popup is allowed and
+// auto-closes) — the hourly expiry stops being something you notice.
 export async function eventsForRange(start, end, { force = false } = {}) {
-  if (!isConnected()) return [];
+  if (!isConnected() && !(await silentRenew())) return [];
   const key = `${start}|${end}`;
   if (!force && cache.has(key)) return cache.get(key);
 
@@ -270,7 +338,7 @@ async function gmailGet(url) {
   const t = readToken();
   if (!t) throw new GcalError('Not connected to Google', 'not-connected');
   const res = await fetch(url, { headers: { Authorization: 'Bearer ' + t.accessToken } });
-  if (res.status === 401) { disconnect(); throw new GcalError('Google sign-in expired', 'expired'); }
+  if (res.status === 401) { expireToken(); throw new GcalError('Google sign-in expired', 'expired'); }
   if (res.status === 403) throw new GcalError('No Gmail access — disconnect and reconnect to grant it', 'no-gmail');
   if (!res.ok) throw new GcalError(`Gmail API ${res.status}`, 'api');
   return res.json();
@@ -281,6 +349,7 @@ async function gmailGet(url) {
 // and skip Promotions/Social so the AI sees the mail that actually matters.
 // Returns [] when not connected or the gmail scope wasn't granted.
 export async function gmailRecent({ days = 7, max = 12 } = {}) {
+  if (!readToken()) await silentRenew(); // self-heal an expired session
   if (!readToken() || !canReadEmail()) return [];
   const q = `newer_than:${days}d in:inbox -category:promotions -category:social`;
   const list = await gmailGet(`https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${max}`);
