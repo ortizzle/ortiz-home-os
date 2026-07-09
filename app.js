@@ -20,6 +20,7 @@ import { renderMeeting } from './modules/meeting.js';
 import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestionMemory } from './modules/hmcontext.js';
 import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
+import { getUsage, estimateCost, resetUsage } from './modules/ai.js';
 import { diagnosticsSection } from './modules/diag.js';
 import { el, clear, toast, navigate, openModal, todayStr, fmtDay, disclosure } from './modules/ui.js';
 
@@ -154,6 +155,58 @@ function memorySection(s, memory) {
   ]));
 }
 
+// Claude usage & estimated cost, accumulated per device (see ai.js). Cost is an
+// estimate from published Sonnet 5 rates — the real bill is on the Anthropic
+// console; this is a running gut-check so an expensive habit doesn't surprise.
+const USAGE_KIND_LABELS = { brief: 'Daily brief', review: 'Weekly review', meals: 'Dinner plans', meeting: 'Meeting agendas', claudify: 'Claudify', other: 'Other' };
+function usdShort(n) {
+  if (n <= 0) return '$0.00';
+  if (n < 0.01) return '<$0.01';
+  return '$' + n.toFixed(2);
+}
+function tokShort(n) {
+  n = n || 0;
+  return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
+}
+function usageSection(root) {
+  const u = getUsage();
+  if (!u.calls) {
+    return disclosure('Claude usage & cost', el('section', { class: 'panel' }, [
+      el('p', { class: 'muted small', style: 'margin-top: 0' }, 'No Claude requests on this device yet. Once Claudia runs a brief, review, or plan, a running estimated cost shows here.'),
+    ]));
+  }
+  const rows = Object.entries(u.byKind)
+    .sort((a, b) => estimateCost(b[1]) - estimateCost(a[1]))
+    .map(([kind, k]) => el('tr', {}, [
+      el('td', {}, USAGE_KIND_LABELS[kind] || kind),
+      el('td', { style: 'text-align:right' }, String(k.calls || 0)),
+      el('td', { style: 'text-align:right' }, tokShort((k.inputTokens || 0) + (k.cacheReadTokens || 0) + (k.cacheWriteTokens || 0))),
+      el('td', { style: 'text-align:right' }, tokShort(k.outputTokens || 0)),
+      el('td', { style: 'text-align:right' }, usdShort(estimateCost(k))),
+    ]));
+  return disclosure('Claude usage & cost', el('section', { class: 'panel' }, [
+    el('p', { class: 'muted small', style: 'margin-top: 0' }, [
+      'Estimated ', el('strong', {}, usdShort(estimateCost(u))), ` across ${u.calls} request${u.calls === 1 ? '' : 's'}`,
+      u.since ? ` since ${fmtDay(u.since.slice(0, 10))}` : '', ' — this device only.',
+    ]),
+    el('div', { class: 'usage-table-wrap' }, el('table', { class: 'usage-table' }, [
+      el('thead', {}, el('tr', {}, [
+        el('th', {}, 'What'),
+        el('th', { style: 'text-align:right' }, 'Runs'),
+        el('th', { style: 'text-align:right' }, 'In'),
+        el('th', { style: 'text-align:right' }, 'Out'),
+        el('th', { style: 'text-align:right' }, 'Est.'),
+      ])),
+      el('tbody', {}, rows),
+    ])),
+    u.webSearches ? el('p', { class: 'muted small' }, `Includes ${u.webSearches} web search${u.webSearches === 1 ? '' : 'es'} (~1¢ each).`) : null,
+    el('p', { class: 'muted small' }, 'A rough estimate from published Sonnet 5 rates ($3 / $15 per million tokens in / out). Your actual bill is on the Anthropic console.'),
+    el('div', { class: 'settings-actions' }, [
+      el('button', { class: 'btn btn-danger', onclick: () => { resetUsage(); toast('Usage reset'); renderSettings(root); } }, 'Reset counter'),
+    ]),
+  ]));
+}
+
 async function renderSettings(root) {
   clear(root);
   const s = getSettings();
@@ -270,6 +323,7 @@ async function renderSettings(root) {
     ])),
 
     memorySection(s, memory),
+    usageSection(root),
 
     // ----- integrations -----
     disclosure('Google (Calendar + Email, optional)', el('section', { class: 'panel' }, [

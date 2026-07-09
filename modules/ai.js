@@ -17,6 +17,63 @@ const API_URL = 'https://api.anthropic.com/v1/messages';
 
 export class AIError extends Error {}
 
+// ---------- usage & cost tracking (per device, not synced) ----------
+// Every Claude response reports token usage; we accumulate it in localStorage
+// so Settings can show what the family has spent. Kept local (not in the Gist)
+// because it's per-device telemetry and summing counters across phones would
+// fight the newest-wins sync model. Cost is an ESTIMATE from published Sonnet 5
+// rates — the real bill is on the Anthropic console.
+const USAGE_KEY = 'ohos.apiUsage';
+
+// Published Claude Sonnet 5 rates (USD per 1M tokens unless noted). Update here
+// if pricing changes. Cache read ≈ 0.1× input; cache write ≈ 1.25× input.
+export const PRICING = {
+  inputPerM: 3, outputPerM: 15, cacheReadPerM: 0.3, cacheWritePerM: 3.75, webSearchEach: 0.01,
+};
+
+export function getUsage() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(USAGE_KEY) || '{}');
+    return { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, webSearches: 0, byKind: {}, since: null, ...raw };
+  } catch {
+    return { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, webSearches: 0, byKind: {}, since: null };
+  }
+}
+
+export function resetUsage() {
+  localStorage.removeItem(USAGE_KEY);
+}
+
+// Dollar estimate for a usage record (the totals object, or a byKind entry).
+export function estimateCost(u) {
+  return (
+    (u.inputTokens || 0) / 1e6 * PRICING.inputPerM +
+    (u.outputTokens || 0) / 1e6 * PRICING.outputPerM +
+    (u.cacheReadTokens || 0) / 1e6 * PRICING.cacheReadPerM +
+    (u.cacheWriteTokens || 0) / 1e6 * PRICING.cacheWritePerM +
+    (u.webSearches || 0) * PRICING.webSearchEach
+  );
+}
+
+// Fold one response's usage into the running totals (and per-kind breakdown).
+function recordUsage(kind, u) {
+  if (!u) return;
+  const store = getUsage();
+  const add = (t) => {
+    t.calls = (t.calls || 0) + 1;
+    t.inputTokens = (t.inputTokens || 0) + (u.input_tokens || 0);
+    t.outputTokens = (t.outputTokens || 0) + (u.output_tokens || 0);
+    t.cacheReadTokens = (t.cacheReadTokens || 0) + (u.cache_read_input_tokens || 0);
+    t.cacheWriteTokens = (t.cacheWriteTokens || 0) + (u.cache_creation_input_tokens || 0);
+    t.webSearches = (t.webSearches || 0) + (u.server_tool_use?.web_search_requests || 0);
+  };
+  add(store);
+  store.byKind[kind] = store.byKind[kind] || {};
+  add(store.byKind[kind]);
+  if (!store.since) store.since = new Date().toISOString();
+  try { localStorage.setItem(USAGE_KEY, JSON.stringify(store)); } catch { /* quota — skip */ }
+}
+
 export function hasApiKey() {
   return Boolean(getSettings().apiKey);
 }
@@ -35,7 +92,7 @@ function webSearchTool() {
 // When `tools` includes web search, the API may pause mid-turn between
 // searches (stop_reason 'pause_turn') — we loop, feeding the partial turn
 // back, until Claude finishes.
-async function callClaude({ system, messages, maxTokens = 2048, tools }) {
+async function callClaude({ system, messages, maxTokens = 2048, tools, kind = 'other' }) {
   const { apiKey } = getSettings();
   if (!apiKey) {
     throw new AIError('No Claude API key set. Add one in Settings.');
@@ -75,6 +132,7 @@ async function callClaude({ system, messages, maxTokens = 2048, tools }) {
     }
 
     const json = await res.json();
+    recordUsage(kind, json.usage); // one record per hop — web-search pauses each bill separately
     if (json.stop_reason === 'pause_turn') {
       convo = [...convo, { role: 'assistant', content: json.content }];
       continue;
@@ -110,12 +168,13 @@ function parseJSON(raw) {
   }
 }
 
-async function generateJSON({ system, prompt, maxTokens, tools }) {
+async function generateJSON({ system, prompt, maxTokens, tools, kind = 'other' }) {
   const attempt = async (extra) => {
     const raw = await callClaude({
       system,
       maxTokens,
       tools,
+      kind,
       messages: [{ role: 'user', content: prompt + (extra || '') }],
     });
     return parseJSON(raw);
@@ -174,7 +233,7 @@ ${type === 'admin'
   ? 'Give 4-6 agenda topics focused on core household tasks/plan/projects/decisions. Leave icebreakers and activities as empty arrays — this meeting is just the two of them.'
   : 'Give 4-6 agenda topics (most drawn from the week\'s real items), 2 icebreakers, and 2 activities.'} Empty arrays are fine.`;
 
-  return generateJSON({ system, prompt, maxTokens: 1800 });
+  return generateJSON({ system, prompt, maxTokens: 1800, kind: 'meeting' });
 }
 
 // ---------- House manager ----------
@@ -216,7 +275,7 @@ Return JSON with exactly this shape:
 Give 0-4 suggestions, only genuinely useful ones for today or the next day. Never suggest a grocery item already on the list above; for grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Empty arrays are fine.
 In the headline and notes, use **bold** (Markdown) sparingly — wrap only the few words that carry the most weight (a name, a time, a place, one key action), never whole sentences or more than a couple of phrases total. No other Markdown.`;
 
-  return generateJSON({ system, prompt, maxTokens: 1400 });
+  return generateJSON({ system, prompt, maxTokens: 1400, kind: 'brief' });
 }
 
 // Weekly review for the House Manager tab — proposes a concrete plan of items
@@ -268,7 +327,7 @@ Return JSON with exactly this shape:
 Give 3-8 plan items, most time-sensitive first — quality over quantity; never pad with generic errands. Never suggest a grocery item already on the list above; for grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Ask at most 2 questions, only when the answer would change your advice. Empty arrays are fine.
 In the overview and item details, use **bold** (Markdown) sparingly — wrap only the few words that carry the most weight (a name, a date, a deadline, one key action), never whole sentences or more than a couple of phrases total. No other Markdown.`;
 
-  return generateJSON({ system, prompt, maxTokens: 3000, tools: [webSearchTool()] });
+  return generateJSON({ system, prompt, maxTokens: 3000, tools: [webSearchTool()], kind: 'review' });
 }
 
 // Dinner planner for the Manager tab — proposes dinners for the empty nights
@@ -299,7 +358,7 @@ Return JSON with exactly this shape:
 }
 One meal per empty night, dated correctly. Empty arrays are fine.`;
 
-  return generateJSON({ system, prompt, maxTokens: 2400 });
+  return generateJSON({ system, prompt, maxTokens: 2400, kind: 'meals' });
 }
 
 // "Claudify" a single plan item: expand a one-line plan item into a fuller,
@@ -317,5 +376,5 @@ ${notes || '(none)'}
 
 Write the expanded plan directly as plain text.`;
 
-  return callClaude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 900 });
+  return callClaude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 900, kind: 'claudify' });
 }
