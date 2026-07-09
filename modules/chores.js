@@ -6,6 +6,7 @@ import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosu
 import { parseImport } from './grocery.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const TIMER_SVG = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12.5" r="8.5"/><path d="M12 8v4.5l3 2"/><path d="M9.5 2.5h5"/></svg>';
 
 function familyMembers() {
   const raw = getSettings().familyMembers || 'Chris, Kat, Sedona, River';
@@ -34,6 +35,7 @@ export function choreRow(chore, { onchange, showDue = true } = {}) {
     meta.push(el('span', { class: 'pill' + (overdue ? ' pill-overdue' : '') }, fmtDue(chore.dueDate)));
   }
   if (chore.assignee) meta.push(el('span', { class: 'pill pill-accent' }, chore.assignee));
+  if (chore.focusSeconds) meta.push(el('span', { class: 'pill' }, `⏱ ${fmtFocusPill(chore.focusSeconds)}`));
   if (chore.done && chore.doneBy) meta.push(el('span', { class: 'pill pill-done' }, `done · ${chore.doneBy}`));
 
   return el('div', { class: 'task-row' + (chore.done ? ' done' : '') }, [
@@ -50,7 +52,205 @@ export function choreRow(chore, { onchange, showDue = true } = {}) {
       el('span', { class: 'task-name' }, chore.title),
       meta.length ? el('span', { class: 'task-meta' }, meta) : null,
     ]),
+    !chore.done && el('button', {
+      class: 'link task-focus-btn',
+      html: TIMER_SVG,
+      'aria-label': 'Focus on this task — timer + notes',
+      onclick: () => openFocusModal(chore, onchange),
+    }),
   ]);
+}
+
+const FOCUS_PRESET_KEY = 'ohos.focusPresetMin';
+const FOCUS_PRESETS = [15, 25, 45];
+const FOCUS_MAX_MIN = 180;
+
+// Remembers the last length used — a preset OR a custom value — so reopening
+// the timer starts where you left off. Any whole minute count 1–180 is valid.
+function getFocusPreset() {
+  const n = Number(localStorage.getItem(FOCUS_PRESET_KEY));
+  return Number.isInteger(n) && n >= 1 && n <= FOCUS_MAX_MIN ? n : 25;
+}
+function setFocusPreset(n) { localStorage.setItem(FOCUS_PRESET_KEY, String(n)); }
+
+function fmtClock(totalSec) {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Compact form for the row pill (fmtLoggedTime's sentence form is for the modal).
+function fmtFocusPill(totalSec) {
+  const m = Math.round(totalSec / 60);
+  if (m < 1) return '<1m';
+  if (m < 60) return `${m}m`;
+  return `${(m / 60).toFixed(1)}h`;
+}
+
+function fmtLoggedTime(totalSec) {
+  if (!totalSec) return null;
+  const m = Math.round(totalSec / 60);
+  if (m < 1) return 'under a minute logged on this task';
+  if (m < 60) return `${m}m logged on this task`;
+  return `${(m / 60).toFixed(1)}h logged on this task`;
+}
+
+// A short two-tone beep via Web Audio — no asset needed, and audio contexts
+// created off an earlier user gesture (the Start tap) can still play later.
+let audioCtx;
+function playChime() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const t0 = audioCtx.currentTime;
+    [880, 1320].forEach((freq, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.frequency.value = freq;
+      osc.connect(gain).connect(audioCtx.destination);
+      const start = t0 + i * 0.16;
+      gain.gain.setValueAtTime(0.001, start);
+      gain.gain.exponentialRampToValueAtTime(0.2, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.3);
+      osc.start(start);
+      osc.stop(start + 0.32);
+    });
+  } catch {
+    // Web Audio unsupported/blocked — the toast + visual state still land.
+  }
+}
+
+// Focus timer + notes for one task — a lightweight in-app replacement for a
+// separate focus-timer app. Countdown (not a stopwatch) with a remembered
+// preset length; notes autosave; time actually spent accumulates onto the
+// task (chore.focusSeconds) so it survives across sessions and however the
+// sheet gets closed (Done, scrim tap, or letting it run and walking away).
+function openFocusModal(chore, onchange) {
+  let presetMin = getFocusPreset();
+  let remainingSec = presetMin * 60;
+  let running = false;
+  let endAt = null;
+  let tickTimer = null;
+  let runStartRemaining = null; // remainingSec at the moment this run segment began
+  let sessionElapsedSec = 0;    // real seconds actually spent running, this modal open
+
+  const display = el('div', { class: 'focus-timer-display' }, fmtClock(remainingSec));
+  const loggedLine = el('p', { class: 'muted small', style: 'text-align:center; margin: 4px 0 0' }, fmtLoggedTime(chore.focusSeconds) || 'no time logged yet');
+
+  // Length picker: three presets plus a Custom button that reveals a minutes
+  // input. Changing length is disabled while running (stop first).
+  function applyLength(min) {
+    presetMin = min;
+    setFocusPreset(min);
+    remainingSec = presetMin * 60;
+    display.textContent = fmtClock(remainingSec);
+  }
+  function refreshActive({ custom } = {}) {
+    const isCustom = custom ?? !FOCUS_PRESETS.includes(presetMin);
+    presetBtns.forEach((b, i) => b.classList.toggle('active', !isCustom && FOCUS_PRESETS[i] === presetMin));
+    customBtn.classList.toggle('active', isCustom);
+  }
+  const presetBtns = FOCUS_PRESETS.map((min) =>
+    el('button', {
+      class: 'btn seg-btn',
+      onclick: () => { if (running) return; applyLength(min); refreshActive(); customRow.style.display = 'none'; },
+    }, `${min}m`)
+  );
+  const customBtn = el('button', {
+    class: 'btn seg-btn',
+    onclick: () => { if (running) return; customRow.style.display = ''; refreshActive({ custom: true }); customInput.focus(); },
+  }, 'Custom');
+  const presetRow = el('div', { class: 'seg' }, [...presetBtns, customBtn]);
+
+  const customInput = el('input', {
+    class: 'input', type: 'number', min: '1', max: String(FOCUS_MAX_MIN),
+    placeholder: 'minutes', value: FOCUS_PRESETS.includes(presetMin) ? '' : String(presetMin),
+    style: 'margin-top: 8px',
+    oninput: () => {
+      if (running) return;
+      const n = Math.round(Number(customInput.value));
+      if (!Number.isFinite(n) || n < 1) return;
+      applyLength(Math.min(n, FOCUS_MAX_MIN));
+      refreshActive({ custom: true });
+    },
+  });
+  const customRow = el('div', { style: FOCUS_PRESETS.includes(presetMin) ? 'display: none' : '' }, [customInput]);
+  refreshActive();
+
+  function tick() {
+    remainingSec = Math.max(0, Math.round((endAt - Date.now()) / 1000));
+    display.textContent = fmtClock(remainingSec);
+    if (remainingSec <= 0) {
+      stopRun();
+      playChime();
+      toast('Focus session done — nice work', 'success');
+    }
+  }
+
+  // Folds the just-run segment into sessionElapsedSec, then stops ticking.
+  function stopRun() {
+    if (!running) return;
+    running = false;
+    clearInterval(tickTimer);
+    sessionElapsedSec += runStartRemaining - remainingSec;
+    runStartRemaining = null;
+    startPauseBtn.textContent = 'Start';
+  }
+
+  const startPauseBtn = el('button', {
+    class: 'btn btn-primary full',
+    onclick: () => {
+      if (running) {
+        stopRun();
+      } else {
+        if (remainingSec <= 0) return;
+        running = true;
+        runStartRemaining = remainingSec;
+        endAt = Date.now() + remainingSec * 1000;
+        tickTimer = setInterval(tick, 250);
+        startPauseBtn.textContent = 'Pause';
+      }
+    },
+  }, 'Start');
+
+  const resetBtn = el('button', {
+    class: 'btn',
+    onclick: () => {
+      stopRun();
+      remainingSec = presetMin * 60;
+      display.textContent = fmtClock(remainingSec);
+    },
+  }, 'Reset');
+
+  let notesTimer = null;
+  const notes = el('textarea', {
+    class: 'input', rows: 4, placeholder: 'Notes for this session…',
+    value: chore.notes || '',
+    oninput: () => {
+      clearTimeout(notesTimer);
+      notesTimer = setTimeout(() => put('chores', { ...chore, notes: notes.value }), 800);
+    },
+  });
+
+  const m = openModal(chore.title, [
+    presetRow,
+    customRow,
+    display,
+    loggedLine,
+    el('div', { class: 'field-row', style: 'margin-top: 10px' }, [startPauseBtn, resetBtn]),
+    el('label', { class: 'field-label', style: 'margin-top: 14px' }, 'Notes'),
+    notes,
+  ], [
+    el('button', { class: 'btn btn-primary', onclick: () => m.close() }, 'Done'),
+  ], {
+    onClose: async () => {
+      stopRun();
+      clearTimeout(notesTimer);
+      if (sessionElapsedSec > 0 || notes.value !== (chore.notes || '')) {
+        await put('chores', { ...chore, notes: notes.value, focusSeconds: (chore.focusSeconds || 0) + sessionElapsedSec });
+        onchange?.();
+      }
+    },
+  });
 }
 
 // Create/edit bottom sheet. Pass no chore (or an id-less prefill) to create.
