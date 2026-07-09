@@ -61,17 +61,9 @@ export function choreRow(chore, { onchange, showDue = true } = {}) {
   ]);
 }
 
-const FOCUS_PRESET_KEY = 'ohos.focusPresetMin';
 const FOCUS_PRESETS = [15, 25, 45];
+const FOCUS_DEFAULT_MIN = 25; // the timer always opens here; Custom is per-session
 const FOCUS_MAX_MIN = 180;
-
-// Remembers the last length used — a preset OR a custom value — so reopening
-// the timer starts where you left off. Any whole minute count 1–180 is valid.
-function getFocusPreset() {
-  const n = Number(localStorage.getItem(FOCUS_PRESET_KEY));
-  return Number.isInteger(n) && n >= 1 && n <= FOCUS_MAX_MIN ? n : 25;
-}
-function setFocusPreset(n) { localStorage.setItem(FOCUS_PRESET_KEY, String(n)); }
 
 function fmtClock(totalSec) {
   const m = Math.floor(totalSec / 60);
@@ -125,7 +117,7 @@ function playChime() {
 // task (chore.focusSeconds) so it survives across sessions and however the
 // sheet gets closed (Done, scrim tap, or letting it run and walking away).
 function openFocusModal(chore, onchange) {
-  let presetMin = getFocusPreset();
+  let presetMin = FOCUS_DEFAULT_MIN;
   let remainingSec = presetMin * 60;
   let running = false;
   let endAt = null;
@@ -140,7 +132,6 @@ function openFocusModal(chore, onchange) {
   // input. Changing length is disabled while running (stop first).
   function applyLength(min) {
     presetMin = min;
-    setFocusPreset(min);
     remainingSec = presetMin * 60;
     display.textContent = fmtClock(remainingSec);
   }
@@ -197,7 +188,7 @@ function openFocusModal(chore, onchange) {
   }
 
   const startPauseBtn = el('button', {
-    class: 'btn btn-primary full',
+    class: 'btn btn-primary',
     onclick: () => {
       if (running) {
         stopRun();
@@ -222,14 +213,17 @@ function openFocusModal(chore, onchange) {
   }, 'Reset');
 
   let notesTimer = null;
+  // Note: a <textarea>'s value is its text content, NOT a `value` attribute —
+  // so the existing note is passed as children here, not as `value:` (which
+  // setAttribute would silently drop, loading the box empty and then wiping
+  // the saved note on close).
   const notes = el('textarea', {
     class: 'input', rows: 4, placeholder: 'Notes for this session…',
-    value: chore.notes || '',
     oninput: () => {
       clearTimeout(notesTimer);
       notesTimer = setTimeout(() => put('chores', { ...chore, notes: notes.value }), 800);
     },
-  });
+  }, chore.notes || '');
 
   const m = openModal(chore.title, [
     presetRow,
