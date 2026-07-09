@@ -344,8 +344,12 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   ] : [];
 
   // ----- carried over from last cycle: topics/decisions left open last time.
-  // Full-width rows with checkboxes; bulk "add to this week" / "drop" so a
-  // backlog after a skipped meeting is a few taps, not one button per row. -----
+  // Full-width rows with checkboxes; bulk actions so a backlog after a skipped
+  // meeting is a few taps, not one button per row. "Next week" = the next time
+  // this meeting type happens (its upcoming cycle). "Move to Admin/Family"
+  // reroutes a topic that belongs in the other meeting instead. -----
+  const otherType = type === 'admin' ? 'family' : 'admin';
+  const otherLabel = otherType === 'admin' ? 'Admin' : 'Family';
   const carriedSelected = new Set();
   const addSelBtn = el('button', {
     class: 'btn seg-btn hm-add',
@@ -353,7 +357,15 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       for (const a of stillOpenItems) if (carriedSelected.has(a.id)) await put('agenda', { ...a, cycleDate: meetingDate });
       rerender();
     },
-  }, '↩ Add to this week');
+  }, '↩ Add to next week');
+  const moveSelBtn = el('button', {
+    class: 'btn',
+    onclick: async () => {
+      // Reroute to the other meeting's upcoming cycle, so it shows up there.
+      for (const a of stillOpenItems) if (carriedSelected.has(a.id)) await put('agenda', { ...a, type: otherType, cycleDate: meetingDateByType[otherType] });
+      rerender();
+    },
+  }, `Move to ${otherLabel}`);
   const dropSelBtn = el('button', {
     class: 'btn',
     onclick: async () => {
@@ -363,9 +375,8 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   }, 'Drop');
   function refreshCarriedBulk() {
     const n = carriedSelected.size;
-    addSelBtn.disabled = n ? null : 'disabled';
-    dropSelBtn.disabled = n ? null : 'disabled';
-    addSelBtn.textContent = n ? `↩ Add ${n} to this week` : '↩ Add to this week';
+    for (const b of [addSelBtn, moveSelBtn, dropSelBtn]) b.disabled = n ? null : 'disabled';
+    addSelBtn.textContent = n ? `↩ Add ${n} to next week` : '↩ Add to next week';
   }
   const carriedRow = (a) => {
     const cb = el('input', {
@@ -376,9 +387,9 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   };
   const carriedNodes = stillOpenItems.length ? [
     el('h5', { class: 'meeting-unit-heading' }, `Carried over from last meeting (${stillOpenItems.length})`),
-    el('p', { class: 'muted small', style: 'margin: 0 0 8px' }, 'Topics left open last time. Check the ones to bring into this week, then add them — or drop what’s no longer worth raising.'),
+    el('p', { class: 'muted small', style: 'margin: 0 0 8px' }, `Topics left open last time. Check the ones to bring into next week, move to the ${otherLabel} meeting, or drop what’s no longer worth raising.`),
     ...stillOpenItems.map(carriedRow),
-    el('div', { class: 'hm-actions', style: 'margin-top: 8px' }, [addSelBtn, dropSelBtn]),
+    el('div', { class: 'hm-actions', style: 'margin-top: 8px' }, [addSelBtn, moveSelBtn, dropSelBtn]),
   ] : [];
   refreshCarriedBulk();
 
