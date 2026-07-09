@@ -4,7 +4,7 @@
 // household app that scores spouses is a divorce app).
 
 import { getAll, put, getSettings } from './store.js';
-import { el, clear, navigate, toast, todayStr, addDays, fmtDay, preserveScroll } from './ui.js';
+import { el, clear, navigate, toast, todayStr, addDays, fmtDay, preserveScroll, richText } from './ui.js';
 import { choreRow } from './chores.js';
 import { addGroceryItem } from './grocery.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
@@ -270,8 +270,8 @@ function pinNodes(pins, rerender) {
 function renderBrief(host, out, rerender, addedSet, dismissedSet, pins, today) {
   clear(host);
   host.append(...pinNodes(pins, rerender));
-  if (out.headline) host.append(el('p', { class: 'brief-headline' }, out.headline));
-  if (out.notes?.length) host.append(el('ul', { class: 'brief-notes' }, out.notes.map((n) => el('li', {}, n))));
+  if (out.headline) host.append(el('p', { class: 'brief-headline' }, richText(out.headline)));
+  if (out.notes?.length) host.append(el('ul', { class: 'brief-notes' }, out.notes.map((n) => el('li', {}, richText(n)))));
   // Added suggestions become real tasks (drop off the brief); "Not needed"
   // just clears the item from view with no permanent memory — satisfying,
   // like checking something off, but fair game for a future brief.
@@ -294,7 +294,7 @@ function renderBrief(host, out, rerender, addedSet, dismissedSet, pins, today) {
     host.append(
       el('div', { class: 'idea' }, [
         el('div', { class: 'idea-title' }, [s.title, s.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, s.who) : null]),
-        s.detail ? el('p', { class: 'idea-detail' }, s.detail) : null,
+        s.detail ? el('p', { class: 'idea-detail' }, richText(s.detail)) : null,
         actions,
       ])
     );

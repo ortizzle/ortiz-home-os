@@ -5,7 +5,7 @@
 // feature.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, preserveScroll, disclosure } from './ui.js';
+import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, preserveScroll, disclosure, richText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, claudifyPlanItem, hasApiKey, AIError } from './ai.js';
 import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
@@ -270,7 +270,7 @@ function reviewIdea(item, rerender, state) {
   }
   return el('div', { class: 'idea' }, [
     el('div', { class: 'idea-title' }, [item.title, item.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, item.who) : null]),
-    item.detail ? el('p', { class: 'idea-detail' }, item.detail) : null,
+    item.detail ? el('p', { class: 'idea-detail' }, richText(item.detail)) : null,
     actions,
   ]);
 }
@@ -320,7 +320,7 @@ function questionRow(q, rerender, state) {
     },
   }, '✓ Resolve');
   return el('li', {}, [
-    el('span', {}, q),
+    el('span', {}, richText(q)),
     el('div', { class: 'hm-actions', style: 'margin: 6px 0 2px' }, [taskBtn, resolveBtn]),
   ]);
 }
@@ -331,7 +331,7 @@ function renderReview(host, out, rerender, state) {
     host.append(el('p', { class: 'muted small', style: 'margin: 0 0 8px' },
       `Planned ${state.reviewedAt === todayStr() ? 'today' : fmtDay(state.reviewedAt)} — tap Plan the week for a fresh look.`));
   }
-  if (out.overview) host.append(el('p', { class: 'hm-overview' }, out.overview));
+  if (out.overview) host.append(el('p', { class: 'hm-overview' }, richText(out.overview)));
   const items = (out.planItems || []).filter((item) => !state.dismissed.has(item.title));
   for (const item of items) host.append(reviewIdea(item, rerender, state));
   if (out.questions?.length) {

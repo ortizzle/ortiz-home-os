@@ -29,6 +29,27 @@ export function clear(node) {
   return node;
 }
 
+// Render a minimal slice of Markdown — **bold** only — as safe DOM nodes
+// (text nodes + <strong>, never innerHTML, so model output can't inject
+// markup). Anything that isn't a matched **…** pair renders literally, so a
+// stray asterisk just shows as typed. Returns an array of nodes for use as
+// el() children. Used for Claudia's briefs/comments so she can emphasize the
+// word or two that matters (a name, a date, a key action).
+export function richText(str) {
+  const s = String(str ?? '');
+  const out = [];
+  const re = /\*\*(.+?)\*\*/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(s))) {
+    if (m.index > last) out.push(document.createTextNode(s.slice(last, m.index)));
+    out.push(el('strong', {}, m[1]));
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) out.push(document.createTextNode(s.slice(last)));
+  return out;
+}
+
 // Wrap a full-page re-render (clear(root) + rebuild) so it doesn't reset
 // scroll to the top — replacing DOM nodes loses the browser's scroll anchor
 // even though the content looks the same. Every view's `rerender` should be
