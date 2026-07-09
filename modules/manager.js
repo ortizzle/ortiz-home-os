@@ -248,26 +248,42 @@ export async function renderManager(root) {
 // from THIS review — a satisfying checked-off feeling, not a permanent veto.
 // Claudia keeps no memory of it, so it's fair game for a future review.
 function reviewIdea(item, rerender, state) {
+  // Once added, an item is done business — collapse it to a single line
+  // (green ✓ + title) so the review stays scannable and space goes to the
+  // items still needing a decision. Tap the row to expand the detail back.
+  if (state.added.has(item.title)) {
+    const wrap = el('div', { class: 'idea idea-added collapsed' }, [
+      el('button', {
+        class: 'idea-added-head', 'aria-label': `Added: ${item.title} — tap to expand`,
+        onclick: () => wrap.classList.toggle('collapsed'),
+      }, [
+        el('span', { class: 'idea-added-check' }, '✓'),
+        el('span', { class: 'idea-added-title' }, item.title),
+        item.who ? el('span', { class: 'pill pill-accent' }, item.who) : null,
+      ]),
+      item.detail ? el('p', { class: 'idea-detail' }, richText(item.detail)) : null,
+    ]);
+    return wrap;
+  }
+
   const actions = addButtons(item, {
     today: todayStr(),
     includePlan: true,
-    alreadyAdded: state.added.has(item.title),
+    alreadyAdded: false,
     // Record the add BEFORE re-rendering, so the restored (shared) review
     // shows this item as Added ✓ on both phones and keeps the rest on screen.
     onAdded: async () => { await markReviewAdded(item.title); rerender(); },
   });
-  if (!state.added.has(item.title)) {
-    const clearBtn = el('button', {
-      class: 'btn seg-btn hm-add',
-      'aria-label': 'Not needed — clear from this review',
-      onclick: async () => {
-        await markReviewDismissed(item.title);
-        toast('Cleared');
-        rerender();
-      },
-    }, '✓ Not needed');
-    actions.append(clearBtn);
-  }
+  const clearBtn = el('button', {
+    class: 'btn seg-btn hm-add',
+    'aria-label': 'Not needed — clear from this review',
+    onclick: async () => {
+      await markReviewDismissed(item.title);
+      toast('Cleared');
+      rerender();
+    },
+  }, '✓ Not needed');
+  actions.append(clearBtn);
   return el('div', { class: 'idea' }, [
     el('div', { class: 'idea-title' }, [item.title, item.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, item.who) : null]),
     item.detail ? el('p', { class: 'idea-detail' }, richText(item.detail)) : null,

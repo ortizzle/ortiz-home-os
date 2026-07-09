@@ -422,6 +422,20 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .idea:first-child { border-top: none; padding-top: 2px; }
 .idea-title { font-size: 15px; font-weight: 600; }
 .idea-detail { margin: 4px 0 0; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+/* Added review items collapse to one scannable line; tap to expand the detail. */
+.idea-added { padding: 4px 0; }
+.idea-added-head {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: none; border: none; padding: 4px 0; cursor: pointer;
+  font: inherit; text-align: left; color: var(--text-2);
+}
+.idea-added-check { flex-shrink: 0; color: var(--good); font-weight: 700; }
+.idea-added-title { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.idea-added .pill { flex-shrink: 0; }
+.idea-added-head::after { content: '⌄'; flex-shrink: 0; color: var(--text-3); font-size: 15px; line-height: 1; transition: transform 0.15s; }
+.idea-added:not(.collapsed) .idea-added-head::after { transform: rotate(180deg); }
+.idea-added.collapsed .idea-detail { display: none; }
+.idea-added .idea-detail { margin-top: 6px; padding-left: 20px; }
 .idea-actions { margin: 8px 0 0; padding-left: 18px; }
 .idea-actions li { font-size: 13px; margin: 3px 0; line-height: 1.4; }
 .idea-questions { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border-strong); }
