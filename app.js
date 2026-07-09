@@ -25,9 +25,11 @@ import { el, clear, toast, navigate, openModal, todayStr, fmtDay, disclosure } f
 
 const view = document.getElementById('view');
 
-// Shown in Settings so any phone can be checked at a glance. Keep in step
-// with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v41';
+// Shown in Settings so any phone can be checked at a glance. Cosmetic only —
+// checkForUpdate() below detects real changes by content, not this string —
+// but still worth bumping on ship so the label reflects what's running.
+// Keep in step with the sw.js CACHE version when shipping.
+const APP_VERSION = 'v42';
 
 // ---------- theme ----------
 
@@ -486,21 +488,44 @@ async function boot() {
   // network-first fetch only helps on an actual navigation; it can't reach
   // into a live session. So poll for a version mismatch instead, and prompt
   // to reload rather than yanking the rug out from under someone mid-task.
+  checkForUpdate(); // seeds the baseline signature — visibilitychange never fires for the initial load
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') checkForUpdate();
   });
   setInterval(checkForUpdate, 20 * 60_000);
 }
 
+// Every source file that makes up a running session — mirrors sw.js's SHELL
+// list. Deliberately NOT a manually-maintained version string: a forgotten
+// version bump is exactly how the last fix silently failed to fire (shipped
+// three commits' worth of changes while APP_VERSION sat at 'v41' the whole
+// time). Comparing actual file content instead means any real code change
+// is caught automatically, with no release-time step to forget.
+const WATCHED_FILES = [
+  './app.js', './styles.css',
+  './modules/store.js', './modules/ui.js', './modules/chores.js', './modules/grocery.js',
+  './modules/calendar.js', './modules/suggest.js', './modules/dashboard.js', './modules/meeting.js',
+  './modules/ai.js', './modules/gcal.js', './modules/hmcontext.js', './modules/manager.js',
+  './modules/meals.js', './modules/diag.js',
+];
+
+let bootSignature = null;
 let updateBannerShown = false;
+
+async function fetchSignature() {
+  const texts = await Promise.all(
+    WATCHED_FILES.map((f) => fetch(f, { cache: 'no-cache' }).then((r) => (r.ok ? r.text() : '')).catch(() => ''))
+  );
+  return texts.join(' ');
+}
+
 async function checkForUpdate() {
   if (updateBannerShown) return;
   try {
-    const res = await fetch('./app.js', { cache: 'no-cache' });
-    if (!res.ok) return;
-    const text = await res.text();
-    const m = text.match(/const APP_VERSION = '([^']+)'/);
-    if (m && m[1] !== APP_VERSION) showUpdateBanner();
+    const sig = await fetchSignature();
+    if (!sig) return; // all fetches failed (offline) — try again next trigger
+    if (bootSignature === null) { bootSignature = sig; return; } // first call just captures the running baseline
+    if (sig !== bootSignature) showUpdateBanner();
   } catch {
     // offline or a flaky request — next trigger will try again
   }
