@@ -479,6 +479,42 @@ async function boot() {
   });
   const bgSyncTimer = setInterval(backgroundSync, 45_000);
   window.addEventListener('beforeunload', () => clearInterval(bgSyncTimer));
+
+  // iOS keeps a home-screen PWA suspended (not closed) when backgrounded, so
+  // reopening it just resumes the already-loaded JS — no new fetch happens,
+  // so a pushed update never arrives until the app is force-quit. sw.js's
+  // network-first fetch only helps on an actual navigation; it can't reach
+  // into a live session. So poll for a version mismatch instead, and prompt
+  // to reload rather than yanking the rug out from under someone mid-task.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkForUpdate();
+  });
+  setInterval(checkForUpdate, 20 * 60_000);
+}
+
+let updateBannerShown = false;
+async function checkForUpdate() {
+  if (updateBannerShown) return;
+  try {
+    const res = await fetch('./app.js', { cache: 'no-cache' });
+    if (!res.ok) return;
+    const text = await res.text();
+    const m = text.match(/const APP_VERSION = '([^']+)'/);
+    if (m && m[1] !== APP_VERSION) showUpdateBanner();
+  } catch {
+    // offline or a flaky request — next trigger will try again
+  }
+}
+
+function showUpdateBanner() {
+  if (updateBannerShown) return;
+  updateBannerShown = true;
+  const banner = el('div', { class: 'update-banner' }, [
+    el('span', {}, 'A new version is ready.'),
+    el('button', { class: 'btn btn-primary', onclick: () => location.reload() }, 'Reload'),
+    el('button', { class: 'link', style: 'color: inherit', 'aria-label': 'Dismiss', onclick: () => { banner.remove(); updateBannerShown = false; } }, '×'),
+  ]);
+  document.body.append(banner);
 }
 
 boot();

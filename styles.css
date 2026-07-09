@@ -674,6 +674,18 @@ select.input { appearance: none; }
 .toast-error { background: var(--bad); color: #fff; }
 .toast-warn { background: var(--warn); color: #fff; }
 
+/* ---------- update banner ---------- */
+.update-banner {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 60;
+  padding: calc(env(safe-area-inset-top, 0px) + 10px) 16px 10px;
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  background: var(--accent); color: #fff;
+  font-size: 14px; font-weight: 500;
+  box-shadow: var(--shadow-md);
+}
+.update-banner .btn-primary { background: #fff; color: var(--accent); padding: 6px 14px; }
+.update-banner .link { font-size: 16px; padding: 4px 6px; }
+
 /* ---------- tab bar ---------- */
 .tabbar {
   position: fixed;
