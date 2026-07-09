@@ -114,8 +114,11 @@ export function navigate(hash) {
 }
 
 // Bottom-sheet modal. `body` is an array of nodes; `actions` an array of
-// buttons. Returns { close } — tapping the scrim also closes.
-export function openModal(title, body, actions = []) {
+// buttons. Returns { close } — tapping the scrim also closes. `onClose`
+// (optional) fires exactly once, on ANY close path (scrim tap or the
+// returned close()) — use it for state that must be saved no matter how the
+// sheet gets dismissed, e.g. a running timer.
+export function openModal(title, body, actions = [], { onClose } = {}) {
   const overlay = el('div', {
     class: 'modal-overlay',
     onclick: (e) => {
@@ -130,7 +133,11 @@ export function openModal(title, body, actions = []) {
     ])
   );
   document.body.append(overlay);
+  let closed = false;
   function close() {
+    if (closed) return;
+    closed = true;
+    onClose?.();
     overlay.remove();
   }
   return { close };

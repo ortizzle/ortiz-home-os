@@ -361,6 +361,9 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .task-row.done .task-name { text-decoration: line-through; color: var(--text-3); }
 .task-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .task-meta .pill { font-size: 11px; padding: 2px 8px; }
+.task-focus-btn { flex-shrink: 0; padding: 4px 6px; }
+.task-focus-btn svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.focus-timer-display { text-align: center; font-size: 48px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 14px 0 0; letter-spacing: 0.02em; }
 .group-heading {
   margin: 20px 0 6px;
   font-size: 13px;
