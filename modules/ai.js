@@ -200,9 +200,10 @@ export async function draftMeeting({ attendees = [], notes = '', meetingDate, wh
   const system = (type === 'admin'
     ? `You are Claudia, the Ortiz house manager, helping ${attendees.join(' and ') || 'Chris and Kat'} run a quick admin meeting — just the two of them, no kids. Draft an agenda drawn from real open household items: tasks, the weekly plan, projects, decisions, budgeting — never invent anything not in the data. Focus tightly on core household items — brisk and businesslike, like a well-run status check between two people running a household together, not a family gathering. No icebreakers or kid activities. Respond with JSON only — no markdown, no fences.`
     : `You are Claudia, the Ortiz family's AI house manager, helping them run a warm, fun weekly family meeting. Family: ${attendees.join(', ') || 'the family'} (Sedona and River are kids). Draft an agenda drawn from the week's real events and open items — never invent events, people, or commitments. Make it feel like a family moment, not a status meeting: consider icebreakers and connections to fun family activities or memories, so it feels nostalgic and togetherness-building, not a checklist. Keep everything concrete and kid-friendly. Respond with JSON only — no markdown, no fences.`)
-    + ' FOLLOW-THROUGH: some topics from last meeting were never checked off — genuinely fold in the ones that still matter (it\'s fine to drop something that clearly resolved itself), so nothing quietly falls through the cracks.';
+    + ' FOLLOW-THROUGH: some topics from last meeting were never checked off — genuinely fold in the ones that still matter (it\'s fine to drop something that clearly resolved itself), so nothing quietly falls through the cracks.'
+    + ' Your job is to ORGANIZE, not just list: take the items the family has already jotted down, assign each a section, and order them into an effective run-of-show — then add anything important they missed.';
 
-  const prompt = `Draft this week's ${type === 'admin' ? 'admin' : 'family'} meeting${meetingDate ? ` for ${meetingDate}` : ''}${when ? `, ${when}` : ''}.
+  const prompt = `Structure this week's ${type === 'admin' ? 'admin' : 'family'} meeting${meetingDate ? ` for ${meetingDate}` : ''}${when ? `, ${when}` : ''} into an effective agenda.
 
 HOUSEHOLD NOTES / PREFERENCES:
 ${notes || '(none)'}
@@ -219,19 +220,23 @@ ${stillOpen || '(nothing carried over)'}
 DECIDED LAST MEETING (settled — do not re-raise; only bring one back if the week ahead clearly conflicts with it):
 ${decisions || '(no decisions logged)'}
 
-ALREADY ON THE AGENDA (do not repeat):
+ITEMS ALREADY JOTTED FOR THIS MEETING (organize ALL of these — never drop one):
 ${currentAgenda || '(nothing yet)'}
 
-Return JSON with exactly this shape:
+Return JSON with exactly this shape — a SINGLE ordered agenda (meeting order, first to last):
 {
-  "draftAgenda": [ { "topic": "short agenda topic", "why": "one line: why it's worth 2 minutes this week", "needsDecision": false } ],
-  "icebreakers": ["a quick, fun question the whole family (kids included) can answer in a sentence"],
-  "activities": ["a short togetherness activity or ritual that connects to a fun family memory or tradition"]
+  "note": "one short line on the shape of the meeting (optional)",
+  "agenda": [
+    { "topic": "the item's text — reuse a jotted item's EXACT text when organizing it, else a short new topic", "section": "open" | "topic" | "decision" | "close", "existing": true | false }
+  ]
 }
-Set "needsDecision" true only when the family must actually choose or commit to something (a date, a purchase, a yes/no) — most topics are just discussion.
+Rules:
+- Organize EVERY jotted item above into the agenda with "existing": true and its EXACT text (do not reword or drop any). Then add genuinely important missing items as "existing": false — quality over padding.
+- Order for an effective meeting: warm up, group related topics together, cluster the decisions that need a choice, end on a light or forward-looking note.
+- "section": "open" = kickoff/warm-up, "topic" = discussion, "decision" = the family must actually choose or commit (a date, a purchase, a yes/no), "close" = wrap-up.
 ${type === 'admin'
-  ? 'Give 4-6 agenda topics focused on core household tasks/plan/projects/decisions. Leave icebreakers and activities as empty arrays — this meeting is just the two of them.'
-  : 'Give 4-6 agenda topics (most drawn from the week\'s real items), 2 icebreakers, and 2 activities.'} Empty arrays are fine.`;
+  ? '- Admin is just the two of them: brisk and businesslike. Use only "topic" and "decision" sections — no "open"/"close" fluff.'
+  : '- Family meeting: warm and fun. Open with 1-2 icebreaker questions (section "open"), and end with 1-2 togetherness activities tied to a family memory or tradition (section "close"), both as new "existing": false items.'}`;
 
   return generateJSON({ system, prompt, maxTokens: 1800, kind: 'meeting' });
 }

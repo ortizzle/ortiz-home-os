@@ -292,8 +292,8 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       }
       const label = createLabel();
       createBtn.disabled = 'disabled';
-      createBtn.textContent = 'Creating…';
-      clear(statusHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is creating the agenda…')]));
+      createBtn.textContent = 'Organizing…';
+      clear(statusHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is structuring the agenda…')]));
       try {
         const plan = await getAll('plan');
         const openItems = [
@@ -315,9 +315,12 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
           decisions,
           type,
         });
-        const added = await mergeDraftIntoAgenda(out, cycleAgenda, type, meetingDate);
+        const { organized, added } = await applyStructuredAgenda(out, cycleAgenda, type, meetingDate);
         clear(statusHost);
-        toast(added ? `Added ${added} item${added === 1 ? '' : 's'} from Claudia — remove anything you don’t want below` : 'Claudia didn’t have anything new to add', 'success');
+        const parts = [];
+        if (organized) parts.push(`organized ${organized} item${organized === 1 ? '' : 's'}`);
+        if (added) parts.push(`added ${added}`);
+        toast(parts.length ? `Claudia ${parts.join(' and ')} — grouped into a run-of-show below` : 'Claudia had nothing to change', 'success');
         rerender();
       } catch (err) {
         clear(statusHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
@@ -395,14 +398,18 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
 
   // ----- the agenda itself, as a run-of-show. Plain list while everything is
   // an untyped topic (manual adds); section headings appear once Claudia's
-  // structured draft (or any sectioned item) is in the mix. -----
-  const structured = cycleAgenda.some((a) => agendaSectionOf(a) !== 'topic');
-  const agendaNodes = !cycleAgenda.length
+  // structured draft (or any sectioned item) is in the mix. Either way, honor
+  // Claudia's `order` when present (hand-typed items fall back to creation
+  // order). -----
+  const orderedAgenda = cycleAgenda.slice().sort((a, b) =>
+    (a.order ?? Infinity) - (b.order ?? Infinity) || ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
+  const structured = orderedAgenda.some((a) => agendaSectionOf(a) !== 'topic');
+  const agendaNodes = !orderedAgenda.length
     ? [el('p', { class: 'muted small' }, 'No agenda items yet. Jot down what you want to talk about, or have Claudia create the agenda below.')]
     : !structured
-      ? cycleAgenda.map((a) => agendaRow(a, rerender))
+      ? orderedAgenda.map((a) => agendaRow(a, rerender))
       : AGENDA_SECTIONS.flatMap(([key, label]) => {
-          const items = cycleAgenda.filter((a) => agendaSectionOf(a) === key);
+          const items = orderedAgenda.filter((a) => agendaSectionOf(a) === key);
           if (!items.length) return [];
           return [
             el('p', { class: 'muted small', style: 'margin: 10px 0 2px; font-weight: 600' }, label),
@@ -428,8 +435,8 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       el('h5', { class: 'meeting-unit-heading' }, 'Plan with Claudia'),
       el('p', { class: 'muted small' },
         hasApiKey()
-          ? 'One tap fills the agenda above with her full proposal — topics, plus icebreakers and activities for Family (or a brisk task list for Admin) — merged in with anything you’ve already typed. Delete what you don’t want, then Share. Carries forward anything left open from last time.'
-          : 'Optional: add a Claude API key in Settings to have Claudia create the agenda. Everything above works without it.'),
+          ? 'One tap takes what you’ve jotted above and organizes it into a run-of-show — grouped and ordered (Open → Topics → Decisions → Close), with any important gaps filled and, for Family, icebreakers + a closing activity. Nothing you typed is dropped; delete what you don’t want, then Share.'
+          : 'Optional: add a Claude API key in Settings to have Claudia organize the agenda. Everything above works without it.'),
       createBtn,
       statusHost,
     ])
@@ -438,29 +445,39 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   return nodes;
 }
 
-// Merge Claudia's proposal directly into the running agenda — topics,
-// icebreakers, and activities all become real agenda rows immediately (no
-// per-item "accept" step), each tagged with its run-of-show section so the
-// list renders as a structured meeting (Open → Topics → Decisions → Close).
-// Skips anything whose text already appears in the current cycle
-// (case-insensitive), so re-running this doesn't duplicate. Returns how many
-// new rows were actually added.
-async function mergeDraftIntoAgenda(out, cycleAgenda, type, cycleDate) {
-  const existing = new Set(cycleAgenda.map((a) => a.text.trim().toLowerCase()));
-  const candidates = [
-    ...(out.icebreakers || []).map((t) => ({ text: t, section: 'open' })),
-    ...(out.draftAgenda || []).map((s) => ({ text: s.topic, section: s.needsDecision ? 'decision' : 'topic' })),
-    ...(out.activities || []).map((t) => ({ text: t, section: 'close' })),
-  ];
-  let added = 0;
-  for (const { text, section } of candidates) {
-    const key = (text || '').trim().toLowerCase();
-    if (!key || existing.has(key)) continue;
-    existing.add(key);
-    await put('agenda', { text, reviewed: false, type, cycleDate, section });
-    added++;
+// Apply Claudia's structured agenda: she returns ONE ordered list, where each
+// entry is either an existing jotted item (matched by exact text) or a new one,
+// tagged with a run-of-show section. We organize in place — existing rows keep
+// their identity but get her section + order; new rows are added; and any
+// jotted item she somehow didn't mention is kept (never silently dropped),
+// appended after. `order` drives the within-section ordering in the render, so
+// the meeting flows the way she structured it. Returns { organized, added }.
+async function applyStructuredAgenda(out, cycleAgenda, type, cycleDate) {
+  const openItems = cycleAgenda.filter((a) => !a.reviewed);
+  const byText = new Map(openItems.map((a) => [a.text.trim().toLowerCase(), a]));
+  const seen = new Set();
+  let order = 0, organized = 0, added = 0;
+  for (const entry of out.agenda || []) {
+    const text = (entry.topic || '').trim();
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    const section = AGENDA_SECTIONS.some(([k]) => k === entry.section) ? entry.section : 'topic';
+    const existing = byText.get(key);
+    if (existing) {
+      await put('agenda', { ...existing, section, order });
+      organized++;
+    } else {
+      await put('agenda', { text, reviewed: false, type, cycleDate, section, order });
+      added++;
+    }
+    order++;
   }
-  return added;
+  // Safety net: keep any jotted item she didn't place, appended at the end.
+  for (const a of openItems) {
+    if (!seen.has(a.text.trim().toLowerCase())) await put('agenda', { ...a, order: order++ });
+  }
+  return { organized, added };
 }
 
 // Standalone page for the legacy #/meeting route.
@@ -480,6 +497,8 @@ function agendaToText(cycleAgenda, { type, meetingDateLabel } = {}) {
     lines.push(`- ${a.text}`);
     if (a.decision) lines.push(`    Decision: ${a.decision}`);
   };
+  cycleAgenda = cycleAgenda.slice().sort((a, b) =>
+    (a.order ?? Infinity) - (b.order ?? Infinity) || ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const structured = cycleAgenda.some((a) => agendaSectionOf(a) !== 'topic');
   if (!structured) {
     for (const a of cycleAgenda) itemLines(a);
