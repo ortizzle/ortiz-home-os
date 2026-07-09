@@ -137,7 +137,7 @@ async function generateJSON({ system, prompt, maxTokens, tools }) {
 // `type`: 'family' (Wednesday-style, kids included — warm, icebreakers,
 // togetherness activities) or 'admin' (Chris + Kat only — brisk, household
 // ops/projects/finances, no kid content).
-export async function draftMeeting({ attendees = [], notes = '', meetingDate, when = '', weekAhead = '', openItems = '', currentAgenda = '', stillOpen = '', type = 'family' } = {}) {
+export async function draftMeeting({ attendees = [], notes = '', meetingDate, when = '', weekAhead = '', openItems = '', currentAgenda = '', stillOpen = '', decisions = '', type = 'family' } = {}) {
   const system = (type === 'admin'
     ? `You are Claudia, the Ortiz house manager, helping ${attendees.join(' and ') || 'Chris and Kat'} run a quick admin meeting — just the two of them, no kids. Draft an agenda drawn from real open household items: tasks, the weekly plan, projects, decisions, budgeting — never invent anything not in the data. Focus tightly on core household items — brisk and businesslike, like a well-run status check between two people running a household together, not a family gathering. No icebreakers or kid activities. Respond with JSON only — no markdown, no fences.`
     : `You are Claudia, the Ortiz family's AI house manager, helping them run a warm, fun weekly family meeting. Family: ${attendees.join(', ') || 'the family'} (Sedona and River are kids). Draft an agenda drawn from the week's real events and open items — never invent events, people, or commitments. Make it feel like a family moment, not a status meeting: consider icebreakers and connections to fun family activities or memories, so it feels nostalgic and togetherness-building, not a checklist. Keep everything concrete and kid-friendly. Respond with JSON only — no markdown, no fences.`)
@@ -157,15 +157,19 @@ ${openItems || '(none)'}
 STILL OPEN FROM LAST MEETING (never checked off — follow up on what still matters):
 ${stillOpen || '(nothing carried over)'}
 
+DECIDED LAST MEETING (settled — do not re-raise; only bring one back if the week ahead clearly conflicts with it):
+${decisions || '(no decisions logged)'}
+
 ALREADY ON THE AGENDA (do not repeat):
 ${currentAgenda || '(nothing yet)'}
 
 Return JSON with exactly this shape:
 {
-  "draftAgenda": [ { "topic": "short agenda topic", "why": "one line: why it's worth 2 minutes this week" } ],
+  "draftAgenda": [ { "topic": "short agenda topic", "why": "one line: why it's worth 2 minutes this week", "needsDecision": false } ],
   "icebreakers": ["a quick, fun question the whole family (kids included) can answer in a sentence"],
   "activities": ["a short togetherness activity or ritual that connects to a fun family memory or tradition"]
 }
+Set "needsDecision" true only when the family must actually choose or commit to something (a date, a purchase, a yes/no) — most topics are just discussion.
 ${type === 'admin'
   ? 'Give 4-6 agenda topics focused on core household tasks/plan/projects/decisions. Leave icebreakers and activities as empty arrays — this meeting is just the two of them.'
   : 'Give 4-6 agenda topics (most drawn from the week\'s real items), 2 icebreakers, and 2 activities.'} Empty arrays are fine.`;

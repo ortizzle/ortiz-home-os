@@ -138,8 +138,15 @@ async function gatherWeekAhead() {
   return { appts, dueChores, openGroceries, summary: lines.join('\n') };
 }
 
+// Which run-of-show section an agenda item belongs to. Manual adds and
+// legacy items default to 'topic'.
+const AGENDA_SECTIONS = [['open', 'Open'], ['topic', 'Topics'], ['decision', 'Decisions needed'], ['close', 'Close']];
+function agendaSectionOf(a) {
+  return AGENDA_SECTIONS.some(([k]) => k === a.section) ? a.section : 'topic';
+}
+
 function agendaRow(item, rerender) {
-  return el('div', { class: 'task-row' + (item.reviewed ? ' done' : '') }, [
+  const row = el('div', { class: 'task-row' + (item.reviewed ? ' done' : '') }, [
     el('button', {
       class: 'task-check',
       'aria-label': item.reviewed ? 'Mark not reviewed' : 'Mark reviewed',
@@ -163,6 +170,25 @@ function agendaRow(item, rerender) {
       },
     }, '×'),
   ]);
+  // Decision capture: once an item is checked off, offer a one-line "what did
+  // we decide?" note. Saved onto the item, recapped at the next meeting, and
+  // fed to Claudia so settled decisions aren't re-raised.
+  if (!item.reviewed) return row;
+  let extra;
+  if (item.decision) {
+    extra = el('p', { class: 'muted small', style: 'margin: 0 0 8px 40px' }, `Decision: ${item.decision}`);
+  } else {
+    const input = el('input', { class: 'input', placeholder: 'What did we decide? (optional)', style: 'font-size: 13px' });
+    const save = async () => {
+      const text = input.value.trim();
+      if (!text) return;
+      await put('agenda', { ...item, decision: text, decidedBy: deviceName() });
+      rerender();
+    };
+    input.addEventListener('keydown', (e) => e.key === 'Enter' && save());
+    extra = el('div', { class: 'grocery-add', style: 'margin: 0 0 8px 40px' }, [input, el('button', { class: 'btn', onclick: save }, 'Save')]);
+  }
+  return el('div', {}, [row, extra]);
 }
 
 // The full family-meeting experience as embeddable nodes — hosted on the
@@ -179,9 +205,11 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
 
   // Lazy-migrate legacy agenda items (from before type/cycleDate existed)
   // onto their type's current cycle, once, so nothing old just vanishes. And
-  // prune: reviewed items from past cycles are finished business, and
-  // unreviewed ones older than ~5 weeks have aged out of follow-through —
-  // without this the agenda store (and the follow-up prompt) grows forever.
+  // prune: reviewed items from past cycles are finished business — except
+  // ones with a logged decision, which stick around ~2 weeks so they can be
+  // recapped at the next meeting. Unreviewed items older than ~5 weeks have
+  // aged out of follow-through — without this the agenda store (and the
+  // follow-up prompt) grows forever.
   const rawAgenda = await getAll('agenda');
   const staleCutoff = addDays(todayStr(), -35);
   const agenda = [];
@@ -193,7 +221,8 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       await put('agenda', a, { touch: false });
     }
     const pastCycle = a.cycleDate < meetingDateByType[aType];
-    if ((pastCycle && a.reviewed) || a.cycleDate < staleCutoff) {
+    const keepForRecap = a.reviewed && a.decision && a.cycleDate >= addDays(meetingDateByType[aType], -14);
+    if ((pastCycle && a.reviewed && !keepForRecap) || a.cycleDate < staleCutoff) {
       await remove('agenda', a.id);
       continue;
     }
@@ -217,9 +246,13 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   // Agenda scoped to this type + this cycle only — a new cycle starts empty
   // the day after the meeting date passes.
   const cycleAgenda = agenda.filter((a) => a.cycleDate === meetingDate && (a.type || 'family') === type);
-  // Un-checked items from the previous cycle, same type — not shown as rows,
-  // but fed to Claudia so a dropped topic doesn't just disappear.
+  // Un-checked items from the previous cycle, same type — shown as a visible
+  // "carried over" group (pull into this week or drop) AND fed to Claudia so
+  // a dropped topic doesn't just disappear, even if a meeting was skipped.
   const stillOpenItems = agenda.filter((a) => !a.reviewed && a.cycleDate && a.cycleDate < meetingDate && (a.type || 'family') === type);
+  // Decisions logged at the previous meeting — recapped up top, and fed to
+  // Claudia so settled questions aren't re-raised.
+  const decidedLastTime = agenda.filter((a) => a.reviewed && a.decision && a.cycleDate && a.cycleDate < meetingDate && (a.type || 'family') === type);
 
   // ----- agenda input -----
   const input = el('input', { class: 'input', placeholder: 'Add an agenda item…' });
@@ -260,6 +293,7 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
         ].join('\n');
         const currentAgenda = cycleAgenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
         const stillOpen = stillOpenItems.map((a) => `- ${a.text}`).join('\n');
+        const decisions = decidedLastTime.map((a) => `- ${a.text}: ${a.decision}`).join('\n');
         const out = await draftMeeting({
           attendees: attendeesFor(type),
           notes: getSettings().householdNotes || DEFAULT_HOUSEHOLD_NOTES,
@@ -269,6 +303,7 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
           openItems,
           currentAgenda,
           stillOpen,
+          decisions,
           type,
         });
         const added = await mergeDraftIntoAgenda(out, cycleAgenda, type, meetingDate);
@@ -293,6 +328,45 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
     }),
   }, '📤 Share agenda');
 
+  // ----- decisions from last meeting, recapped up top -----
+  const recapNodes = decidedLastTime.length ? [
+    el('h5', { class: 'meeting-unit-heading' }, 'Decided last meeting'),
+    ...decidedLastTime.map((a) => el('p', { class: 'muted small', style: 'margin: 0 0 4px' }, `${a.text} — ${a.decision}`)),
+  ] : [];
+
+  // ----- carried over from last cycle: pull into this week, or drop -----
+  const carriedNodes = stillOpenItems.length ? [
+    el('h5', { class: 'meeting-unit-heading' }, `Carried over from last meeting (${stillOpenItems.length})`),
+    ...stillOpenItems.map((a) => el('div', { class: 'task-row' }, [
+      el('div', { class: 'task-main' }, [el('span', { class: 'task-name' }, a.text)]),
+      el('button', {
+        class: 'btn seg-btn hm-add',
+        onclick: async () => { await put('agenda', { ...a, cycleDate: meetingDate }); rerender(); },
+      }, '↩ This week'),
+      el('button', {
+        class: 'link', style: 'padding: 4px 6px; font-size: 15px; line-height: 1', 'aria-label': 'Drop item',
+        onclick: async () => { await remove('agenda', a.id); rerender(); },
+      }, '×'),
+    ])),
+  ] : [];
+
+  // ----- the agenda itself, as a run-of-show. Plain list while everything is
+  // an untyped topic (manual adds); section headings appear once Claudia's
+  // structured draft (or any sectioned item) is in the mix. -----
+  const structured = cycleAgenda.some((a) => agendaSectionOf(a) !== 'topic');
+  const agendaNodes = !cycleAgenda.length
+    ? [el('p', { class: 'muted small' }, 'No agenda items yet. Jot down what you want to talk about, or have Claudia create the agenda below.')]
+    : !structured
+      ? cycleAgenda.map((a) => agendaRow(a, rerender))
+      : AGENDA_SECTIONS.flatMap(([key, label]) => {
+          const items = cycleAgenda.filter((a) => agendaSectionOf(a) === key);
+          if (!items.length) return [];
+          return [
+            el('p', { class: 'muted small', style: 'margin: 10px 0 2px; font-weight: 600' }, label),
+            ...items.map((a) => agendaRow(a, rerender)),
+          ];
+        });
+
   // ----- assemble as one unit -----
   root.append(
     headEl,
@@ -300,9 +374,12 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       el('p', { class: 'muted small', style: 'margin: 0 0 10px' }, meta),
       el('div', { class: 'seg' }, [typeBtn('family', 'Family'), typeBtn('admin', 'Admin')]),
 
+      ...recapNodes,
+      ...carriedNodes,
+
       el('h5', { class: 'meeting-unit-heading' }, `Agenda (${cycleAgenda.filter((a) => !a.reviewed).length} open)`),
       el('div', { class: 'grocery-add' }, [input, el('button', { class: 'btn btn-primary', onclick: add }, 'Add')]),
-      ...(cycleAgenda.length ? cycleAgenda.map((a) => agendaRow(a, rerender)) : [el('p', { class: 'muted small' }, 'No agenda items yet. Jot down what you want to talk about, or have Claudia create the agenda below.')]),
+      ...agendaNodes,
       cycleAgenda.length ? el('div', { style: 'margin-top: 10px' }, [shareBtn]) : null,
 
       el('h5', { class: 'meeting-unit-heading' }, 'Plan with Claudia'),
@@ -320,22 +397,24 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
 
 // Merge Claudia's proposal directly into the running agenda — topics,
 // icebreakers, and activities all become real agenda rows immediately (no
-// per-item "accept" step). Skips anything whose text already appears in the
-// current cycle (case-insensitive), so re-running this doesn't duplicate.
-// Returns how many new rows were actually added.
+// per-item "accept" step), each tagged with its run-of-show section so the
+// list renders as a structured meeting (Open → Topics → Decisions → Close).
+// Skips anything whose text already appears in the current cycle
+// (case-insensitive), so re-running this doesn't duplicate. Returns how many
+// new rows were actually added.
 async function mergeDraftIntoAgenda(out, cycleAgenda, type, cycleDate) {
   const existing = new Set(cycleAgenda.map((a) => a.text.trim().toLowerCase()));
   const candidates = [
-    ...(out.draftAgenda || []).map((s) => s.topic),
-    ...(out.icebreakers || []).map((t) => `Icebreaker: ${t}`),
-    ...(out.activities || []).map((t) => `Activity: ${t}`),
+    ...(out.icebreakers || []).map((t) => ({ text: t, section: 'open' })),
+    ...(out.draftAgenda || []).map((s) => ({ text: s.topic, section: s.needsDecision ? 'decision' : 'topic' })),
+    ...(out.activities || []).map((t) => ({ text: t, section: 'close' })),
   ];
   let added = 0;
-  for (const text of candidates) {
+  for (const { text, section } of candidates) {
     const key = (text || '').trim().toLowerCase();
     if (!key || existing.has(key)) continue;
     existing.add(key);
-    await put('agenda', { text, reviewed: false, type, cycleDate });
+    await put('agenda', { text, reviewed: false, type, cycleDate, section });
     added++;
   }
   return added;
@@ -349,9 +428,26 @@ export async function renderMeeting(root) {
 }
 
 // Plain-text version of the current (already-curated) agenda, for Copy /
-// Share (paste into email, Notes, Google Docs, wherever).
+// Share (paste into email, Notes, Google Docs, wherever). Mirrors the
+// on-screen run-of-show: sectioned when the agenda is structured, flat when
+// it's all manual topics. Logged decisions ride along under their items.
 function agendaToText(cycleAgenda, { type, meetingDateLabel } = {}) {
   const lines = [`${type === 'admin' ? 'Admin' : 'Family'} meeting${meetingDateLabel ? ` — ${meetingDateLabel}` : ''}`, ''];
-  for (const a of cycleAgenda) lines.push(`- ${a.text}`);
+  const itemLines = (a) => {
+    lines.push(`- ${a.text}`);
+    if (a.decision) lines.push(`    Decision: ${a.decision}`);
+  };
+  const structured = cycleAgenda.some((a) => agendaSectionOf(a) !== 'topic');
+  if (!structured) {
+    for (const a of cycleAgenda) itemLines(a);
+  } else {
+    for (const [key, label] of AGENDA_SECTIONS) {
+      const items = cycleAgenda.filter((a) => agendaSectionOf(a) === key);
+      if (!items.length) continue;
+      lines.push(`${label}:`);
+      for (const a of items) itemLines(a);
+      lines.push('');
+    }
+  }
   return lines.join('\n').trim();
 }

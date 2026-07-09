@@ -76,7 +76,19 @@ function reviewState(r) {
 // "Claudify" a plan item: expand it into a fuller, concrete write-up
 // (steps, considerations, timeline) shown inline below the row, with a
 // Share/Copy button so it can be pasted into email, Notes, Google Docs,
-// wherever. Ephemeral — not saved to the plan record, just this view.
+// wherever. Saved on the plan record (p.claudified) so it survives
+// rerenders/navigation — it sticks around until re-claudified or the item
+// is marked done.
+function renderClaudified(resultHost, p, text) {
+  clear(resultHost).append(
+    el('p', { class: 'idea-detail', style: 'white-space: pre-wrap' }, text),
+    el('button', {
+      class: 'btn seg-btn hm-add', style: 'margin-top: 6px',
+      onclick: () => shareText({ title: p.title, text }),
+    }, '📤 Share / copy')
+  );
+}
+
 function claudifyBtn(p, resultHost) {
   return el('button', {
     class: 'link', style: 'padding: 4px 6px; font-size: 13px',
@@ -92,13 +104,8 @@ function claudifyBtn(p, resultHost) {
           title: p.title,
           detail: p.detail || '',
         });
-        clear(resultHost).append(
-          el('p', { class: 'idea-detail', style: 'white-space: pre-wrap' }, text),
-          el('button', {
-            class: 'btn seg-btn hm-add', style: 'margin-top: 6px',
-            onclick: () => shareText({ title: p.title, text }),
-          }, '📤 Share / copy')
-        );
+        await put('plan', { ...p, claudified: text });
+        renderClaudified(resultHost, p, text);
       } catch (err) {
         clear(resultHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
       }
@@ -108,6 +115,7 @@ function claudifyBtn(p, resultHost) {
 
 function planRow(p, rerender) {
   const resultHost = el('div', {});
+  if (p.claudified && !p.done) renderClaudified(resultHost, p, p.claudified);
   return el('div', { class: 'plan-row-wrap' }, [
     el('div', { class: 'task-row' + (p.done ? ' done' : '') }, [
       el('button', {
@@ -115,7 +123,7 @@ function planRow(p, rerender) {
         'aria-label': p.done ? 'Mark not done' : 'Mark done',
         html: p.done ? CHECK_SVG : '',
         onclick: async () => {
-          await put('plan', { ...p, done: !p.done, doneAt: !p.done ? now() : null, doneBy: !p.done ? deviceName() : null });
+          await put('plan', { ...p, done: !p.done, doneAt: !p.done ? now() : null, doneBy: !p.done ? deviceName() : null, claudified: !p.done ? null : p.claudified });
           rerender();
         },
       }),
