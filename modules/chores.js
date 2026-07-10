@@ -299,6 +299,11 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
     // an old/custom assignee not in the current family list — keep it selectable so editing doesn't silently clear it
     c.assignee && !familyOpts.includes(c.assignee) ? el('option', { value: c.assignee, selected: 'selected' }, c.assignee) : null,
   ]);
+  // Same note field the focus timer writes to (chore.notes) — surfaced here so
+  // you can jot context the moment you open a task, not only from the timer.
+  // A textarea's text is its children, NOT a `value` attribute (setAttribute
+  // would silently drop it), so the existing note is passed as a child.
+  const notes = el('textarea', { class: 'input', rows: 3, placeholder: 'Notes…' }, c.notes || '');
 
   const actions = [
     !isNew &&
@@ -322,6 +327,7 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
           title: name,
           dueDate: due.value || null,
           assignee: assignee.value || null,
+          notes: notes.value.trim() || null,
           done: c.done || false,
         });
         m.close();
@@ -338,6 +344,8 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
       el('div', {}, [el('label', { class: 'field-label' }, 'Due date'), due]),
       el('div', {}, [el('label', { class: 'field-label' }, 'Assignee'), assignee]),
     ]),
+    el('label', { class: 'field-label' }, 'Notes'),
+    notes,
   ], actions);
   title.focus();
 }
