@@ -73,7 +73,34 @@ function fmtTime(t) {
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+// Does a (possibly multi-day) appointment cover `day`? Single-day events have
+// no endDate, so this reduces to a plain date match for them.
+function spansDay(a, day) {
+  return a.date <= day && day <= (a.endDate || a.date);
+}
+
+function isMultiDay(a) {
+  return a.endDate && a.endDate > a.date;
+}
+
+// Short "Jul 15" for span labels.
+function fmtShort(d) {
+  return parseDate(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+// Which day of the span `day` falls on, e.g. "day 3 of 6" for a trip.
+function spanProgress(a, day) {
+  const total = Math.round((parseDate(a.endDate) - parseDate(a.date)) / 86400000) + 1;
+  const n = Math.round((parseDate(day) - parseDate(a.date)) / 86400000) + 1;
+  return { n, total };
+}
+
 function apptTimeLabel(a) {
+  if (isMultiDay(a)) {
+    // Collapse the month when both ends share it: "Jul 15–20", else "Jul 15–Aug 2".
+    const sameMonth = a.date.slice(0, 7) === a.endDate.slice(0, 7);
+    return `${fmtShort(a.date)}–${sameMonth ? parseDate(a.endDate).getDate() : fmtShort(a.endDate)}`;
+  }
   if (a.allDay || !a.startTime) return 'All day';
   return a.endTime ? `${fmtTime(a.startTime)}–${fmtTime(a.endTime)}` : fmtTime(a.startTime);
 }
@@ -88,6 +115,7 @@ export async function editAppointmentModal(appointment, date, onchange, preset =
 
   const title = el('input', { class: 'input', placeholder: 'e.g. Dr. appointment — Sedona', value: a.title || '' });
   const dateInput = el('input', { class: 'input', type: 'date', value: a.date || todayStr() });
+  const endDateInput = el('input', { class: 'input', type: 'date', value: a.endDate || '' });
   const who = el('input', { class: 'input', placeholder: 'Who is this for?', value: a.who || '' });
   const location = el('input', { class: 'input', placeholder: 'Location', value: a.location || '' });
   const start = el('input', { class: 'input', type: 'time', value: a.startTime || '' });
@@ -133,9 +161,12 @@ export async function editAppointmentModal(appointment, date, onchange, preset =
       onclick: async () => {
         if (!title.value.trim()) return toast('Give it a title', 'warn');
         if (!dateInput.value) return toast('Pick a date', 'warn');
+        // End date only counts when it's after the start (a real multi-day span).
+        const endDate = endDateInput.value && endDateInput.value > dateInput.value ? endDateInput.value : null;
         const fields = {
           title: title.value.trim(),
           date: dateInput.value,
+          endDate,
           location: location.value.trim() || null,
           allDay: allDay.checked,
           startTime: allDay.checked ? null : start.value || null,
@@ -161,8 +192,10 @@ export async function editAppointmentModal(appointment, date, onchange, preset =
 
   const m = openModal(isNew ? 'New appointment' : 'Edit appointment', [
     title,
-    el('label', { class: 'field-label' }, 'Date'),
-    dateInput,
+    el('div', { class: 'field-row' }, [
+      el('div', {}, [el('label', { class: 'field-label' }, 'Date'), dateInput]),
+      el('div', {}, [el('label', { class: 'field-label' }, 'End date (optional)'), endDateInput]),
+    ]),
     saveSel ? el('label', { class: 'field-label' }, 'Save to') : null,
     saveSel,
     el('div', { class: 'field-row' }, [
@@ -213,8 +246,9 @@ async function renderDay(root, date) {
 
   const dayChores = chores.filter((c) => c.dueDate === date);
   const dayAppts = appointments
-    .filter((a) => a.date === date)
-    .sort((a, b) => ((a.allDay ? '' : a.startTime || '') < (b.allDay ? '' : b.startTime || '') ? -1 : 1));
+    .filter((a) => spansDay(a, date))
+    // Multi-day (trips) and all-day first, then timed events by start time.
+    .sort((a, b) => (((isMultiDay(a) || a.allDay) ? '' : a.startTime || '') < ((isMultiDay(b) || b.allDay) ? '' : b.startTime || '') ? -1 : 1));
 
   // Swipe container: fresh node each render, so listeners never pile up or
   // outlive this view (clear(root) drops it, old + new both, automatically).
@@ -254,6 +288,7 @@ async function renderDay(root, date) {
               el('span', { class: 'event-time' }, apptTimeLabel(a)),
               el('span', { class: 'event-title' }, [
                 a.title,
+                isMultiDay(a) ? el('span', { class: 'event-who' }, (({ n, total }) => `· day ${n} of ${total}`)(spanProgress(a, date))) : null,
                 a.who ? el('span', { class: 'event-who' }, `· ${a.who}`) : null,
               ]),
             ])
@@ -310,7 +345,7 @@ async function renderWeek(root, date) {
   wrap.append(
     el('div', { class: 'week-list' }, days.map((day) => {
       const dayAppts = appointments
-        .filter((a) => a.date === day)
+        .filter((a) => spansDay(a, day))
         .sort((a, b) => ((a.startTime || '') < (b.startTime || '') ? -1 : 1));
       const dayChores = chores.filter((c) => c.dueDate === day && !c.done);
       const items = [

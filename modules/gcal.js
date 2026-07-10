@@ -208,10 +208,17 @@ function toAppt(ev) {
   const allDay = Boolean(start.date);
   const date = allDay ? start.date : (start.dateTime || '').slice(0, 10);
   if (!date) return null;
+  // Multi-day span (e.g. a trip). Google's all-day `end.date` is EXCLUSIVE
+  // (a Jul 15–20 trip ends 2026-07-21), so step back a day for the last day
+  // the family is actually away; timed events use the end date as-is. null
+  // when it's a single-day event, so downstream code can treat those normally.
+  const rawEnd = allDay ? (end.date ? addDaysStr(end.date, -1) : date) : ((end.dateTime || '').slice(0, 10) || date);
+  const endDate = rawEnd && rawEnd > date ? rawEnd : null;
   return {
     id: 'live:' + ev.id,
     title: (ev.summary || '(untitled)').trim(),
     date,
+    endDate,
     startTime: allDay ? null : (start.dateTime || '').slice(11, 16),
     endTime: allDay ? null : (end.dateTime || '').slice(11, 16),
     allDay,
@@ -263,7 +270,7 @@ export async function writableCalendars() {
 }
 
 // Create an event on a Google calendar. Returns the created event.
-export async function createEvent(calendarId, { title, date, startTime, endTime, allDay, location } = {}) {
+export async function createEvent(calendarId, { title, date, endDate, startTime, endTime, allDay, location } = {}) {
   const t = readToken();
   if (!t) throw new GcalError('Not connected to Google Calendar', 'not-connected');
   const TZ = 'America/Phoenix';
@@ -271,7 +278,9 @@ export async function createEvent(calendarId, { title, date, startTime, endTime,
   if (location) body.location = location;
   if (allDay) {
     body.start = { date };
-    body.end = { date: addDaysStr(date, 1) }; // Google all-day end is exclusive
+    // Google all-day end is exclusive: a trip through endDate ends the day
+    // after. Single-day (no endDate) → next day, as before.
+    body.end = { date: addDaysStr(endDate && endDate > date ? endDate : date, 1) };
   } else {
     const st = startTime || '09:00';
     const et = endTime && et24(endTime) > et24(st) ? endTime : addMinutesStr(st, 60);

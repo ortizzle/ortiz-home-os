@@ -246,7 +246,11 @@ export async function gatherContext({ start, days, email = false }) {
   const eventsText = events
     .slice()
     .sort((a, b) => (a.date + (a.startTime || '') < b.date + (b.startTime || '') ? -1 : 1))
-    .map((e) => `- ${fmtDay(e.date)}${e.startTime ? ' ' + to12(e.startTime) : ' (all day)'}: ${e.title}`)
+    .map((e) => e.endDate && e.endDate > e.date
+      // Multi-day event (a trip/vacation) — show the full span so Claudia can
+      // plan lead-time around it (packing, prep, who's away when).
+      ? `- ${fmtDay(e.date)}–${fmtDay(e.endDate)} (MULTI-DAY / trip): ${e.title}`
+      : `- ${fmtDay(e.date)}${e.startTime ? ' ' + to12(e.startTime) : ' (all day)'}: ${e.title}`)
     .join('\n');
 
   const choresText = chores.filter((c) => !c.done).map((c) => `- ${c.title}${c.dueDate ? ` (due ${c.dueDate})` : ''}`).join('\n');
