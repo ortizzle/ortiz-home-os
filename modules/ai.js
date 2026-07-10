@@ -196,7 +196,7 @@ async function generateJSON({ system, prompt, maxTokens, tools, kind = 'other' }
 // `type`: 'family' (Wednesday-style, kids included — warm, icebreakers,
 // togetherness activities) or 'admin' (Chris + Kat only — brisk, household
 // ops/projects/finances, no kid content).
-export async function draftMeeting({ attendees = [], notes = '', meetingDate, when = '', weekAhead = '', openItems = '', currentAgenda = '', stillOpen = '', decisions = '', type = 'family' } = {}) {
+export async function draftMeeting({ attendees = [], notes = '', meetingDate, when = '', weekAhead = '', openItems = '', currentAgenda = '', stillOpen = '', decisions = '', covered = '', type = 'family' } = {}) {
   const system = (type === 'admin'
     ? `You are Claudia, the Ortiz house manager, helping ${attendees.join(' and ') || 'Chris and Kat'} run a quick admin meeting — just the two of them, no kids. Draft an agenda drawn from real open household items: tasks, the weekly plan, projects, decisions, budgeting — never invent anything not in the data. Focus tightly on core household items — brisk and businesslike, like a well-run status check between two people running a household together, not a family gathering. No icebreakers or kid activities. Respond with JSON only — no markdown, no fences.`
     : `You are Claudia, the Ortiz family's AI house manager, helping them run a warm, fun weekly family meeting. Family: ${attendees.join(', ') || 'the family'} (Sedona and River are kids). Draft an agenda drawn from the week's real events and open items — never invent events, people, or commitments. Make it feel like a family moment, not a status meeting: consider icebreakers and connections to fun family activities or memories, so it feels nostalgic and togetherness-building, not a checklist. Keep everything concrete and kid-friendly. Respond with JSON only — no markdown, no fences.`)
@@ -217,8 +217,11 @@ ${openItems || '(none)'}
 STILL OPEN FROM LAST MEETING (never checked off — follow up on what still matters):
 ${stillOpen || '(nothing carried over)'}
 
-DECIDED LAST MEETING (settled — do not re-raise; only bring one back if the week ahead clearly conflicts with it):
+DECISIONS MADE (this meeting and recent ones — settled; do not re-raise; only bring one back if the week ahead clearly conflicts with it):
 ${decisions || '(no decisions logged)'}
+
+ALREADY COVERED THIS MEETING (checked off — do NOT re-add these; build on them instead, e.g. a follow-up step a decision creates):
+${covered || '(nothing covered yet)'}
 
 ITEMS ALREADY JOTTED FOR THIS MEETING (organize ALL of these — never drop one):
 ${currentAgenda || '(nothing yet)'}
@@ -232,6 +235,7 @@ Return JSON with exactly this shape — a SINGLE ordered agenda (meeting order, 
 }
 Rules:
 - Organize EVERY jotted item above into the agenda with "existing": true and its EXACT text (do not reword or drop any). Then add genuinely important missing items as "existing": false — quality over padding.
+- RESPOND TO WHAT CHANGED: if items were covered or decisions were logged since your last draft, your proposal must reflect that — never re-add covered ground; instead surface the follow-ups those decisions create (e.g. "book it" after a where-to decision).
 - Order for an effective meeting: warm up, group related topics together, cluster the decisions that need a choice, end on a light or forward-looking note.
 - "section": "open" = kickoff/warm-up, "topic" = discussion, "decision" = the family must actually choose or commit (a date, a purchase, a yes/no), "close" = wrap-up.
 ${type === 'admin'
@@ -377,20 +381,33 @@ One meal per empty night, dated correctly. Empty arrays are fine.`;
   return generateJSON({ system, prompt, maxTokens: 2400, kind: 'meals' });
 }
 
-// "Claudify" a single plan item: expand a one-line plan item into a fuller,
-// concrete write-up — steps, considerations, a rough timeline — something
-// you could actually hand to someone or paste into email/Notes/wherever.
-// Plain text, not JSON: this is meant to be read and copied, not parsed.
-export async function claudifyPlanItem({ family = [], notes = '', title, detail = '' } = {}) {
-  const system = `You are Claudia, the Ortiz family's house manager. Turn one plan item into a genuinely useful, concrete write-up the family could act on directly or paste into another app or email. Ground it in what's given; never invent specifics (addresses, prices, names, dates) that aren't provided. Keep it tight — a short lead-in line, then the real content (steps, considerations, a rough timeline where relevant) as short prose or plain dashes. No JSON, no markdown headers, no filler, no restating the obvious.`;
-  const prompt = `Expand this plan item for ${family.join(', ') || 'the family'} into something concrete and actionable:
+// "Claudify" one item — the universal deep-dive. Takes a single line (a plan
+// item, a task, or one of Claudia's own questions) and expands it into a
+// genuinely useful write-up, aware of the family's next two weeks so the
+// advice fits the actual schedule. Plain text, meant to be read/copied.
+// `kind` shapes the output:
+//   'plan'     → concrete steps, considerations, rough timeline
+//   'task'     → a step-by-step plan of attack for getting it done
+//   'question' → a decision aid: the realistic options, tradeoffs, and a
+//                clear recommendation (answer her own question well)
+export async function claudifyItem({ family = [], notes = '', events = '', title, detail = '', kind = 'plan' } = {}) {
+  const framing = {
+    plan: 'Turn this plan item into a genuinely useful, concrete write-up the family could act on directly or paste into another app or email — a short lead-in line, then steps, considerations, and a rough timeline where relevant.',
+    task: 'Turn this task into a concrete plan of attack: the steps in the order to do them, roughly how long each takes, what to have on hand, and where it can slot into the days ahead given the calendar. End with the single best next action.',
+    question: 'This is an open question the family needs to settle. Act as a decision aid: lay out the 2-4 realistic options, the honest tradeoffs of each (cost, effort, timing against their calendar), then give ONE clear recommendation and why. Take a position — do not hedge with "it depends."',
+  }[kind] || 'Expand this into something concrete and actionable.';
+  const system = `You are Claudia, the Ortiz family's house manager. ${framing} Ground everything in what's given — never invent specifics (addresses, prices, names, dates) that aren't provided, though for the question kind you may draw on general knowledge of typical options. Keep it tight: short prose or plain dashes. No JSON, no markdown headers, no filler, no restating the obvious.`;
+  const prompt = `${kind === 'question' ? 'Help decide' : 'Expand'} this for ${family.join(', ') || 'the family'}:
 
-PLAN ITEM: ${title}
+${kind === 'question' ? 'QUESTION' : kind === 'task' ? 'TASK' : 'PLAN ITEM'}: ${title}
 ${detail ? `NOTES ALREADY ON IT: ${detail}\n` : ''}
+THE NEXT TWO WEEKS ON THEIR CALENDAR (fit advice around this):
+${events || '(no calendar available)'}
+
 HOUSEHOLD NOTES / PREFERENCES (background):
 ${notes || '(none)'}
 
-Write the expanded plan directly as plain text.`;
+Write the response directly as plain text.`;
 
-  return callClaude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 900, kind: 'claudify' });
+  return callClaude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 1000, kind: 'claudify' });
 }

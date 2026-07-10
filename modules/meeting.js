@@ -315,7 +315,13 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
         ].join('\n');
         const currentAgenda = cycleAgenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
         const stillOpen = stillOpenItems.map((a) => `- ${a.text}`).join('\n');
-        const decisions = decidedLastTime.map((a) => `- ${a.text}: ${a.decision}`).join('\n');
+        // Decisions from past meetings AND this one — re-running the draft
+        // after checking things off / logging decisions must actually change
+        // her proposal, not re-propose settled ground (the old bug: only past
+        // cycles were passed, so mid-cycle decisions were invisible).
+        const decidedThisCycle = cycleAgenda.filter((a) => a.reviewed && a.decision);
+        const decisions = [...decidedThisCycle, ...decidedLastTime].map((a) => `- ${a.text}: ${a.decision}`).join('\n');
+        const covered = cycleAgenda.filter((a) => a.reviewed).map((a) => `- ${a.text}${a.decision ? ` (decided: ${a.decision})` : ''}`).join('\n');
         const out = await draftMeeting({
           attendees: attendeesFor(type),
           notes: getSettings().householdNotes || DEFAULT_HOUSEHOLD_NOTES,
@@ -326,6 +332,7 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
           currentAgenda,
           stillOpen,
           decisions,
+          covered,
           type,
         });
         const { organized, added } = await applyStructuredAgenda(out, cycleAgenda, type, meetingDate);

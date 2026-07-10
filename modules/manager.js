@@ -7,7 +7,7 @@
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
 import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, preserveScroll, disclosure, richText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
-import { reviewWeek, claudifyPlanItem, hasApiKey, AIError } from './ai.js';
+import { reviewWeek, claudifyItem, hasApiKey, AIError } from './ai.js';
 import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
 import { meetingSection } from './meeting.js';
 
@@ -89,26 +89,39 @@ function renderClaudified(resultHost, p, text) {
   );
 }
 
+// Shared deep-dive runner: gathers the next-2-weeks calendar so the write-up
+// fits the family's actual schedule, calls claudifyItem, and renders inline.
+// `onText` (optional) persists the result (e.g. onto the plan record).
+async function runClaudify({ title, detail = '', kind, resultHost, onText, loadingLabel = 'Claudia is expanding this…' }) {
+  if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
+  clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, loadingLabel)]));
+  try {
+    const settings = getSettings();
+    const ctx = await gatherContext({ start: todayStr(), days: 14, email: false });
+    const text = await claudifyItem({
+      family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
+      notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+      events: ctx.eventsText,
+      title, detail, kind,
+    });
+    await onText?.(text);
+    return text;
+  } catch (err) {
+    clear(resultHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
+    return null;
+  }
+}
+
 function claudifyBtn(p, resultHost) {
   return el('button', {
     class: 'link', style: 'padding: 4px 6px; font-size: 13px',
     'aria-label': 'Claudify — expand into a fuller plan',
     onclick: async () => {
-      if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
-      clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is expanding this…')]));
-      try {
-        const settings = getSettings();
-        const text = await claudifyPlanItem({
-          family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
-          notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
-          title: p.title,
-          detail: p.detail || '',
-        });
-        await put('plan', { ...p, claudified: text });
-        renderClaudified(resultHost, p, text);
-      } catch (err) {
-        clear(resultHost).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
-      }
+      const text = await runClaudify({
+        title: p.title, detail: p.detail || '', kind: 'plan', resultHost,
+        onText: (t) => put('plan', { ...p, claudified: t }),
+      });
+      if (text) renderClaudified(resultHost, p, text);
     },
   }, '✨ Claudify');
 }
@@ -286,10 +299,25 @@ function reviewIdea(item, rerender, state) {
     },
   }, '✓ Not needed');
   actions.append(clearBtn);
+  // Deep dive: expand the suggestion into a concrete, calendar-aware plan
+  // inline — steps, timing, what to have on hand — before deciding to add it.
+  const diveHost = el('div', {});
+  actions.append(el('button', {
+    class: 'btn seg-btn hm-add',
+    'aria-label': 'Claudify — deep dive into this suggestion',
+    onclick: async () => {
+      const text = await runClaudify({ title: item.title, detail: item.detail || '', kind: 'plan', resultHost: diveHost });
+      if (text) clear(diveHost).append(
+        el('p', { class: 'idea-detail', style: 'white-space: pre-wrap; margin-top: 8px' }, text),
+        el('button', { class: 'btn seg-btn hm-add', style: 'margin-top: 6px', onclick: () => shareText({ title: item.title, text }) }, '📤 Share / copy'),
+      );
+    },
+  }, '✨ Deep dive'));
   return el('div', { class: 'idea' }, [
     el('div', { class: 'idea-title' }, [item.title, item.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, item.who) : null]),
     item.detail ? el('p', { class: 'idea-detail' }, richText(item.detail)) : null,
     actions,
+    diveHost,
   ]);
 }
 
@@ -337,9 +365,40 @@ function questionRow(q, rerender, state) {
       answer.focus();
     },
   }, '✓ Resolve');
+  // Claudify the question itself: instead of just answering or deferring it,
+  // have Claudia work it — options, tradeoffs, and a recommendation — so the
+  // family decides from an informed position. From there, one tap resolves.
+  const diveHost = el('div', {});
+  const claudifyQBtn = el('button', {
+    class: 'btn seg-btn hm-add',
+    'aria-label': 'Claudify — have Claudia work through this question',
+    onclick: async () => {
+      const text = await runClaudify({
+        title: q, kind: 'question', resultHost: diveHost,
+        loadingLabel: 'Claudia is working through the options…',
+      });
+      if (text) clear(diveHost).append(
+        el('p', { class: 'idea-detail', style: 'white-space: pre-wrap; margin-top: 8px' }, text),
+        el('div', { class: 'hm-actions', style: 'margin-top: 6px' }, [
+          el('button', { class: 'btn seg-btn hm-add', onclick: () => shareText({ title: q, text }) }, '📤 Share / copy'),
+          el('button', {
+            class: 'btn seg-btn hm-add',
+            onclick: async () => {
+              // Resolve with her recommendation as the remembered answer.
+              await markQuestionResolved(q, text.slice(0, 400));
+              logQuestionResolved(q, text.slice(0, 400)).catch(() => {});
+              toast('Resolved with Claudia’s recommendation', 'success');
+              rerender();
+            },
+          }, '✓ Resolve with this'),
+        ]),
+      );
+    },
+  }, '✨ Claudify');
   return el('li', {}, [
     el('span', {}, richText(q)),
-    el('div', { class: 'hm-actions', style: 'margin: 6px 0 2px' }, [taskBtn, resolveBtn]),
+    el('div', { class: 'hm-actions', style: 'margin: 6px 0 2px' }, [claudifyQBtn, taskBtn, resolveBtn]),
+    diveHost,
   ]);
 }
 

@@ -4,6 +4,8 @@
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
 import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure } from './ui.js';
 import { parseImport } from './grocery.js';
+import { claudifyItem, hasApiKey, AIError } from './ai.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const TIMER_SVG = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12.5" r="8.5"/><path d="M12 8v4.5l3 2"/><path d="M9.5 2.5h5"/></svg>';
@@ -225,6 +227,38 @@ function openFocusModal(chore, onchange) {
     },
   }, chore.notes || '');
 
+  // Deep dive: Claudia drafts a concrete plan of attack for this task —
+  // steps in order, rough times, what to have on hand, where it fits the next
+  // two weeks — straight into the notes, so it's saved with the task.
+  const diveStatus = el('span', { class: 'muted small' });
+  const diveBtn = el('button', {
+    class: 'link', style: 'padding: 4px 0; font-size: 13px',
+    onclick: async () => {
+      if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
+      diveBtn.disabled = 'disabled';
+      diveStatus.textContent = ' Claudia is working out a plan…';
+      try {
+        const settings = getSettings();
+        const ctx = await gatherContext({ start: todayStr(), days: 14, email: false });
+        const text = await claudifyItem({
+          family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
+          notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+          events: ctx.eventsText,
+          title: chore.title,
+          detail: notes.value || '',
+          kind: 'task',
+        });
+        notes.value = (notes.value ? notes.value.trimEnd() + '\n\n' : '') + text;
+        await put('chores', { ...chore, notes: notes.value });
+        diveStatus.textContent = '';
+      } catch (err) {
+        diveStatus.textContent = '';
+        toast(err instanceof AIError ? err.message : `Something went wrong: ${err.message}`, 'error');
+      }
+      diveBtn.disabled = null;
+    },
+  }, '✨ Deep dive — have Claudia plan this task');
+
   const m = openModal(chore.title, [
     presetRow,
     customRow,
@@ -233,6 +267,7 @@ function openFocusModal(chore, onchange) {
     el('div', { class: 'field-row', style: 'margin-top: 10px' }, [startPauseBtn, resetBtn]),
     el('label', { class: 'field-label', style: 'margin-top: 14px' }, 'Notes'),
     notes,
+    el('div', {}, [diveBtn, diveStatus]),
   ], [
     el('button', { class: 'btn btn-primary', onclick: () => m.close() }, 'Done'),
   ], {
