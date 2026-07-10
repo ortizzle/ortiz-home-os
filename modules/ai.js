@@ -249,7 +249,7 @@ const HM_ROLE = (family) =>
 // Daily brief for the Home page — a short read on TODAY plus a few concrete,
 // one-tap-addable suggestions. Each suggestion is typed so the app can turn it
 // into a task, appointment, or grocery item.
-export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', email = '' } = {}) {
+export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', agenda = '', email = '' } = {}) {
   const system = HM_ROLE(family) + ` This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon. If dinner is planned for tonight, mention it in a note. Kids (${kids || 'none listed'}) don't use the app — when a small chore genuinely fits one of them, suggest it as a task with their name in "who".`;
   const prompt = `Good morning. Today is ${weekday} ${today}. Give the family a short read on the day.
 
@@ -262,8 +262,11 @@ ${events || '(no calendar events available)'}
 DINNERS PLANNED:
 ${meals || '(none planned)'}
 
-OPEN CHORES:
+OPEN TASKS (already captured — do NOT re-suggest these):
 ${chores || '(none)'}
+
+ALREADY ON A MEETING AGENDA (do NOT re-suggest these):
+${agenda || '(none)'}
 
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
@@ -277,7 +280,7 @@ Return JSON with exactly this shape:
   "notes": ["1-3 short lines: what matters today, timing to watch, a heads-up"],
   "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative, e.g. 'Prep gym bag for River'", "date": "YYYY-MM-DD (optional; for a task due date or appointment date)", "who": "family member name (optional; who should do it)", "detail": "one short clause on why", "store": "Costco | Walmart | Trader Joe's (REQUIRED for type grocery — match the store it's actually for; never leave it to default)" } ]
 }
-Give 0-4 suggestions, only genuinely useful ones for today or the next day. Never suggest a grocery item already on the list above; for grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Empty arrays are fine.
+Give 0-4 suggestions, only genuinely useful ones for today or the next day. Before suggesting anything, check it against the lists above — never re-suggest something that's already an open task, on the calendar, on a meeting agenda, or on the grocery list (this is the most common mistake — a family member already captured it). For grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Empty arrays are fine.
 In the headline and notes, use **bold** (Markdown) sparingly — wrap only the few words that carry the most weight (a name, a time, a place, one key action), never whole sentences or more than a couple of phrases total. No other Markdown.`;
 
   return generateJSON({ system, prompt, maxTokens: 1400, kind: 'brief' });
@@ -286,14 +289,14 @@ In the headline and notes, use **bold** (Markdown) sparingly — wrap only the f
 // Weekly review for the House Manager tab — proposes a concrete plan of items
 // to complete for the rest of the week. Each item is typed so it can be added
 // to the living weekly plan (or straight to tasks/calendar/grocery).
-export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', groceries = '', plan = '', meals = '', email = '', follow = '' } = {}) {
+export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', groceries = '', plan = '', meals = '', agenda = '', email = '', follow = '' } = {}) {
   const system = HM_ROLE(family) +
     ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
     ' If recent email surfaces something worth planning around (an RSVP, a bill due, a school notice, an invite), fold it into the plan — only when it\'s genuinely actionable, not just noise.' +
     ' Also look OUTWARD: use web search to find 1-2 timely, real things this family would genuinely enjoy this week — a movie they\'d love playing nearby, a local event, a seasonal activity — matched to their interests and their open evenings. Include the real date, time, and venue from the search results, and only suggest what you actually verified. If nothing good is on, say nothing rather than padding.' +
     ` Kids (${kids || 'none listed'}) don't use the app — when a chore genuinely fits one of them (age-appropriate: dishes, trash, room care, packing their own bags), suggest it with their name in "who" so the parents can assign it. One kid chore per review at most; this is help, not a chore chart.` +
     ' FOLLOW-THROUGH: you get a log of your own past suggestions. Never re-ask a question the family already answered; build on their answer instead. Follow up ONCE, gently, on something that was added but never finished ("still want to get to X?"). Don\'t re-suggest something ignored twice in a row — let it go unless it becomes genuinely urgent. Briefly acknowledge a win if something you suggested got done. No nagging, no guilt, no scorekeeping.' +
-    ' Do NOT suggest a grocery item that is already on the list below — check it first.';
+    ' AVOID DUPLICATES: the family has already captured plenty. Before proposing anything, check it against the open tasks, weekly plan, calendar, meeting agenda, and grocery list below — never re-suggest something that already exists in any of them (e.g. don\'t suggest "get a small gift" if it\'s already an open task). This is the most common mistake; when in doubt, leave it out.';
   const prompt = `Today is ${today}. Propose a plan of what's worth getting done for the rest of this week — and anything fun worth planning around.
 
 HOUSEHOLD NOTES / PREFERENCES (background only — do not repeat back):
@@ -311,8 +314,11 @@ ${meals || '(none planned)'}
 UPCOMING CALENDAR (next ~2 weeks):
 ${events || '(no calendar events available — Google Calendar may not be connected)'}
 
-OPEN CHORES:
+OPEN TASKS (already captured — do NOT re-suggest these):
 ${chores || '(none)'}
+
+ALREADY ON A MEETING AGENDA (do NOT re-suggest these):
+${agenda || '(none)'}
 
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
@@ -320,7 +326,7 @@ ${groceries || '(empty)'}
 RECENT EMAIL (sender — subject: snippet; may be noise, use judgment):
 ${email || '(no email available)'}
 
-ALREADY ON THE WEEKLY PLAN (do not repeat these):
+ALREADY ON THE WEEKLY PLAN (do NOT re-suggest these):
 ${plan || '(nothing planned yet)'}
 
 Return JSON with exactly this shape:

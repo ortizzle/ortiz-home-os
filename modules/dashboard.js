@@ -241,6 +241,7 @@ async function runBrief(host, rerender, { today, settings }) {
       chores: ctx.choresText,
       groceries: ctx.groceriesText,
       meals: ctx.mealsText,
+      agenda: ctx.agendaText,
       email: ctx.emailsText,
     });
     logShownSuggestions(out.suggestions, 'brief').catch(() => {});

@@ -227,11 +227,12 @@ export function emailText(emails) {
 // bound the calendar window pulled from the live Google overlay. Pass
 // `email: true` to also pull recent Gmail (when the scope was granted).
 export async function gatherContext({ start, days, email = false }) {
-  const [chores, groceries, plan, meals] = await Promise.all([
+  const [chores, groceries, plan, meals, agenda] = await Promise.all([
     getAll('chores'),
     getAll('groceries'),
     getAll('plan'),
     getAll('meals'),
+    getAll('agenda'),
   ]);
   // eventsForRange() already checks the connection and self-heals with a
   // silent token renewal if needed — an outer isConnected() gate here would
@@ -256,11 +257,15 @@ export async function gatherContext({ start, days, email = false }) {
 
   const planText = plan.filter((p) => !p.done).map((p) => `- ${p.title}`).join('\n');
 
+  // Open (unreviewed) meeting-agenda items, so suggestions don't duplicate a
+  // topic the family already queued for a meeting.
+  const agendaText = agenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
+
   const end = addDays(start, days);
   const mealsInRange = meals
     .filter((m) => m.date >= start && m.date < end)
     .sort((a, b) => (a.date < b.date ? -1 : 1));
   const mealsText = mealsInRange.map((m) => `- ${fmtDay(m.date)}: ${m.title}`).join('\n');
 
-  return { events, eventsText, choresText, groceriesText, planText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
+  return { events, eventsText, choresText, groceriesText, planText, agendaText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
 }

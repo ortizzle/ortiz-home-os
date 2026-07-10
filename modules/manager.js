@@ -182,6 +182,7 @@ export async function renderManager(root) {
           groceries: ctx.groceriesText,
           plan: ctx.planText,
           meals: ctx.mealsText,
+          agenda: ctx.agendaText,
           email: ctx.emailsText,
           follow,
         });
