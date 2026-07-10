@@ -283,7 +283,10 @@ function openFocusModal(chore, onchange) {
 }
 
 // Create/edit bottom sheet. Pass no chore (or an id-less prefill) to create.
-export async function editChoreModal(chore, onchange) {
+// `onSaved(rec)` fires with the persisted record after a successful add/save
+// (not on cancel/delete) — the add-from-suggestion flow uses it to record
+// where the suggestion landed once the details are confirmed.
+export async function editChoreModal(chore, onchange, { onSaved } = {}) {
   const isNew = !chore || !chore.id;
   const c = chore || {};
 
@@ -314,7 +317,7 @@ export async function editChoreModal(chore, onchange) {
       onclick: async () => {
         const name = title.value.trim();
         if (!name) return toast('Give the task a title', 'warn');
-        await put('chores', {
+        const rec = await put('chores', {
           ...c,
           title: name,
           dueDate: due.value || null,
@@ -322,6 +325,7 @@ export async function editChoreModal(chore, onchange) {
           done: c.done || false,
         });
         m.close();
+        onSaved?.(rec);
         onchange?.();
       },
     }, isNew ? 'Add task' : 'Save'),

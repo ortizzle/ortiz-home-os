@@ -8,6 +8,7 @@ import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
 import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, preserveScroll, disclosure, richText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, claudifyItem, hasApiKey, AIError } from './ai.js';
+import { editChoreModal } from './chores.js';
 import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
 import { meetingSection } from './meeting.js';
 
@@ -32,17 +33,34 @@ export function addButtons(sugg, { today, includePlan = false, onAdded, alreadyA
     return el('div', { class: 'hm-actions' }, [done]);
   }
   const mk = (type, label) => {
+    // Marks the suggestion accepted once a record actually lands: logs where it
+    // went (follow-through memory), flips the button, and re-renders via onAdded.
+    const markAdded = (store, rec) => {
+      logSuggestionAdded(sugg.title, store, rec?.id).catch(() => {});
+      b.textContent = 'Added ✓';
+      b.disabled = 'disabled';
+      toast(`Added: ${sugg.title}`, 'success');
+      onAdded?.();
+    };
     const b = el('button', {
       class: 'btn seg-btn hm-add',
       onclick: async () => {
+        // A task is the one thing that needs deciding who's on it and by when —
+        // so open the task sheet prefilled from the suggestion and let the
+        // family confirm assignment + due date before it's saved. Everything
+        // else (grocery, calendar, plan) adds in one tap as before.
+        if (type === 'task') {
+          editChoreModal(
+            { title: sugg.title, dueDate: sugg.date || sugg.day || null, assignee: sugg.who || null },
+            null,
+            { onSaved: (rec) => markAdded('chores', rec) },
+          );
+          return;
+        }
         b.disabled = 'disabled';
         try {
           const { store, rec } = await applyAdd(type, { title: sugg.title, date: sugg.date || sugg.day, detail: sugg.detail, store: sugg.store, who: sugg.who }, today);
-          // Feed the follow-through memory: this suggestion was accepted.
-          logSuggestionAdded(sugg.title, store, rec?.id).catch(() => {});
-          b.textContent = 'Added ✓';
-          toast(`Added: ${sugg.title}`, 'success');
-          onAdded?.();
+          markAdded(store, rec);
         } catch {
           b.disabled = null;
           toast('Could not add that', 'error');
