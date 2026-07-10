@@ -72,16 +72,27 @@ function setActiveTab(tab) {
   });
 }
 
-// Grocery tab badge: open-item count, shown only in the errand window —
-// the "you're about to be at Costco" signal, not a constant nag.
-async function refreshBadges() {
-  const tab = document.querySelector('.tab[data-tab="grocery"]');
+// Set (or clear) a tab's count badge. Kept as one helper so every badge looks
+// and clamps the same way; a falsy/zero count just clears it.
+function setTabBadge(name, count) {
+  const tab = document.querySelector(`.tab[data-tab="${name}"]`);
   if (!tab) return;
   tab.querySelector('.tab-badge')?.remove();
-  if (!errandWindow(getSettings())) return;
-  const groceries = await getAll('groceries');
-  const open = groceries.filter((g) => !g.gotAt).length;
-  if (open) tab.append(el('span', { class: 'tab-badge' }, open > 99 ? '99+' : open));
+  if (count > 0) tab.append(el('span', { class: 'tab-badge' }, count > 99 ? '99+' : count));
+}
+
+// Tab count badges, both deliberately "act now" signals rather than a constant
+// nag:
+//   Grocery — open-item count, only in the errand window (about-to-be-at-Costco).
+//   Tasks   — open tasks that are overdue or due today; clears once you're
+//             caught up for the day (Upcoming/Someday don't count).
+async function refreshBadges() {
+  const [groceries, chores] = await Promise.all([getAll('groceries'), getAll('chores')]);
+  const groceryOpen = errandWindow(getSettings()) ? groceries.filter((g) => !g.gotAt).length : 0;
+  setTabBadge('grocery', groceryOpen);
+  const today = todayStr();
+  const dueNow = chores.filter((c) => !c.done && c.dueDate && c.dueDate <= today).length;
+  setTabBadge('tasks', dueNow);
 }
 
 async function router() {
