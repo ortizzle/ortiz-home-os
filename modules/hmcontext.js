@@ -265,11 +265,19 @@ export async function gatherContext({ start, days, email = false }) {
   // topic the family already queued for a meeting.
   const agendaText = agenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
 
+  // What the family actually DECIDED at recent meetings (last ~3 weeks) — so
+  // the weekly review follows through on decisions instead of re-raising them.
+  const decisionCutoff = addDays(start, -21);
+  const meetingDecisionsText = agenda
+    .filter((a) => a.reviewed && a.decision && a.cycleDate && a.cycleDate >= decisionCutoff)
+    .map((a) => `- ${a.text}: ${a.decision}`)
+    .join('\n');
+
   const end = addDays(start, days);
   const mealsInRange = meals
     .filter((m) => m.date >= start && m.date < end)
     .sort((a, b) => (a.date < b.date ? -1 : 1));
   const mealsText = mealsInRange.map((m) => `- ${fmtDay(m.date)}: ${m.title}`).join('\n');
 
-  return { events, eventsText, choresText, groceriesText, planText, agendaText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
+  return { events, eventsText, choresText, groceriesText, planText, agendaText, meetingDecisionsText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
 }

@@ -12,7 +12,7 @@
 // follow-through context so it's not just quietly forgotten.
 
 import { getAll, put, remove, getSettings, deviceName } from './store.js';
-import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtDay, shareText, preserveScroll } from './ui.js';
+import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtDay, shareText, preserveScroll, openModal } from './ui.js';
 import { appointmentsFor } from './calendar.js';
 import { errandWindow } from './suggest.js';
 import { hasApiKey, draftMeeting, AIError } from './ai.js';
@@ -87,13 +87,24 @@ function attendeesFor(type) {
 }
 
 // The date of this week's meeting: today if it's meeting day, else the next
-// one. Doubles as the "cycle" key for agenda items — the day after this date
-// passes, a fresh nextMeetingDate() starts a new, empty cycle. Family and
-// Admin meet on different days, so this is always computed per type.
-function nextMeetingDate(type) {
+// one. Doubles as the "cycle" key for agenda items. A fresh cycle starts when
+// the meeting date passes — OR when the family taps "Meeting concluded",
+// which records `concludedCycle` so this occurrence is skipped and next
+// week's (empty) agenda begins immediately. Per type (Family/Admin differ).
+function nextMeetingDate(type, concludedCycle) {
   const today = parseDate(todayStr());
   const delta = (meetingDay(type) - today.getDay() + 7) % 7;
-  return addDays(todayStr(), delta); // addDays returns a YYYY-MM-DD string
+  const d = addDays(todayStr(), delta); // addDays returns a YYYY-MM-DD string
+  // Already wrapped this occurrence up? Jump to the next one.
+  return concludedCycle && concludedCycle >= d ? addDays(d, 7) : d;
+}
+
+// Synced per-type cycle state (concluded marker), keyed by type in its store.
+async function getConcludedMap() {
+  const rows = await getAll('meetingState');
+  const map = {};
+  for (const r of rows) map[r.id] = r.concludedCycle || null;
+  return map;
 }
 
 // Gather the next 7 days of household activity into a text summary for
@@ -197,8 +208,10 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   const nodes = [];
   const root = { append: (...n) => nodes.push(...n.filter(Boolean)) }; // collect instead of mount
 
-  // Family and Admin meet on different days — each type gets its own cycle date.
-  const meetingDateByType = { family: nextMeetingDate('family'), admin: nextMeetingDate('admin') };
+  // Family and Admin meet on different days — each type gets its own cycle
+  // date, skipping any occurrence already concluded (synced marker).
+  const concluded = await getConcludedMap();
+  const meetingDateByType = { family: nextMeetingDate('family', concluded.family), admin: nextMeetingDate('admin', concluded.admin) };
   let type = getMeetingType();
   const meetingDate = meetingDateByType[type];
   const isToday = meetingDate === todayStr();
@@ -340,6 +353,63 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
     }),
   }, '📤 Share agenda');
 
+  // ----- conclude the meeting: closes this cycle now (next week's agenda
+  // starts fresh), and decides what to do with anything left unchecked. Logged
+  // decisions carry into next week's recap and into Claudia's weekly review. --
+  async function finishConclude() {
+    await put('meetingState', { id: type, concludedCycle: meetingDate });
+    toast('Meeting concluded — next week’s agenda is ready', 'success');
+    rerender();
+  }
+  function openConclude() {
+    const openRows = cycleAgenda.filter((a) => !a.reviewed);
+    if (!openRows.length) {
+      const m = openModal('Conclude meeting?', [
+        el('p', { class: 'muted small', style: 'margin-top: 0' }, 'Close this meeting and start next week’s agenda? Anything you decided carries into next week’s recap.'),
+      ], [
+        el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
+        el('button', { class: 'btn btn-primary', onclick: async () => { m.close(); await finishConclude(); } }, 'Conclude'),
+      ]);
+      return;
+    }
+    // One choice per unchecked item — carry forward (default), make a task, or drop.
+    const choice = new Map(openRows.map((a) => [a.id, 'carry']));
+    const rows = openRows.map((a) => {
+      const seg = (val, label) => el('button', {
+        class: 'btn seg-btn' + (choice.get(a.id) === val ? ' active' : ''),
+        onclick: (e) => {
+          choice.set(a.id, val);
+          for (const b of e.currentTarget.parentElement.children) b.classList.remove('active');
+          e.currentTarget.classList.add('active');
+        },
+      }, label);
+      return el('div', { class: 'conclude-row' }, [
+        el('span', { class: 'conclude-text' }, a.text),
+        el('div', { class: 'seg' }, [seg('carry', 'Carry'), seg('task', 'Task'), seg('drop', 'Drop')]),
+      ]);
+    });
+    const m = openModal('Conclude meeting', [
+      el('p', { class: 'muted small', style: 'margin-top: 0' }, 'These weren’t checked off. Pick what happens to each, then conclude — this starts next week’s agenda.'),
+      ...rows,
+    ], [
+      el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
+      el('button', {
+        class: 'btn btn-primary',
+        onclick: async () => {
+          for (const a of openRows) {
+            const c = choice.get(a.id);
+            if (c === 'task') { await put('chores', { title: a.text, done: false, assignee: a.who || null }); await remove('agenda', a.id); }
+            else if (c === 'drop') { await remove('agenda', a.id); }
+            // 'carry' → leave as-is; becomes "Carried over" once the cycle advances
+          }
+          m.close();
+          await finishConclude();
+        },
+      }, 'Conclude'),
+    ]);
+  }
+  const concludeBtn = el('button', { class: 'btn', onclick: openConclude }, '✓ Meeting concluded');
+
   // ----- decisions from last meeting, recapped up top -----
   const recapNodes = decidedLastTime.length ? [
     el('h5', { class: 'meeting-unit-heading' }, 'Decided last meeting'),
@@ -430,7 +500,7 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       el('h5', { class: 'meeting-unit-heading' }, `Agenda (${cycleAgenda.filter((a) => !a.reviewed).length} open)`),
       el('div', { class: 'grocery-add' }, [input, el('button', { class: 'btn btn-primary', onclick: add }, 'Add')]),
       ...agendaNodes,
-      cycleAgenda.length ? el('div', { style: 'margin-top: 10px' }, [shareBtn]) : null,
+      cycleAgenda.length ? el('div', { class: 'hm-actions', style: 'margin-top: 10px' }, [shareBtn, concludeBtn]) : null,
 
       el('h5', { class: 'meeting-unit-heading' }, 'Plan with Claudia'),
       el('p', { class: 'muted small' },

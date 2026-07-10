@@ -289,7 +289,7 @@ In the headline and notes, use **bold** (Markdown) sparingly — wrap only the f
 // Weekly review for the House Manager tab — proposes a concrete plan of items
 // to complete for the rest of the week. Each item is typed so it can be added
 // to the living weekly plan (or straight to tasks/calendar/grocery).
-export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', groceries = '', plan = '', meals = '', agenda = '', email = '', follow = '' } = {}) {
+export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', groceries = '', plan = '', meals = '', agenda = '', meetingDecisions = '', email = '', follow = '' } = {}) {
   const system = HM_ROLE(family) +
     ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
     ' TRIPS: the calendar spans the next ~2 weeks and marks multi-day events as "(MULTI-DAY / trip)". For any trip in that window, plan around it with real lead time — a packing list (or packing reminder) a few days before, plus prep like holding mail, pet/plant care, travel documents, chargers, and confirming reservations. Note who is away and when, since that changes what else fits those days.' +
@@ -321,6 +321,9 @@ ${chores || '(none)'}
 
 ALREADY ON A MEETING AGENDA (do NOT re-suggest these):
 ${agenda || '(none)'}
+
+DECIDED AT RECENT MEETINGS (settled — follow through on these; do NOT re-raise them as if undecided):
+${meetingDecisions || '(none)'}
 
 GROCERY LIST (by store):
 ${groceries || '(empty)'}

@@ -588,6 +588,12 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .carry-row:first-of-type { border-top: none; }
 .carry-check { flex-shrink: 0; width: 18px; height: 18px; margin-top: 1px; accent-color: var(--accent); }
 .carry-text { font-size: 14px; line-height: 1.4; }
+/* Conclude-meeting modal: each unchecked item + a Carry/Task/Drop choice. */
+.conclude-row { padding: 8px 0; border-top: 1px solid var(--border); }
+.conclude-row:first-of-type { border-top: none; }
+.conclude-text { display: block; font-size: 14px; line-height: 1.4; margin-bottom: 6px; }
+.conclude-row .seg { margin-bottom: 0; }
+.conclude-row .seg-btn { padding: 5px 10px; font-size: 12px; }
 /* Claude usage table (Settings). Scrolls horizontally on narrow screens. */
 .usage-table-wrap { overflow-x: auto; margin: 6px 0 4px; }
 .usage-table { width: 100%; border-collapse: collapse; font-size: 13px; }
