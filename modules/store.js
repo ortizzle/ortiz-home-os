@@ -305,3 +305,41 @@ export async function initStore() {
   await openDb();
   if (syncConfigured()) await pullFromGist();
 }
+
+// ---------- push subscriptions ----------
+// Web-push subscriptions live in a SEPARATE file in the same Gist, so the
+// scheduled GitHub Action can read them to send notifications, and so they
+// never collide with the newest-wins data snapshot. Keyed by endpoint.
+const PUSH_SUBS_FILE = 'push-subscriptions.json';
+
+export async function getPushSubs() {
+  if (!syncConfigured()) return [];
+  const { gistId } = getSettings();
+  const gist = await gistFetch(`/gists/${gistId}`);
+  const f = gist.files && gist.files[PUSH_SUBS_FILE];
+  if (!f) return [];
+  try { return JSON.parse(f.content || '[]'); } catch { return []; }
+}
+
+async function writePushSubs(subs) {
+  const { gistId } = getSettings();
+  await gistFetch(`/gists/${gistId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ files: { [PUSH_SUBS_FILE]: { content: JSON.stringify(subs, null, 2) } } }),
+  });
+}
+
+// Add/replace this device's subscription (a PushSubscription.toJSON()).
+export async function savePushSub(sub, label) {
+  if (!syncConfigured()) throw new Error('Set up Household sync first — subscriptions are stored in your Gist.');
+  const subs = (await getPushSubs()).filter((s) => s.endpoint !== sub.endpoint);
+  subs.push({ ...sub, label: label || null, addedAt: now() });
+  await writePushSubs(subs);
+}
+
+export async function removePushSub(endpoint) {
+  if (!syncConfigured()) return;
+  const subs = await getPushSubs();
+  const next = subs.filter((s) => s.endpoint !== endpoint);
+  if (next.length !== subs.length) await writePushSubs(next);
+}

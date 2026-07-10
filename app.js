@@ -21,6 +21,7 @@ import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestio
 import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { getUsage, estimateCost, resetUsage } from './modules/ai.js';
+import { pushSupported, getPushState, enablePush, disablePush } from './modules/push.js';
 import { diagnosticsSection } from './modules/diag.js';
 import { el, clear, toast, navigate, openModal, todayStr, fmtDay, disclosure } from './modules/ui.js';
 
@@ -30,7 +31,7 @@ const view = document.getElementById('view');
 // checkForUpdate() below detects real changes by content, not this string —
 // but still worth bumping on ship so the label reflects what's running.
 // Keep in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v42';
+const APP_VERSION = 'v43';
 
 // ---------- theme ----------
 
@@ -207,6 +208,45 @@ function usageSection(root) {
   ]));
 }
 
+// Opt this device in/out of push notifications (the morning "brief is ready"
+// nudge, sent by the scheduled GitHub Action). Async state, so the body is
+// populated after the disclosure mounts.
+function notificationsSection() {
+  const body = el('section', { class: 'panel' }, [el('p', { class: 'muted small', style: 'margin-top: 0' }, 'Checking notification support…')]);
+  const render = async () => {
+    let st;
+    try { st = await getPushState(); } catch { st = { supported: pushSupported(), permission: 'default', subscribed: false }; }
+    clear(body);
+    if (!st.supported) {
+      body.append(el('p', { class: 'muted small', style: 'margin-top: 0' }, 'To get notifications, Home OS has to be installed as an app. On iPhone: tap Share → Add to Home Screen, open it from the Home Screen, then come back here.'));
+      return;
+    }
+    const statusLine = el('p', { class: 'muted small', style: 'margin-top: 0' },
+      st.subscribed ? 'On — this device gets the morning nudge.'
+        : st.permission === 'denied' ? 'Blocked in your device settings — re-enable Home OS notifications there first.'
+          : 'Off on this device.');
+    const btn = el('button', { class: 'btn ' + (st.subscribed ? 'btn-danger' : 'btn-primary') },
+      st.subscribed ? 'Turn off on this device' : 'Enable notifications');
+    btn.onclick = async () => {
+      btn.disabled = 'disabled';
+      try {
+        if (st.subscribed) { await disablePush(); toast('Notifications off'); }
+        else { await enablePush(); toast('Notifications on — you’ll get a morning nudge', 'success'); }
+      } catch (err) {
+        toast(err.message || 'Could not change notifications', 'error');
+      }
+      await render();
+    };
+    body.append(
+      statusLine,
+      el('p', { class: 'muted small' }, 'A scheduled job sends a “today’s brief is ready” nudge each morning. Enable it on each phone you want notified. Subscriptions are kept in your household Gist, so set up Household sync first.'),
+      el('div', { class: 'settings-actions' }, [btn]),
+    );
+  };
+  render();
+  return disclosure('Notifications', body);
+}
+
 async function renderSettings(root) {
   clear(root);
   const s = getSettings();
@@ -324,6 +364,7 @@ async function renderSettings(root) {
 
     memorySection(s, memory),
     usageSection(root),
+    notificationsSection(),
 
     // ----- integrations -----
     disclosure('Google (Calendar + Email, optional)', el('section', { class: 'panel' }, [
@@ -556,7 +597,7 @@ async function boot() {
 // time). Comparing actual file content instead means any real code change
 // is caught automatically, with no release-time step to forget.
 const WATCHED_FILES = [
-  './app.js', './styles.css',
+  './app.js', './styles.css', './modules/push.js',
   './modules/store.js', './modules/ui.js', './modules/chores.js', './modules/grocery.js',
   './modules/calendar.js', './modules/suggest.js', './modules/dashboard.js', './modules/meeting.js',
   './modules/ai.js', './modules/gcal.js', './modules/hmcontext.js', './modules/manager.js',

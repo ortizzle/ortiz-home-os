@@ -1,0 +1,25 @@
+name: Morning push
+
+# Sends the "your brief is ready" nudge to every subscribed device.
+# 14:00 UTC = 7:00 AM America/Phoenix (Arizona has no DST, so this is stable
+# year-round). Adjust the cron if you move or want a different time.
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch: {} # lets you run it by hand from the Actions tab to test
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install web-push@3 --no-save
+      - run: node .github/scripts/send-push.mjs
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }} # e.g. mailto:you@example.com

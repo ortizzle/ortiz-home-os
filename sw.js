@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v42';
+const CACHE = 'ohos-shell-v43';
 const SHELL = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const SHELL = [
   './app.js',
   './manifest.json',
   './modules/store.js',
+  './modules/push.js',
   './modules/ui.js',
   './modules/chores.js',
   './modules/grocery.js',
@@ -39,6 +40,33 @@ self.addEventListener('activate', (e) => {
       Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
+});
+
+// ---------- push notifications ----------
+// The GitHub Action sends a JSON payload { title, body, url }. Show it as a
+// system notification; tapping it focuses an open Home OS window or opens one.
+self.addEventListener('push', (e) => {
+  let data = {};
+  try { data = e.data ? e.data.json() : {}; } catch { data = { body: e.data && e.data.text() }; }
+  const title = data.title || 'Ortiz Home OS';
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || 'Open Home OS',
+      icon: './icons/icon-192.png',
+      badge: './icons/icon-192.png',
+      data: { url: data.url || './' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const w of wins) if ('focus' in w) return w.focus();
+    if (self.clients.openWindow) return self.clients.openWindow(url);
+  })());
 });
 
 self.addEventListener('fetch', (e) => {
