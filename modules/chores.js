@@ -340,7 +340,16 @@ export async function editChoreModal(chore, onchange) {
 
 export async function renderChores(root) {
   clear(root);
-  const chores = await getAll('chores');
+  let chores = await getAll('chores');
+  // Done tasks have an end state: kept ~60 days for reference (the Done
+  // disclosure shows the recent 20), then pruned so the store doesn't grow
+  // forever. Open tasks are never touched.
+  const doneCutoff = new Date(Date.now() - 60 * 86400000).toISOString();
+  // (doneAt must exist — a legacy done item without a timestamp is kept)
+  for (const c of chores.filter((x) => x.done && x.doneAt && x.doneAt < doneCutoff)) {
+    await remove('chores', c.id);
+    chores = chores.filter((x) => x.id !== c.id);
+  }
   const rerender = preserveScroll(() => renderChores(root));
 
   const today = todayStr();

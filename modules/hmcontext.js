@@ -44,6 +44,13 @@ export async function getBrief(date) {
 }
 export async function saveBrief(date, data) {
   await put('briefs', { id: date, data, added: [] });
+  // Briefs are one-per-day records that are only ever read for TODAY — prune
+  // anything older than 2 weeks so the store (and sync payload) has an end
+  // state instead of growing forever.
+  const cutoff = addDays(date, -14);
+  for (const b of await getAll('briefs')) {
+    if (b.id < cutoff) await removeRec('briefs', b.id);
+  }
 }
 export async function markBriefAdded(date, title) {
   const b = await get('briefs', date);
@@ -89,13 +96,14 @@ export async function getReview() {
         added: m.added || [],
         dismissed: m.dismissed || [],
         resolved: m.resolved || {},
+        dives: m.dives || {},
       });
     }
   } catch {}
   return null;
 }
 export async function saveReview(data) {
-  const rec = await put('reviews', { id: REVIEW_ID, reviewedAt: todayStr(), data, added: [], dismissed: [], resolved: {} });
+  const rec = await put('reviews', { id: REVIEW_ID, reviewedAt: todayStr(), data, added: [], dismissed: [], resolved: {}, dives: {} });
   mirrorReview(rec);
 }
 async function patchReview(fn) {
@@ -108,6 +116,10 @@ async function patchReview(fn) {
 export const markReviewAdded = (title) => patchReview((r) => { r.added = [...new Set([...(r.added || []), title])]; });
 export const markReviewDismissed = (title) => patchReview((r) => { r.dismissed = [...new Set([...(r.dismissed || []), title])]; });
 export const markQuestionResolved = (q, answer) => patchReview((r) => { r.resolved = { ...(r.resolved || {}), [q]: answer || true }; });
+// A deep-dive write-up (on a suggestion or a question) is worth keeping — it
+// cost a Claude call and both phones should see it. Keyed by the item's
+// title/question; lives as long as the review does.
+export const markReviewDived = (title, text) => patchReview((r) => { r.dives = { ...(r.dives || {}), [title]: text }; });
 
 function to12(t) {
   if (!t) return '';

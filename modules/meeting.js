@@ -234,7 +234,10 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       await put('agenda', a, { touch: false });
     }
     const pastCycle = a.cycleDate < meetingDateByType[aType];
-    const keepForRecap = a.reviewed && a.decision && a.cycleDate >= addDays(meetingDateByType[aType], -14);
+    // 21 days matches how long the weekly review draws on recent decisions
+    // (hmcontext meetingDecisionsText) — pruning earlier would silently
+    // shorten Claudia's decision memory.
+    const keepForRecap = a.reviewed && a.decision && a.cycleDate >= addDays(meetingDateByType[aType], -21);
     // Icebreakers (Open) and activities (Close) are per-meeting fluff — never
     // "unfinished business." Drop them once their cycle passes instead of
     // carrying them forward, so a skipped meeting doesn't pile up a wall of

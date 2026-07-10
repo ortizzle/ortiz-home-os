@@ -304,6 +304,16 @@ function scheduleSync() {
 export async function initStore() {
   await openDb();
   if (syncConfigured()) await pullFromGist();
+  // Tombstones only need to outlive the sync horizon (both phones sync many
+  // times a day) — after 60 days a deletion can't be resurrected by any
+  // realistic stale snapshot. Prune so the store and every sync payload have
+  // an end state instead of growing forever. Both phones run this same rule,
+  // so a pruned tombstone re-arriving from the other phone's snapshot gets
+  // pruned again here until both sides have pushed the slimmer file.
+  const cutoff = new Date(Date.now() - 60 * 86400000).toISOString();
+  for (const t of await getAll('tombstones')) {
+    if ((t.deletedAt || '') < cutoff) await remove('tombstones', t.id);
+  }
 }
 
 // ---------- push subscriptions ----------

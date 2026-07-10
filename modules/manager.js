@@ -8,7 +8,7 @@ import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
 import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, preserveScroll, disclosure, richText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, claudifyItem, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
+import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
 import { meetingSection } from './meeting.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -70,6 +70,7 @@ function reviewState(r) {
     added: new Set(r.added || []),
     dismissed: new Set(r.dismissed || []),
     resolved: r.resolved || {},
+    dives: r.dives || {},
   };
 }
 
@@ -160,7 +161,14 @@ function planRow(p, rerender) {
 export async function renderManager(root) {
   clear(root);
   const rerender = preserveScroll(() => renderManager(root));
-  const plan = await getAll('plan');
+  let plan = await getAll('plan');
+  // Done plan items have an end state: kept ~60 days (doneAt required — a
+  // legacy item without a timestamp is kept), then pruned.
+  const doneCutoff = new Date(Date.now() - 60 * 86400000).toISOString();
+  for (const p of plan.filter((x) => x.done && x.doneAt && x.doneAt < doneCutoff)) {
+    await remove('plan', p.id);
+    plan = plan.filter((x) => x.id !== p.id);
+  }
   const openPlan = plan.filter((p) => !p.done).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
   const donePlan = plan.filter((p) => p.done);
 
@@ -301,16 +309,23 @@ function reviewIdea(item, rerender, state) {
   actions.append(clearBtn);
   // Deep dive: expand the suggestion into a concrete, calendar-aware plan
   // inline — steps, timing, what to have on hand — before deciding to add it.
+  // Persisted on the review (synced), so it survives rerenders and shows on
+  // both phones until the next review replaces it.
   const diveHost = el('div', {});
+  const showDive = (text) => clear(diveHost).append(
+    el('p', { class: 'idea-detail', style: 'white-space: pre-wrap; margin-top: 8px' }, text),
+    el('button', { class: 'btn seg-btn hm-add', style: 'margin-top: 6px', onclick: () => shareText({ title: item.title, text }) }, '📤 Share / copy'),
+  );
+  if (state.dives[item.title]) showDive(state.dives[item.title]);
   actions.append(el('button', {
     class: 'btn seg-btn hm-add',
     'aria-label': 'Claudify — deep dive into this suggestion',
     onclick: async () => {
-      const text = await runClaudify({ title: item.title, detail: item.detail || '', kind: 'plan', resultHost: diveHost });
-      if (text) clear(diveHost).append(
-        el('p', { class: 'idea-detail', style: 'white-space: pre-wrap; margin-top: 8px' }, text),
-        el('button', { class: 'btn seg-btn hm-add', style: 'margin-top: 6px', onclick: () => shareText({ title: item.title, text }) }, '📤 Share / copy'),
-      );
+      const text = await runClaudify({
+        title: item.title, detail: item.detail || '', kind: 'plan', resultHost: diveHost,
+        onText: (t) => markReviewDived(item.title, t),
+      });
+      if (text) showDive(text);
     },
   }, '✨ Deep dive'));
   return el('div', { class: 'idea' }, [
@@ -368,7 +383,25 @@ function questionRow(q, rerender, state) {
   // Claudify the question itself: instead of just answering or deferring it,
   // have Claudia work it — options, tradeoffs, and a recommendation — so the
   // family decides from an informed position. From there, one tap resolves.
+  // The write-up persists on the review (synced), like suggestion dives.
   const diveHost = el('div', {});
+  const showDive = (text) => clear(diveHost).append(
+    el('p', { class: 'idea-detail', style: 'white-space: pre-wrap; margin-top: 8px' }, text),
+    el('div', { class: 'hm-actions', style: 'margin-top: 6px' }, [
+      el('button', { class: 'btn seg-btn hm-add', onclick: () => shareText({ title: q, text }) }, '📤 Share / copy'),
+      el('button', {
+        class: 'btn seg-btn hm-add',
+        onclick: async () => {
+          // Resolve with her recommendation as the remembered answer.
+          await markQuestionResolved(q, text.slice(0, 400));
+          logQuestionResolved(q, text.slice(0, 400)).catch(() => {});
+          toast('Resolved with Claudia’s recommendation', 'success');
+          rerender();
+        },
+      }, '✓ Resolve with this'),
+    ]),
+  );
+  if (state.dives[q]) showDive(state.dives[q]);
   const claudifyQBtn = el('button', {
     class: 'btn seg-btn hm-add',
     'aria-label': 'Claudify — have Claudia work through this question',
@@ -376,23 +409,9 @@ function questionRow(q, rerender, state) {
       const text = await runClaudify({
         title: q, kind: 'question', resultHost: diveHost,
         loadingLabel: 'Claudia is working through the options…',
+        onText: (t) => markReviewDived(q, t),
       });
-      if (text) clear(diveHost).append(
-        el('p', { class: 'idea-detail', style: 'white-space: pre-wrap; margin-top: 8px' }, text),
-        el('div', { class: 'hm-actions', style: 'margin-top: 6px' }, [
-          el('button', { class: 'btn seg-btn hm-add', onclick: () => shareText({ title: q, text }) }, '📤 Share / copy'),
-          el('button', {
-            class: 'btn seg-btn hm-add',
-            onclick: async () => {
-              // Resolve with her recommendation as the remembered answer.
-              await markQuestionResolved(q, text.slice(0, 400));
-              logQuestionResolved(q, text.slice(0, 400)).catch(() => {});
-              toast('Resolved with Claudia’s recommendation', 'success');
-              rerender();
-            },
-          }, '✓ Resolve with this'),
-        ]),
-      );
+      if (text) showDive(text);
     },
   }, '✨ Claudify');
   return el('li', {}, [
