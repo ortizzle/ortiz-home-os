@@ -9,6 +9,8 @@ import { gatherContext, DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const TIMER_SVG = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12.5" r="8.5"/><path d="M12 8v4.5l3 2"/><path d="M9.5 2.5h5"/></svg>';
+// Standard "share" glyph — three linked nodes — matching the app's line-icon style.
+const SHARE_SVG = '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7l7.4-4.4"/><path d="M8.3 13.3l7.4 4.4"/></svg>';
 
 function familyMembers() {
   const raw = getSettings().familyMembers || 'Chris, Kat, Sedona, River';
@@ -405,10 +407,12 @@ export async function renderChores(root) {
       el('div', { class: 'hm-actions' }, [
         open.length
           ? el('button', {
-              class: 'btn',
+              class: 'icon-btn',
               'aria-label': 'Share open tasks',
+              title: 'Share open tasks',
+              html: SHARE_SVG,
               onclick: () => shareText({ title: 'Ortiz Home OS — open tasks', text: openTasksShareText(groups) }),
-            }, '📤 Share')
+            })
           : null,
         el('button', { class: 'btn btn-primary', onclick: () => editChoreModal(null, rerender) }, '+ New task'),
       ]),

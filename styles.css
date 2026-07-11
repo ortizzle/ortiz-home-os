@@ -130,6 +130,16 @@ body { overscroll-behavior-y: none; }
   stroke-linejoin: round;
 }
 .topbar-icon:hover { color: var(--accent); }
+/* Icon-only action button (e.g. Share on the Tasks header). */
+.icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; flex-shrink: 0;
+  background: none; border: none; border-radius: 10px;
+  color: var(--text-2); cursor: pointer; padding: 0;
+}
+.icon-btn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn:hover { color: var(--accent); background: var(--surface-2, rgba(127,127,127,0.1)); }
+.icon-btn:active { transform: scale(0.94); }
 .tab-icon svg {
   width: 22px; height: 22px;
   stroke: currentColor;
