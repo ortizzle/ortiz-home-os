@@ -2,7 +2,7 @@
 // grammar as Focus OS tasks.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure } from './ui.js';
+import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText } from './ui.js';
 import { parseImport } from './grocery.js';
 import { claudifyItem, hasApiKey, AIError } from './ai.js';
 import { gatherContext, DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
@@ -350,6 +350,29 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
   title.focus();
 }
 
+// Deep link to the Tasks view of the deployed app — Kat can tap it from
+// WhatsApp and land straight on the list (installs/opens the PWA if she has it).
+const APP_TASKS_URL = 'https://ortizzle.github.io/ortiz-home-os/#/tasks';
+
+// A plain-text, WhatsApp-friendly summary of the OPEN tasks + the app link.
+function openTasksShareText(groups) {
+  const icons = { Overdue: '⚠️', Today: '📅', Upcoming: '🔜', Someday: '🕗' };
+  const lines = ['🏡 Ortiz Home OS — open tasks', ''];
+  for (const [label, list] of groups) {
+    if (!list.length) continue;
+    lines.push(`${icons[label] || ''} ${label}`.trim());
+    for (const c of list) {
+      const bits = [];
+      if (c.dueDate) bits.push(fmtDue(c.dueDate));
+      if (c.assignee) bits.push(c.assignee);
+      lines.push(`• ${c.title}${bits.length ? ` (${bits.join(' · ')})` : ''}`);
+    }
+    lines.push('');
+  }
+  lines.push(`Open in the app: ${APP_TASKS_URL}`);
+  return lines.join('\n').trim();
+}
+
 export async function renderChores(root) {
   clear(root);
   let chores = await getAll('chores');
@@ -379,7 +402,16 @@ export async function renderChores(root) {
   root.append(
     el('div', { class: 'view-head-row' }, [
       el('h1', {}, 'Tasks'),
-      el('button', { class: 'btn btn-primary', onclick: () => editChoreModal(null, rerender) }, '+ New task'),
+      el('div', { class: 'hm-actions' }, [
+        open.length
+          ? el('button', {
+              class: 'btn',
+              'aria-label': 'Share open tasks',
+              onclick: () => shareText({ title: 'Ortiz Home OS — open tasks', text: openTasksShareText(groups) }),
+            }, '📤 Share')
+          : null,
+        el('button', { class: 'btn btn-primary', onclick: () => editChoreModal(null, rerender) }, '+ New task'),
+      ]),
     ])
   );
 
