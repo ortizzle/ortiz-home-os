@@ -26,3 +26,10 @@ node .claude/serve.js   # serves on http://localhost:8125
   paste-import bridge for lists voiced into Keep.
 - v1.5: read-only Google Calendar overlay. v2: a Claude-powered advisor.
   See the suite ROADMAP in the ortiz-focus-os repo.
+- **The suite hub** lives here at `#/hub`: one "today" across all three Ortiz
+  OS apps. The whole suite shares the `ortizzle.github.io` origin, so the hub
+  reads Learning OS and Focus OS IndexedDB directly — strictly read-only, each
+  app stays the sole writer of its own data (see `modules/siblings.js`). Its
+  dashboard entry point only appears on a device where a sibling app has data,
+  so it never shows on Kat's phone. Local preview needs one origin:
+  `node .claude/serve-suite.js` in the ortiz-focus-os repo.

@@ -12,6 +12,7 @@ import { analyzeDay, hasApiKey, AIError } from './ai.js';
 import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions } from './hmcontext.js';
 import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
+import { anySiblingData } from './siblings.js';
 
 const CART_SVG = '<svg viewBox="0 0 24 24"><path d="M3.5 4.5H6l2.3 10.5h9.4l2.3-8.5H7"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="16.5" cy="19" r="1.5"/></svg>';
 let briefInFlight = false;
@@ -63,6 +64,19 @@ export async function renderDashboard(root) {
       ]),
     ])
   );
+
+  // ----- suite hub (only on a device where a sibling app has data — on
+  // Kat's phone this never appears) -----
+  if (await anySiblingData()) {
+    root.append(
+      el('div', { class: 'suggestions' }, [
+        el('button', { class: 'suggestion', onclick: () => navigate('#/hub') }, [
+          el('span', {}, 'Your whole day — learning, focus, and home'),
+          el('span', { class: 'suggestion-go' }, 'Ortiz OS →'),
+        ]),
+      ])
+    );
+  }
 
   // ----- errand-day banner (the store-run moment) -----
   const win = errandWindow(settings);

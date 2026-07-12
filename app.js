@@ -12,6 +12,8 @@ import {
   exportSnapshot,
 } from './modules/store.js';
 import { renderDashboard } from './modules/dashboard.js';
+import { renderHub } from './modules/hub.js';
+import { siblings } from './modules/siblings.js';
 import { renderChores } from './modules/chores.js';
 import { renderGrocery } from './modules/grocery.js';
 import { renderCalendar } from './modules/calendar.js';
@@ -31,7 +33,7 @@ const view = document.getElementById('view');
 // checkForUpdate() below detects real changes by content, not this string —
 // but still worth bumping on ship so the label reflects what's running.
 // Keep in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v49';
+const APP_VERSION = 'v50';
 
 // ---------- theme ----------
 
@@ -63,6 +65,8 @@ const routes = [
   { re: /^#\/manager$/, tab: 'manager', fn: () => renderManager(view) },
   { re: /^#\/upkeep$/, tab: 'manager', fn: () => renderManager(view) }, // legacy alias
   { re: /^#\/meeting$/, tab: 'manager', fn: () => renderMeeting(view) }, // meeting lives on the Claudia tab now
+  { re: /^#\/hub$/, tab: 'home', fn: () => renderHub(view) }, // the Ortiz OS suite hub
+
   { re: /^#\/settings$/, tab: 'settings', fn: () => renderSettings(view) },
 ];
 
@@ -438,6 +442,18 @@ async function renderSettings(root) {
       el('button', { class: 'btn btn-primary', onclick: onSave }, 'Save'),
       el('button', { class: 'btn', onclick: onSyncNow, disabled: syncConfigured() ? null : 'disabled' }, 'Sync now'),
       el('button', { class: 'btn', onclick: onExport }, 'Export JSON'),
+    ]),
+
+    // ----- the rest of the suite -----
+    el('section', { class: 'panel' }, [
+      el('h4', {}, 'Ortiz OS'),
+      el('p', { class: 'muted small' }, 'The whole family of apps lives on this origin, so the hub can read each app’s data right on this device — no account, no server.'),
+      el('div', { class: 'settings-actions' }, [
+        el('button', { class: 'btn btn-primary', onclick: () => navigate('#/hub') }, 'Suite hub'),
+        ...siblings.map((a) =>
+          el('button', { class: 'btn', title: a.tagline, onclick: () => (location.href = a.path) }, `${a.name} →`)
+        ),
+      ]),
     ]),
 
     diagnosticsSection(APP_VERSION),
