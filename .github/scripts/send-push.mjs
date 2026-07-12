@@ -12,11 +12,18 @@ const {
 } = process.env;
 
 // Public VAPID key — matches modules/push.js in the app. Public, so hardcoded.
-const VAPID_PUBLIC_KEY = 'BMJIta4PeTtDNGgMMdOCuYDJWfMELreh04yi7ytEAEgNG0aO5CkwzBAMY1CbiwsDBYZc_DdArPvoOtA6atLIQ24';
+const VAPID_PUBLIC_KEY = 'BKNTxUkQp9TtfrfZs9gHVxJF8iplDKxrlHbte6UjE7Ys3KUojw6ulo70znOswKG9wN7ujq0eGjJDRE_F8d3HV68';
 const SUBS_FILE = 'push-subscriptions.json';
 
 if (!GIST_ID || !GIST_TOKEN || !VAPID_PRIVATE_KEY) {
-  console.error('Missing GIST_ID, GIST_TOKEN, or VAPID_PRIVATE_KEY secret.');
+  console.error(
+    'Missing repo secrets. Add them under GitHub → repo Settings → Secrets and variables → Actions:\n' +
+    '  GIST_ID            — the household sync Gist ID (app Settings → Household sync)\n' +
+    '  GIST_TOKEN         — the GitHub token with gist scope (same place)\n' +
+    '  VAPID_PRIVATE_KEY  — pairs with VAPID_PUBLIC_KEY in modules/push.js\n' +
+    '  VAPID_SUBJECT      — mailto:your-email\n' +
+    'Until these are set, this job fails on purpose so the misconfiguration stays visible.'
+  );
   process.exit(1);
 }
 
