@@ -31,7 +31,7 @@ const view = document.getElementById('view');
 // checkForUpdate() below detects real changes by content, not this string —
 // but still worth bumping on ship so the label reflects what's running.
 // Keep in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v50';
+const APP_VERSION = 'v51';
 
 // ---------- theme ----------
 
