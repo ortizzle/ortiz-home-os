@@ -11,14 +11,17 @@ import { STORES } from './grocery.js';
 // The family's habits/preferences, fed to the house-manager AI. Editable in
 // Settings → "Notes for the assistant"; this is the default seed.
 export const DEFAULT_HOUSEHOLD_NOTES =
-  "Shopping habits: Costco — go during executive hours right when it opens (weekend mornings). Trader Joe's — quick, local runs for a few items. Walmart — usually home delivery, for items we don't want in Costco bulk sizes.";
+  "Shopping habits: Costco — go during executive hours right when it opens (weekend mornings). Trader Joe's — quick, local runs for a few items. Walmart — usually home delivery, for items we don't want in Costco bulk sizes.\n\n" +
+  "Pets: two dogs — Cookie (female) and Biscuit (male), both around 5 years old — and a bearded dragon named Sunny.\n\n" +
+  "Standing weekly care we tend to forget (a nudge helps): clean Sunny's terrarium once a week, and brush the dogs' teeth. Neither is tracked as a task, so it's welcome to remind us in the weekly review — ideally folded into the weekend.";
 
 // Standing food rules for the dinner planner. Editable in Settings.
 export const DEFAULT_FOOD_NOTES =
   'Weeknight dinners: quick (~30 minutes) and healthy-ish, kid-friendly. Bigger cooking projects are for weekends.';
 
-// Default kids line for age-appropriate chore ideas. Editable in Settings.
-export const DEFAULT_KIDS = 'Sedona and River (roughly 8–12)';
+// Default kids line for age-appropriate chore ideas and birthday lead time.
+// Editable in Settings.
+export const DEFAULT_KIDS = 'Sedona (12, born Dec 17, 2013) and River (9, born Jan 11, 2017)';
 
 // ---------- brief pins (synced — a pin either of you adds, both of you see) ----------
 
