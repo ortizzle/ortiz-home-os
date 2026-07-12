@@ -254,7 +254,8 @@ const HM_ROLE = (family) =>
 // one-tap-addable suggestions. Each suggestion is typed so the app can turn it
 // into a task, appointment, or grocery item.
 export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', agenda = '', email = '' } = {}) {
-  const system = HM_ROLE(family) + ` This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon. If dinner is planned for tonight, mention it in a note. Kids (${kids || 'none listed'}) don't use the app — when a small chore genuinely fits one of them, suggest it as a task with their name in "who".`;
+  const system = HM_ROLE(family) + ` This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon. If dinner is planned for tonight, mention it in a note. Kids (${kids || 'none listed'}) don't use the app — when a small chore genuinely fits one of them, suggest it as a task with their name in "who".` +
+    ' WEEKEND CARE: on a Saturday or Sunday only, if the household notes list standing weekly care that lives only there (e.g. weekly pet care) and isn\'t already an open task, add ONE such reminder as a task suggestion for today — the weekend is when there\'s time for it. Keep it to a single gentle nudge, no guilt; skip it entirely on weekdays.';
   const prompt = `Good morning. Today is ${weekday} ${today}. Give the family a short read on the day.
 
 HOUSEHOLD NOTES / PREFERENCES:
