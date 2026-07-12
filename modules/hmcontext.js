@@ -15,7 +15,8 @@ export const DEFAULT_HOUSEHOLD_NOTES =
   "Pets: two dogs — Cookie (female) and Biscuit (male), littermates we brought home as 6–8-week-old puppies on Mother's Day (May 9) 2021, so born ~spring 2021 — and a bearded dragon named Sunny.\n\n" +
   "Standing weekly care we tend to forget (a nudge helps): clean Sunny's terrarium once a week, and brush the dogs' teeth. Neither is tracked as a task, so it's welcome to remind us in the weekly review — ideally folded into the weekend.\n\n" +
   "Birthdays: Chris — February 26, 1981; Kat — August 15, 1981 (the kids' birthdays are in the kids note). Get ahead of each one with real lead time — a card and a gift, ordered early enough to arrive.\n\n" +
-  "Our '2-2-2' rhythm for the two of us — help us protect it: a date night every 2 weeks, a weekend getaway every ~2 months, and a couples destination trip every ~2 years. These belong on the calendar, and concrete, specific ideas for each are always welcome.";
+  "Our '2-2-2' rhythm for the two of us — help us protect it: a date night every 2 weeks, a weekend getaway every ~2 months, and a couples destination trip every ~2 years. These belong on the calendar, and concrete, specific ideas for each are always welcome.\n\n" +
+  "Who does what: the Monday 'dance party' with Eshe & Akilah is dance for BOTH girls (Sedona and River), and Kat takes them — it sits on Chris's calendar, but it's Kat and the girls' evening.";
 
 // Standing food rules for the dinner planner. Editable in Settings.
 export const DEFAULT_FOOD_NOTES =
