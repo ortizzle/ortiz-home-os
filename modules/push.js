@@ -11,7 +11,7 @@ import { savePushSub, removePushSub, syncConfigured, deviceName } from './store.
 
 // VAPID public key — safe to ship in the client. The matching PRIVATE key is a
 // GitHub Actions secret (VAPID_PRIVATE_KEY); the two are generated as a pair.
-export const VAPID_PUBLIC_KEY = 'BMJIta4PeTtDNGgMMdOCuYDJWfMELreh04yi7ytEAEgNG0aO5CkwzBAMY1CbiwsDBYZc_DdArPvoOtA6atLIQ24';
+export const VAPID_PUBLIC_KEY = 'BKNTxUkQp9TtfrfZs9gHVxJF8iplDKxrlHbte6UjE7Ys3KUojw6ulo70znOswKG9wN7ujq0eGjJDRE_F8d3HV68';
 
 export function pushSupported() {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
