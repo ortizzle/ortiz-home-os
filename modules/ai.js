@@ -253,8 +253,10 @@ const HM_ROLE = (family) =>
 // Daily brief for the Home page — a short read on TODAY plus a few concrete,
 // one-tap-addable suggestions. Each suggestion is typed so the app can turn it
 // into a task, appointment, or grocery item.
-export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', agenda = '', email = '' } = {}) {
+export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', agenda = '', meetingDecisions = '', email = '' } = {}) {
   const system = HM_ROLE(family) + ` This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon. If dinner is planned for tonight, mention it in a note. Kids (${kids || 'none listed'}) don't use the app — when a small chore genuinely fits one of them, suggest it as a task with their name in "who".` +
+    ' CALENDAR ATTRIBUTION: events may sit on either parent\'s Google calendar — whose calendar an event is on says NOTHING about who attends or drives. Never guess who an event belongs to or who\'s taking the kids; name a person only when the event title/details or the household notes say so, otherwise leave it unattributed.' +
+    ' The family\'s recent meeting decisions are settled facts — read the calendar through them (e.g. if two events were decided to be one combined gathering, present them that way) and never second-guess or re-raise what\'s already been decided.' +
     ' WEEKEND CARE: on a Saturday or Sunday only, if the household notes list standing weekly care that lives only there (e.g. weekly pet care) and isn\'t already an open task, add ONE such reminder as a task suggestion for today — the weekend is when there\'s time for it. Keep it to a single gentle nudge, no guilt; skip it entirely on weekdays.';
   const prompt = `Good morning. Today is ${weekday} ${today}. Give the family a short read on the day.
 
@@ -272,6 +274,9 @@ ${chores || '(none)'}
 
 ALREADY ON A MEETING AGENDA (do NOT re-suggest these):
 ${agenda || '(none)'}
+
+DECIDED AT RECENT MEETINGS (settled — treat as fact when reading today):
+${meetingDecisions || '(none)'}
 
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
@@ -297,6 +302,7 @@ In the headline and notes, use **bold** (Markdown) sparingly — wrap only the f
 export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', groceries = '', plan = '', meals = '', agenda = '', meetingDecisions = '', email = '', follow = '' } = {}) {
   const system = HM_ROLE(family) +
     ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
+    ' CALENDAR ATTRIBUTION: events may sit on either parent\'s Google calendar — whose calendar an event is on says NOTHING about who attends or drives. Never guess who an event belongs to or who\'s taking the kids; name a person only when the event title/details or the household notes say so.' +
     ' TRIPS: the calendar spans the next ~2 weeks and marks multi-day events as "(MULTI-DAY / trip)". For any trip in that window, plan around it with real lead time — a packing list (or packing reminder) a few days before, plus prep like holding mail, pet/plant care, travel documents, chargers, and confirming reservations. Note who is away and when, since that changes what else fits those days.' +
     ' BIRTHDAYS: birthdays and anniversaries may be on the calendar OR listed in the household notes — watch both, and remember the year in a noted date is the birth year (compute the upcoming occurrence for this year). For any that falls within about the next 3 weeks, get ahead of it — add a plan item to choose and buy/order a gift with enough lead time to arrive, and in that item\'s "detail" name the person and offer 2-3 concrete, specific gift ideas fitted to them (use what you know of their age and interests; avoid generic "a gift card"). ALSO add a question asking what that person is into lately or would love right now, so the ideas can sharpen — address the person by name. Raise each birthday only once with real lead time, not every week.' +
     ' COUPLE RHYTHM: the household notes may set a standing couples cadence (e.g. a "2-2-2" rhythm: date night every 2 weeks, a weekend getaway every ~2 months, a destination trip every ~2 years). Help keep it alive. If the calendar and plan ahead don\'t already show the next one coming due, propose it as an "appointment" so it can go on the calendar, and put 2-3 concrete, specific ideas in the "detail": for date nights use their city and interests and web search for something real and timely (a show, a new restaurant, a seasonal event, with the real date/venue); for a getaway or trip, name a real, fitting destination for the season. Pace it to the cadence — a date night can surface most reviews when none is booked, but raise the getaway and the big trip only occasionally, and never re-raise one already suggested recently or already on the plan/calendar.' +
