@@ -274,6 +274,9 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .pill-accent { color: var(--accent); background: var(--accent-soft); }
 .pill-overdue { color: var(--bad); background: var(--bad-soft); }
 .pill-soon { color: var(--warn); background: var(--warn-soft); }
+/* Icon-only note flag on a task row — sized to sit inline with the text pills. */
+.pill-note { display: inline-flex; align-items: center; padding: 3px 6px; }
+.pill-note svg { display: block; width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- empty states ---------- */
 .empty { text-align: center; padding: 48px 16px; }

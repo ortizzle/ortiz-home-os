@@ -11,6 +11,9 @@ const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></
 const TIMER_SVG = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12.5" r="8.5"/><path d="M12 8v4.5l3 2"/><path d="M9.5 2.5h5"/></svg>';
 // Standard "share" glyph — three linked nodes — matching the app's line-icon style.
 const SHARE_SVG = '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7l7.4-4.4"/><path d="M8.3 13.3l7.4 4.4"/></svg>';
+// Small "note" glyph — a page with lines — flagged on a row when the task
+// carries a note, so you can see it has one without opening it.
+const NOTE_SVG = '<svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 13h7"/><path d="M9 17h5"/></svg>';
 
 function familyMembers() {
   const raw = getSettings().familyMembers || 'Chris, Kat, Sedona, River';
@@ -39,6 +42,7 @@ export function choreRow(chore, { onchange, showDue = true } = {}) {
     meta.push(el('span', { class: 'pill' + (overdue ? ' pill-overdue' : '') }, fmtDue(chore.dueDate)));
   }
   if (chore.assignee) meta.push(el('span', { class: 'pill pill-accent' }, chore.assignee));
+  if (chore.notes && chore.notes.trim()) meta.push(el('span', { class: 'pill pill-note', title: 'Has a note', 'aria-label': 'Has a note', html: NOTE_SVG }));
   if (chore.focusSeconds) meta.push(el('span', { class: 'pill' }, `⏱ ${fmtFocusPill(chore.focusSeconds)}`));
   if (chore.done && chore.doneBy) meta.push(el('span', { class: 'pill pill-done' }, `done · ${chore.doneBy}`));
 

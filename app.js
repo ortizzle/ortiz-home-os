@@ -31,7 +31,7 @@ const view = document.getElementById('view');
 // checkForUpdate() below detects real changes by content, not this string —
 // but still worth bumping on ship so the label reflects what's running.
 // Keep in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v46';
+const APP_VERSION = 'v48';
 
 // ---------- theme ----------
 
@@ -316,7 +316,7 @@ async function renderSettings(root) {
       deviceNameInput,
       el('label', { class: 'field-label' }, 'Errand day(s) — when the grocery list surfaces'),
       dayRow,
-    ]), { open: true }),
+    ])),
 
     disclosure('Appearance', el('section', { class: 'panel' }, [
       el('div', { class: 'seg' }, [
@@ -336,7 +336,7 @@ async function renderSettings(root) {
           },
         })
       )),
-    ])),
+    ]), { open: true }),
 
     // ----- the household: who's in it, and when it meets -----
     disclosure('Family & meeting', el('section', { class: 'panel' }, [
