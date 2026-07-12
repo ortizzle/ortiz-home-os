@@ -3,6 +3,8 @@
 import {
   initStore,
   getAll,
+  put,
+  remove,
   getSettings,
   saveSettings,
   syncConfigured,
@@ -17,7 +19,7 @@ import { renderGrocery } from './modules/grocery.js';
 import { renderCalendar } from './modules/calendar.js';
 import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
-import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestionMemory } from './modules/hmcontext.js';
+import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestionMemory, seedMemory, MEMORY_CATS } from './modules/hmcontext.js';
 import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { getUsage, estimateCost, resetUsage } from './modules/ai.js';
@@ -31,7 +33,7 @@ const view = document.getElementById('view');
 // checkForUpdate() below detects real changes by content, not this string —
 // but still worth bumping on ship so the label reflects what's running.
 // Keep in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v54';
+const APP_VERSION = 'v55';
 
 // ---------- theme ----------
 
@@ -122,11 +124,48 @@ const DEFAULT_ADMIN_ATTENDEES = 'Chris, Kat';
 // plus what she's picked up from actual use (accepted suggestions, answered
 // questions, things suggested repeatedly but never taken). Settings →
 // Export JSON has the raw data; this is the readable version.
-function memorySection(s, memory) {
+function memorySection(s, memory, memFacts = [], rerender = () => {}) {
   const row = (label, value, wrap = false) =>
     value ? el('p', { class: 'muted small', style: `margin: 2px 0${wrap ? '; white-space: pre-wrap' : ''}` }, [el('strong', {}, label + ': '), value]) : null;
 
   const heading = (text) => el('h5', { style: 'margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2)' }, text);
+
+  // ----- Claudia's memory: lean synced facts, editable per-fact -----
+  // Every Claudia prompt reads these (see householdKnowledge). Tap to edit;
+  // deleting a fact really forgets it (tombstoned, never re-seeded).
+  function factModal(fact) {
+    const isNew = !fact?.id;
+    const f = fact || {};
+    const catSel = el('select', { class: 'input' }, MEMORY_CATS.map((c) => el('option', { value: c, selected: (f.cat || 'family') === c ? 'selected' : null }, c)));
+    const text = el('textarea', { class: 'input', rows: 3, placeholder: 'One short line — e.g. "River is allergic to cashews"' }, f.text || '');
+    const m = openModal(isNew ? 'New memory' : 'Edit memory', [
+      el('label', { class: 'field-label' }, 'Category'), catSel,
+      el('label', { class: 'field-label' }, 'Fact'), text,
+    ], [
+      !isNew && el('button', { class: 'btn btn-danger', onclick: async () => { await remove('memory', f.id); m.close(); toast('Forgotten'); rerender(); } }, 'Forget'),
+      el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
+      el('button', {
+        class: 'btn btn-primary',
+        onclick: async () => {
+          const t = text.value.trim();
+          if (!t) return toast('Write the fact first', 'warn');
+          await put('memory', { ...f, cat: catSel.value, text: t });
+          m.close();
+          rerender();
+        },
+      }, 'Save'),
+    ]);
+    text.focus();
+  }
+  const sortedFacts = [...memFacts].sort((a, b) => MEMORY_CATS.indexOf(a.cat) - MEMORY_CATS.indexOf(b.cat));
+  const factNodes = [
+    heading('Claudia’s memory — synced facts; tap one to edit'),
+    sortedFacts.length
+      ? el('ul', { class: 'meeting-list' }, sortedFacts.map((f) =>
+          el('li', { style: 'cursor: pointer', onclick: () => factModal(f) }, [el('strong', {}, `${f.cat} · `), f.text])))
+      : el('p', { class: 'muted small' }, 'No facts yet — they seed on first load.'),
+    el('button', { class: 'btn seg-btn', style: 'margin-top: 4px', onclick: () => factModal(null) }, '+ Add a fact'),
+  ];
 
   const memNodes = [];
   if (memory.resolved.length) {
@@ -156,7 +195,9 @@ function memorySection(s, memory) {
   }
 
   return disclosure('What Claudia knows', el('section', { class: 'panel' }, [
-    el('p', { class: 'muted small', style: 'margin-top: 0' }, 'A readable recap of what shapes Claudia’s answers — the fields above, plus what she’s picked up from actual use. Settings → Export JSON has the full raw data.'),
+    el('p', { class: 'muted small', style: 'margin-top: 0' }, 'Claudia’s memory feeds every brief, review, meeting, and dinner plan. Facts sync to both phones; answers you give her distill in automatically.'),
+    ...factNodes,
+    heading('Also in play'),
     row('Family', s.familyMembers || 'Chris, Kat, Sedona, River'),
     row('Kids & ages', s.kidsAges || DEFAULT_KIDS),
     row('Interests', s.familyInterests || '(not set)'),
@@ -262,6 +303,7 @@ async function renderSettings(root) {
   clear(root);
   const s = getSettings();
   const memory = await getSuggestionMemory();
+  const memFacts = await getAll('memory');
 
   const deviceNameInput = el('input', { class: 'input', placeholder: 'e.g. Chris', value: s.deviceName || '' });
   const familyInput = el('input', { class: 'input', placeholder: 'Chris, Kat, Sedona, River', value: s.familyMembers || 'Chris, Kat, Sedona, River' });
@@ -373,7 +415,7 @@ async function renderSettings(root) {
       el('p', { class: 'muted small' }, 'Claudia (powered by Claude) runs the daily brief, weekly review, dinner plans, meeting drafts, and Ask. Notes are background context so her ideas fit your family; interests + city let her search the web for real nearby things — a movie you’d love this week, local events — with actual dates and times. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
     ])),
 
-    memorySection(s, memory),
+    memorySection(s, memory, memFacts, () => renderSettings(root)),
     usageSection(root),
     notificationsSection(),
 
@@ -545,6 +587,9 @@ async function boot() {
   // A storage failure must degrade, never blank the app.
   try {
     await initStore();
+    // Seed Claudia's memory (idempotent — deterministic ids; tombstones
+    // respected). Awaited so the first Settings render already has the facts.
+    await seedMemory().catch((err) => console.error('seedMemory failed', err));
   } catch (err) {
     console.error('initStore failed', err);
     toast(`Storage error — some data may be unavailable (${err?.message || err})`, 'error');

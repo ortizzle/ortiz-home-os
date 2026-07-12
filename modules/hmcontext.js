@@ -9,14 +9,11 @@ import { eventsForRange, canReadEmail, gmailRecent } from './gcal.js';
 import { STORES } from './grocery.js';
 
 // The family's habits/preferences, fed to the house-manager AI. Editable in
-// Settings → "Notes for the assistant"; this is the default seed.
+// Settings → "Notes for the assistant"; this is the default seed. FACTS no
+// longer live here — they moved to the memory store below (v55), which syncs,
+// is editable per-fact, and reaches every prompt. Notes stay freeform.
 export const DEFAULT_HOUSEHOLD_NOTES =
-  "Shopping habits: Costco — go during executive hours right when it opens (weekend mornings). Trader Joe's — quick, local runs for a few items. Walmart — usually home delivery, for items we don't want in Costco bulk sizes.\n\n" +
-  "Pets: two dogs — Cookie (female) and Biscuit (male), littermates we brought home as 6–8-week-old puppies on Mother's Day (May 9) 2021, so born ~spring 2021 — and a bearded dragon named Sunny.\n\n" +
-  "Standing weekly care we tend to forget (a nudge helps): clean Sunny's terrarium once a week, and brush the dogs' teeth. Neither is tracked as a task, so it's welcome to remind us in the weekly review — ideally folded into the weekend.\n\n" +
-  "Birthdays: Chris — February 26, 1981; Kat — August 15, 1981 (the kids' birthdays are in the kids note). Get ahead of each one with real lead time — a card and a gift, ordered early enough to arrive.\n\n" +
-  "Our '2-2-2' rhythm for the two of us — help us protect it: a date night every 2 weeks, a weekend getaway every ~2 months, and a couples destination trip every ~2 years. These belong on the calendar, and concrete, specific ideas for each are always welcome.\n\n" +
-  "Who does what: the Monday 'dance party' with Eshe & Akilah is dance for BOTH girls (Sedona and River), and Kat takes them — it sits on Chris's calendar, but it's Kat and the girls' evening.";
+  "Shopping habits: Costco — go during executive hours right when it opens (weekend mornings). Trader Joe's — quick, local runs for a few items. Walmart — usually home delivery, for items we don't want in Costco bulk sizes.";
 
 // Standing food rules for the dinner planner. Editable in Settings.
 export const DEFAULT_FOOD_NOTES =
@@ -25,6 +22,49 @@ export const DEFAULT_FOOD_NOTES =
 // Default kids line for age-appropriate chore ideas and birthday lead time.
 // Editable in Settings.
 export const DEFAULT_KIDS = 'Sedona (12, born Dec 17, 2013) and River (9, born Jan 11, 2017)';
+
+// ---------- Claudia's memory (synced — her hippocampus) ----------
+// Lean, typed facts, one short line each. Seeded once with deterministic ids
+// (so both phones' seeds merge into the same records instead of duplicating),
+// edited per-fact in Settings, and fed to EVERY Claudia prompt via
+// householdKnowledge(). Answered questions distill in automatically, so what
+// she learns in the weekly review reaches the brief, meetings, and meals too.
+
+export const MEMORY_CATS = ['family', 'pets', 'rhythms', 'logistics', 'preferences', 'learned'];
+
+const MEMORY_SEEDS = [
+  { id: 'm-kids', cat: 'family', text: 'Kids: Sedona born Dec 17, 2013; River born Jan 11, 2017. Both girls.' },
+  { id: 'm-parents', cat: 'family', text: 'Birthdays: Chris — Feb 26, 1981; Kat — Aug 15, 1981. Get ahead of each with card + gift lead time.' },
+  { id: 'm-pets', cat: 'pets', text: "Dogs: Cookie (girl) & Biscuit (boy), littermates born ~spring 2021 (came home Mother's Day 2021). Bearded dragon: Sunny." },
+  { id: 'm-care', cat: 'rhythms', text: "Weekly care the family forgets: clean Sunny's terrarium + brush the dogs' teeth — nudge on weekends; not tracked as tasks." },
+  { id: 'm-222', cat: 'rhythms', text: 'Chris & Kat 2-2-2 rhythm: date night every 2 weeks, weekend getaway every ~2 months, destination trip every ~2 years — keep it on the calendar, ideas welcome.' },
+  { id: 'm-dance', cat: 'rhythms', text: "Monday 'dance party': Eshe and her sister Akilah come to the house for dance exercise — it's Kat and both girls at home; sits on Chris's calendar but isn't Chris's event." },
+];
+
+export async function seedMemory() {
+  const existing = new Set((await getAll('memory')).map((m) => m.id));
+  // A deleted seed stays deleted — its tombstone blocks re-seeding.
+  const dead = new Set((await getAll('tombstones')).filter((t) => t.store === 'memory').map((t) => t.recordId));
+  for (const s of MEMORY_SEEDS) {
+    if (!existing.has(s.id) && !dead.has(s.id)) await put('memory', { ...s });
+  }
+}
+
+// Compact one-line-per-fact block, grouped by category order. Streamlined on
+// purpose — this rides inside every prompt, so brevity is a feature.
+export async function memoryText() {
+  const all = (await getAll('memory')).filter((m) => (m.text || '').trim());
+  all.sort((a, b) => MEMORY_CATS.indexOf(a.cat) - MEMORY_CATS.indexOf(b.cat));
+  return all.map((m) => `- [${m.cat}] ${m.text.trim()}`).join('\n');
+}
+
+// The single knowledge block every Claudia call should use for `notes`:
+// the freeform notes field + the memory facts.
+export async function householdKnowledge(settings) {
+  const notes = ((settings || {}).householdNotes || DEFAULT_HOUSEHOLD_NOTES).trim();
+  const mem = await memoryText();
+  return mem ? `${notes}\n\nCLAUDIA'S MEMORY — standing facts about this family (treat as true):\n${mem}` : notes;
+}
 
 // ---------- brief pins (synced — a pin either of you adds, both of you see) ----------
 
@@ -174,6 +214,11 @@ export async function logQuestionResolved(question, answer = '') {
   const entry = log.find((r) => r.key === key);
   const base = entry || { key, title: question, source: 'review', firstShownAt: todayStr(), lastShownAt: todayStr(), shownCount: 1 };
   await put('suggLog', { ...base, type: 'question', resolvedAt: todayStr(), answer: answer.trim() || null });
+  // Consolidation: a real answer becomes a memory fact, so what the review
+  // learned reaches the brief, meetings, and meals too (not just follow-through).
+  if (answer.trim()) {
+    await put('memory', { cat: 'learned', text: `${question.trim().replace(/\s+/g, ' ')} → ${answer.trim()}`.slice(0, 240) });
+  }
 }
 
 // Did the record a suggestion turned into actually get done?
