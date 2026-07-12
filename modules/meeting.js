@@ -16,7 +16,7 @@ import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtD
 import { appointmentsFor } from './calendar.js';
 import { errandWindow } from './suggest.js';
 import { hasApiKey, draftMeeting, AIError } from './ai.js';
-import { DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
+import { householdKnowledge } from './hmcontext.js';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -327,7 +327,7 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
         const covered = cycleAgenda.filter((a) => a.reviewed).map((a) => `- ${a.text}${a.decision ? ` (decided: ${a.decision})` : ''}`).join('\n');
         const out = await draftMeeting({
           attendees: attendeesFor(type),
-          notes: getSettings().householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+          notes: await householdKnowledge(getSettings()),
           meetingDate: fmtDay(meetingDate),
           when: meetingTime(type),
           weekAhead: week.summary,

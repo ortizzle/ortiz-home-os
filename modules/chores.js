@@ -5,7 +5,7 @@ import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
 import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText } from './ui.js';
 import { parseImport } from './grocery.js';
 import { claudifyItem, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES } from './hmcontext.js';
+import { gatherContext, householdKnowledge } from './hmcontext.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const TIMER_SVG = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12.5" r="8.5"/><path d="M12 8v4.5l3 2"/><path d="M9.5 2.5h5"/></svg>';
@@ -248,7 +248,7 @@ function openFocusModal(chore, onchange) {
         const ctx = await gatherContext({ start: todayStr(), days: 14, email: false });
         const text = await claudifyItem({
           family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
-          notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+          notes: await householdKnowledge(settings),
           events: ctx.eventsText,
           title: chore.title,
           detail: notes.value || '',

@@ -9,7 +9,7 @@ import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareTe
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, claudifyItem, hasApiKey, AIError } from './ai.js';
 import { editChoreModal } from './chores.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
+import { gatherContext, householdKnowledge, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
 import { meetingSection } from './meeting.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -119,7 +119,7 @@ async function runClaudify({ title, detail = '', kind, resultHost, onText, loadi
     const ctx = await gatherContext({ start: todayStr(), days: 14, email: false });
     const text = await claudifyItem({
       family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
-      notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+      notes: await householdKnowledge(settings),
       events: ctx.eventsText,
       title, detail, kind,
     });
@@ -212,7 +212,7 @@ export async function renderManager(root) {
         ]);
         const out = await reviewWeek({
           family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
-          notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+          notes: await householdKnowledge(settings),
           interests: settings.familyInterests || '',
           kids: settings.kidsAges || DEFAULT_KIDS,
           today: todayStr(),

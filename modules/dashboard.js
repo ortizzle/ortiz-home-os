@@ -9,7 +9,7 @@ import { choreRow } from './chores.js';
 import { addGroceryItem } from './grocery.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
-import { gatherContext, DEFAULT_HOUSEHOLD_NOTES, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions } from './hmcontext.js';
+import { gatherContext, householdKnowledge, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions } from './hmcontext.js';
 import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
 
@@ -233,7 +233,7 @@ async function runBrief(host, rerender, { today, settings }) {
     const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long' });
     const out = await analyzeDay({
       family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
-      notes: settings.householdNotes || DEFAULT_HOUSEHOLD_NOTES,
+      notes: await householdKnowledge(settings),
       kids: settings.kidsAges || DEFAULT_KIDS,
       today,
       weekday,
