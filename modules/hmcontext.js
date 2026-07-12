@@ -13,7 +13,8 @@ import { STORES } from './grocery.js';
 export const DEFAULT_HOUSEHOLD_NOTES =
   "Shopping habits: Costco — go during executive hours right when it opens (weekend mornings). Trader Joe's — quick, local runs for a few items. Walmart — usually home delivery, for items we don't want in Costco bulk sizes.\n\n" +
   "Pets: two dogs — Cookie (female) and Biscuit (male), littermates we brought home as 6–8-week-old puppies on Mother's Day (May 9) 2021, so born ~spring 2021 — and a bearded dragon named Sunny.\n\n" +
-  "Standing weekly care we tend to forget (a nudge helps): clean Sunny's terrarium once a week, and brush the dogs' teeth. Neither is tracked as a task, so it's welcome to remind us in the weekly review — ideally folded into the weekend.";
+  "Standing weekly care we tend to forget (a nudge helps): clean Sunny's terrarium once a week, and brush the dogs' teeth. Neither is tracked as a task, so it's welcome to remind us in the weekly review — ideally folded into the weekend.\n\n" +
+  "Birthdays: Chris — February 26, 1981; Kat — August 15, 1981 (the kids' birthdays are in the kids note). Get ahead of each one with real lead time — a card and a gift, ordered early enough to arrive.";
 
 // Standing food rules for the dinner planner. Editable in Settings.
 export const DEFAULT_FOOD_NOTES =
