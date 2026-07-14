@@ -2,7 +2,7 @@
 // grammar as Focus OS tasks.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText, SHARE_SVG } from './ui.js';
+import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText, SHARE_SVG, ownerPillClass } from './ui.js';
 import { parseImport } from './grocery.js';
 import { claudifyItem, hasApiKey, AIError } from './ai.js';
 import { gatherContext, householdKnowledge } from './hmcontext.js';
@@ -39,7 +39,7 @@ export function choreRow(chore, { onchange, showDue = true } = {}) {
     const overdue = !chore.done && chore.dueDate < todayStr();
     meta.push(el('span', { class: 'pill' + (overdue ? ' pill-overdue' : '') }, fmtDue(chore.dueDate)));
   }
-  if (chore.assignee) meta.push(el('span', { class: 'pill pill-accent' }, chore.assignee));
+  if (chore.assignee) meta.push(el('span', { class: `pill ${ownerPillClass(chore.assignee, familyMembers())}` }, chore.assignee));
   if (chore.notes && chore.notes.trim()) meta.push(el('span', { class: 'pill pill-note', title: 'Has a note', 'aria-label': 'Has a note', html: NOTE_SVG }));
   if (chore.focusSeconds) meta.push(el('span', { class: 'pill' }, `⏱ ${fmtFocusPill(chore.focusSeconds)}`));
   if (chore.done && chore.doneBy) meta.push(el('span', { class: 'pill pill-done' }, `done · ${chore.doneBy}`));

@@ -110,6 +110,24 @@ export function onSwipe(node, { onLeft, onRight, threshold = 50 } = {}) {
   }, { passive: true });
 }
 
+// Deterministic color for a task owner's pill, e.g. "pill-owner-3". When
+// `familyMembers` (the synced settings list) is passed, color is assigned by
+// each person's position in it — collision-free for the actual household,
+// and identical on both phones since the list itself is synced. A name not
+// in that list (a legacy or one-off assignee) falls back to a hash of the
+// name, so it's still stable, just not collision-guaranteed.
+const OWNER_COLOR_COUNT = 6;
+export function ownerPillClass(name, familyMembers = []) {
+  const s = String(name || '').trim();
+  if (!s) return '';
+  const idx = familyMembers.findIndex((m) => m.trim().toLowerCase() === s.toLowerCase());
+  if (idx !== -1) return `pill-owner-${(idx % OWNER_COLOR_COUNT) + 1}`;
+  let h = 0;
+  const low = s.toLowerCase();
+  for (let i = 0; i < low.length; i++) h = (h * 31 + low.charCodeAt(i)) | 0;
+  return `pill-owner-${(Math.abs(h) % OWNER_COLOR_COUNT) + 1}`;
+}
+
 export function escapeHtml(s = '') {
   return s
     .replace(/&/g, '&amp;')

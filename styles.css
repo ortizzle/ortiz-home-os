@@ -21,6 +21,16 @@
   --warn: #b7791f;
   --warn-soft: #f8eeda;
 
+  /* task-owner palette — fixed hues (not the user-selectable accent) so each
+     family member's color stays stable regardless of accent choice; picked
+     to stay clear of good/bad/warn's green/red/amber. */
+  --owner-1: #0e7490; --owner-1-soft: #cffafe; /* cyan */
+  --owner-2: #0369a1; --owner-2-soft: #e0f2fe; /* blue */
+  --owner-3: #4338ca; --owner-3-soft: #e0e7ff; /* indigo */
+  --owner-4: #6d28d9; --owner-4-soft: #ede9fe; /* violet */
+  --owner-5: #a21caf; --owner-5-soft: #fae8ff; /* fuchsia */
+  --owner-6: #9d174d; --owner-6-soft: #fce7f3; /* rose */
+
   /* shape + depth */
   --radius: 14px;
   --radius-sm: 10px;
@@ -54,6 +64,12 @@
   --bad-soft: #3a201c;
   --warn: #d9a441;
   --warn-soft: #3d2f14;
+  --owner-1: #22d3ee; --owner-1-soft: #083344;
+  --owner-2: #38bdf8; --owner-2-soft: #082f49;
+  --owner-3: #818cf8; --owner-3-soft: #1e1b4b;
+  --owner-4: #a78bfa; --owner-4-soft: #2e1065;
+  --owner-5: #e879f9; --owner-5-soft: #4a044e;
+  --owner-6: #f472b6; --owner-6-soft: #500724;
   --shadow-sm: none;
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
@@ -274,6 +290,14 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .pill-accent { color: var(--accent); background: var(--accent-soft); }
 .pill-overdue { color: var(--bad); background: var(--bad-soft); }
 .pill-soon { color: var(--warn); background: var(--warn-soft); }
+/* Task-owner color coding — class picked per-name by ownerPillClass() (ui.js)
+   so the same person is always the same color, no per-family setup needed. */
+.pill-owner-1 { color: var(--owner-1); background: var(--owner-1-soft); }
+.pill-owner-2 { color: var(--owner-2); background: var(--owner-2-soft); }
+.pill-owner-3 { color: var(--owner-3); background: var(--owner-3-soft); }
+.pill-owner-4 { color: var(--owner-4); background: var(--owner-4-soft); }
+.pill-owner-5 { color: var(--owner-5); background: var(--owner-5-soft); }
+.pill-owner-6 { color: var(--owner-6); background: var(--owner-6-soft); }
 /* Icon-only note flag on a task row — sized to sit inline with the text pills. */
 .pill-note { display: inline-flex; align-items: center; padding: 3px 6px; }
 .pill-note svg { display: block; width: 13px; height: 13px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
