@@ -29,6 +29,11 @@ export function clear(node) {
   return node;
 }
 
+// Standard "share" glyph — three linked nodes — matching the app's line-icon
+// style. Pass as `html` on an `.icon-btn` (Tasks header, Claudia's brief, the
+// weekly plan) so every share affordance is the same small icon.
+export const SHARE_SVG = '<svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="M8.3 10.7l7.4-4.4"/><path d="M8.3 13.3l7.4 4.4"/></svg>';
+
 // Render a minimal slice of Markdown — **bold** only — as safe DOM nodes
 // (text nodes + <strong>, never innerHTML, so model output can't inject
 // markup). Anything that isn't a matched **…** pair renders literally, so a
@@ -48,6 +53,12 @@ export function richText(str) {
   }
   if (last < s.length) out.push(document.createTextNode(s.slice(last)));
   return out;
+}
+
+// Strip the **bold** markers richText() renders, for plain-text payloads
+// (share sheets, clipboard) where the asterisks would just be noise.
+export function plainText(str) {
+  return String(str ?? '').replace(/\*\*(.+?)\*\*/g, '$1');
 }
 
 // Wrap a full-page re-render (clear(root) + rebuild) so it doesn't reset

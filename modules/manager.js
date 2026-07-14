@@ -5,7 +5,7 @@
 // feature.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, preserveScroll, disclosure, richText } from './ui.js';
+import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, disclosure, richText, plainText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, claudifyItem, hasApiKey, AIError } from './ai.js';
 import { editChoreModal } from './chores.js';
@@ -90,6 +90,35 @@ function reviewState(r) {
     resolved: r.resolved || {},
     dives: r.dives || {},
   };
+}
+
+// Deep link to the Claudia tab of the deployed app (same idea as the Tasks
+// share link in chores.js).
+const APP_CLAUDIA_URL = 'https://ortizzle.github.io/ortiz-home-os/#/manager';
+
+// A plain-text, WhatsApp-friendly version of the current weekly plan + link.
+// Dismissed ideas and resolved questions are decided business, so they're
+// dropped; added ideas stay, marked ✓, since the plan includes what's landed.
+function reviewShareText(out, state) {
+  const lines = [`🏡 Claudia's weekly plan${state.reviewedAt ? ` — planned ${fmtDay(state.reviewedAt)}` : ''}`, ''];
+  if (out.overview) lines.push(plainText(out.overview), '');
+  const items = (out.planItems || []).filter((i) => !state.dismissed.has(i.title));
+  if (items.length) {
+    lines.push('💡 Ideas');
+    for (const i of items) {
+      lines.push(`${state.added.has(i.title) ? '✓' : '•'} ${i.title}${i.who ? ` (${i.who})` : ''}`);
+      if (i.detail) lines.push(`  ${plainText(i.detail)}`);
+    }
+    lines.push('');
+  }
+  const open = (out.questions || []).filter((q) => !state.resolved[q]);
+  if (open.length) {
+    lines.push('❓ Claudia wants to know');
+    for (const q of open) lines.push(`• ${plainText(q)}`);
+    lines.push('');
+  }
+  lines.push(`Open in the app: ${APP_CLAUDIA_URL}`);
+  return lines.join('\n').trim();
 }
 
 // "Claudify" a plan item: expand it into a fuller, concrete write-up
@@ -241,8 +270,24 @@ export async function renderManager(root) {
   // the view — and even reloads never lose the rest of the list.
   const cachedReview = await getReview();
   if (cachedReview) renderReview(host, cachedReview.data, rerender, reviewState(cachedReview));
+  // Fetches the review at tap time (not render time), so it shares whatever
+  // is current even if a fresh plan landed after this header was built.
+  const shareReview = el('button', {
+    class: 'icon-btn',
+    'aria-label': 'Share the weekly plan',
+    title: 'Share the weekly plan',
+    html: SHARE_SVG,
+    onclick: async () => {
+      const r = await getReview();
+      if (!r?.data) return toast('No weekly plan to share yet — tap Plan the week first', 'warn');
+      shareText({ title: "Claudia's weekly plan", text: reviewShareText(r.data, reviewState(r)) });
+    },
+  });
   root.append(
-    el('div', { class: 'panel-head' }, [el('h4', {}, 'Plan the week with Claudia')]),
+    el('div', { class: 'panel-head' }, [
+      el('h4', {}, 'Plan the week with Claudia'),
+      cachedReview || hasApiKey() ? shareReview : null,
+    ]),
     el('section', { class: 'panel' }, [
       el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reads your calendar + lists, searches for fun things nearby that match your interests, and proposes what to plan. Add what you want with one tap, clear what you don’t (✓ Not needed). Run it a couple times a week.' : 'Add a Claude API key in Settings and Claudia will propose what to plan each week.'),
       reviewBtn,

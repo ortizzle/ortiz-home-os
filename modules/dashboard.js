@@ -4,7 +4,7 @@
 // household app that scores spouses is a divorce app).
 
 import { getAll, put, getSettings } from './store.js';
-import { el, clear, navigate, toast, todayStr, addDays, fmtDay, preserveScroll, richText } from './ui.js';
+import { el, clear, navigate, toast, todayStr, addDays, fmtDay, fmtDue, preserveScroll, richText, plainText, shareText, SHARE_SVG } from './ui.js';
 import { choreRow } from './chores.js';
 import { addGroceryItem } from './grocery.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
@@ -195,6 +195,34 @@ function apptRow(a, rerender) {
   ]);
 }
 
+// Deep link to the Home view of the deployed app (same idea as the Tasks
+// share link in chores.js) — the recipient lands on the live brief.
+const APP_HOME_URL = 'https://ortizzle.github.io/ortiz-home-os/#/home';
+
+// A plain-text, WhatsApp-friendly version of the day's brief + the app link.
+// Dismissed suggestions are noise to a recipient, so they're dropped; added
+// ones stay, marked ✓, since "we're on it" is part of the day's picture.
+function briefShareText(out, today, addedSet, dismissedSet) {
+  const lines = [`🏡 Claudia's brief — ${fmtDay(today)}`, ''];
+  if (out.headline) lines.push(plainText(out.headline), '');
+  for (const n of out.notes || []) lines.push(`• ${plainText(n)}`);
+  if (out.notes?.length) lines.push('');
+  const suggs = (out.suggestions || []).filter((s) => !dismissedSet.has(s.title));
+  if (suggs.length) {
+    lines.push('💡 Suggestions');
+    for (const s of suggs) {
+      const bits = [];
+      if (s.who) bits.push(s.who);
+      if (s.date) bits.push(fmtDue(s.date));
+      lines.push(`${addedSet.has(s.title) ? '✓' : '•'} ${s.title}${bits.length ? ` (${bits.join(' · ')})` : ''}`);
+      if (s.detail) lines.push(`  ${plainText(s.detail)}`);
+    }
+    lines.push('');
+  }
+  lines.push(`Open in the app: ${APP_HOME_URL}`);
+  return lines.join('\n').trim();
+}
+
 // The Home daily brief: a short read on TODAY that generates automatically on
 // the first open of the day (shared — whichever phone opens first generates
 // it, the other phone's Home tab shows the identical read), with a Refresh,
@@ -202,6 +230,19 @@ function apptRow(a, rerender) {
 async function dailyBriefSection(rerender, { today, settings }) {
   const host = el('div', {});
   const refresh = el('button', { class: 'link', onclick: () => runBrief(host, rerender, { today, settings }) }, 'Refresh');
+  // Fetches the brief at tap time (not render time), so it shares whatever is
+  // current even if a refresh landed after this header was built.
+  const share = el('button', {
+    class: 'icon-btn',
+    'aria-label': "Share Claudia's brief",
+    title: "Share Claudia's brief",
+    html: SHARE_SVG,
+    onclick: async () => {
+      const b = await getBrief(today);
+      if (!b?.data) return toast('No brief to share yet', 'warn');
+      shareText({ title: "Claudia's brief", text: briefShareText(b.data, today, new Set(b.added || []), new Set(b.dismissed || [])) });
+    },
+  });
 
   const cached = await getBrief(today);
   if (cached) {
@@ -219,7 +260,13 @@ async function dailyBriefSection(rerender, { today, settings }) {
   }
 
   return [
-    el('div', { class: 'panel-head' }, [el('h4', {}, "Claudia's brief"), hasApiKey() ? refresh : null]),
+    el('div', { class: 'panel-head' }, [
+      el('h4', {}, "Claudia's brief"),
+      el('div', { class: 'hm-actions', style: 'margin-top: 0' }, [
+        cached || hasApiKey() ? share : null,
+        hasApiKey() ? refresh : null,
+      ]),
+    ]),
     el('section', { class: 'panel' }, [host]),
   ];
 }
