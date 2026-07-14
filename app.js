@@ -32,8 +32,10 @@ const view = document.getElementById('view');
 // Shown in Settings so any phone can be checked at a glance. Cosmetic only —
 // checkForUpdate() below detects real changes by content, not this string —
 // but still worth bumping on ship so the label reflects what's running.
-// Keep in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v56';
+// Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
+// so the label itself says what changed, not just that something did. Keep
+// the number in step with the sw.js CACHE version when shipping.
+const APP_VERSION = 'v58 · sharing + owner colors';
 
 // ---------- theme ----------
 
