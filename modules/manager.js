@@ -444,10 +444,19 @@ function questionRow(q, rerender, state) {
   const resolveBtn = el('button', {
     class: 'btn seg-btn hm-add',
     onclick: () => {
-      const answer = el('input', { class: 'input', placeholder: 'Optional answer Claudia should remember…' });
+      const answer = el('input', { class: 'input', placeholder: 'Optional answer…' });
+      // Off by default: resolving just settles the question for this week's
+      // plan. Tick this only for answers worth keeping for the long run — they
+      // become a standing fact Claudia reads in every brief, review, and plan.
+      const remember = el('input', { type: 'checkbox' });
+      const rememberRow = el('label', { class: 'carry-row', style: 'margin-top: 8px' }, [
+        remember,
+        el('span', { class: 'carry-text' }, 'Remember this for Claudia (keeps it for future planning)'),
+      ]);
       const m = openModal('Resolve', [
         el('p', { class: 'muted small', style: 'margin-top: 0' }, q),
         answer,
+        rememberRow,
       ], [
         el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
         el('button', {
@@ -455,9 +464,9 @@ function questionRow(q, rerender, state) {
           onclick: async () => {
             const a = answer.value.trim();
             await markQuestionResolved(q, a || true);
-            logQuestionResolved(q, a).catch(() => {});
+            logQuestionResolved(q, a, { remember: remember.checked }).catch(() => {});
             m.close();
-            toast(a ? 'Claudia will remember that' : 'Resolved', 'success');
+            toast(a ? (remember.checked ? 'Resolved — Claudia will remember that' : 'Resolved') : 'Resolved', 'success');
             rerender();
           },
         }, 'Resolve'),
@@ -477,7 +486,9 @@ function questionRow(q, rerender, state) {
       el('button', {
         class: 'btn seg-btn hm-add',
         onclick: async () => {
-          // Resolve with her recommendation as the remembered answer.
+          // Resolve with her recommendation as the answer — kept on the review
+          // and in the follow-through log, but not promoted to standing memory
+          // (that's the opt-in "Remember this" on the Resolve dialog).
           await markQuestionResolved(q, text.slice(0, 400));
           logQuestionResolved(q, text.slice(0, 400)).catch(() => {});
           toast('Resolved with Claudia’s recommendation', 'success');

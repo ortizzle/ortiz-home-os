@@ -281,17 +281,20 @@ export async function logSuggestionAdded(title, targetStore, targetId) {
 }
 
 // Record the family's answer to one of Claudia's questions (or a plain
-// "resolved") so she builds on it instead of re-asking.
-export async function logQuestionResolved(question, answer = '') {
+// "resolved") so she builds on it instead of re-asking. The answer always
+// lands in the follow-through log (prevents re-asking, and rides into the
+// weekly review's follow-up). It's promoted to a standing memory fact — which
+// every prompt reads, forever — ONLY when `remember` is set: some answers are
+// just for this week's planning, others are worth keeping for the future, and
+// the family chooses which at resolve time (default: don't remember).
+export async function logQuestionResolved(question, answer = '', { remember = false } = {}) {
   const key = normKey(question);
   if (!key) return;
   const log = await getAll('suggLog');
   const entry = log.find((r) => r.key === key);
   const base = entry || { key, title: question, source: 'review', firstShownAt: todayStr(), lastShownAt: todayStr(), shownCount: 1 };
   await put('suggLog', { ...base, type: 'question', resolvedAt: todayStr(), answer: answer.trim() || null });
-  // Consolidation: a real answer becomes a memory fact, so what the review
-  // learned reaches the brief, meetings, and meals too (not just follow-through).
-  if (answer.trim()) {
+  if (remember && answer.trim()) {
     await put('memory', { cat: 'learned', text: `${question.trim().replace(/\s+/g, ' ')} → ${answer.trim()}`.slice(0, 240) });
   }
 }
