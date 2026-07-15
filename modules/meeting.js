@@ -107,6 +107,14 @@ async function getConcludedMap() {
   return map;
 }
 
+// The next FAMILY meeting date (YYYY-MM-DD), accounting for a concluded cycle.
+// Exported so the weekly review can anchor its planning horizon to it — the
+// plan should cover everything between now and when the family next sits down.
+export async function nextFamilyMeetingDate() {
+  const concluded = await getConcludedMap();
+  return nextMeetingDate('family', concluded.family);
+}
+
 // Gather the next 7 days of household activity into a text summary for
 // Claude to draft from. Not shown as its own panel (Calendar already covers
 // that) — this is purely AI context now.

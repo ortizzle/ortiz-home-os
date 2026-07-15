@@ -4,7 +4,7 @@
 // brief pins.
 
 import { getAll, get, put, remove as removeRec } from './store.js';
-import { addDays, fmtDay, todayStr } from './ui.js';
+import { addDays, fmtDay, parseDate, todayStr } from './ui.js';
 import { eventsForRange, canReadEmail, gmailRecent } from './gcal.js';
 import { STORES } from './grocery.js';
 
@@ -50,20 +50,95 @@ export async function seedMemory() {
   }
 }
 
+const MONTHS = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+
+// A 'learned' memory fact that refers to something already over — fires only
+// on an explicit, year-qualified date (YYYY-MM-DD or "Mon DD, YYYY") whose
+// latest such date is more than ~2 weeks past. Deliberately conservative: a
+// fact with no hard date, or any date still upcoming, is always kept. This
+// filters the PROMPT only (see memoryText) — the stored fact is never touched,
+// so nothing syncs away; a bygone event just stops being recited into the plan.
+function learnedFactIsStale(text, today) {
+  const cutoff = addDays(today, -14);
+  const isos = [...String(text).matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b/g)].map((m) => `${m[1]}-${m[2]}-${m[3]}`);
+  const worded = [...String(text).matchAll(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})\b/gi)]
+    .map((m) => `${m[3]}-${String(MONTHS[m[1].slice(0, 3).toLowerCase()] + 1).padStart(2, '0')}-${String(Number(m[2])).padStart(2, '0')}`);
+  const dates = [...isos, ...worded];
+  if (!dates.length) return false;      // no hard date → timeless, always keep
+  return dates.sort().at(-1) < cutoff;  // even the newest date is well past → stale
+}
+
 // Compact one-line-per-fact block, grouped by category order. Streamlined on
-// purpose — this rides inside every prompt, so brevity is a feature.
-export async function memoryText() {
-  const all = (await getAll('memory')).filter((m) => (m.text || '').trim());
+// purpose — this rides inside every prompt, so brevity is a feature. Pass
+// `{ today }` (the weekly review does) to drop 'learned' facts that point at a
+// bygone date, so a long-finished event stops surfacing in the plan.
+export async function memoryText({ today } = {}) {
+  let all = (await getAll('memory')).filter((m) => (m.text || '').trim());
+  if (today) all = all.filter((m) => !(m.cat === 'learned' && learnedFactIsStale(m.text, today)));
   all.sort((a, b) => MEMORY_CATS.indexOf(a.cat) - MEMORY_CATS.indexOf(b.cat));
   return all.map((m) => `- [${m.cat}] ${m.text.trim()}`).join('\n');
 }
 
-// The single knowledge block every Claudia call should use for `notes`:
-// the freeform notes field + the memory facts.
-export async function householdKnowledge(settings) {
+// The single knowledge block every Claudia call should use for `notes`: the
+// freeform notes field + the memory facts. `{ today }` (passed by the weekly
+// review) filters stale 'learned' facts out of the memory block.
+export async function householdKnowledge(settings, opts = {}) {
   const notes = ((settings || {}).householdNotes || DEFAULT_HOUSEHOLD_NOTES).trim();
-  const mem = await memoryText();
+  const mem = await memoryText(opts);
   return mem ? `${notes}\n\nCLAUDIA'S MEMORY — standing facts about this family (treat as true):\n${mem}` : notes;
+}
+
+// Deterministically pull upcoming birthdays out of the freeform knowledge text
+// so Claudia never has to do (unreliable) date math to remember them. Only
+// segments that actually talk about birthdays are scanned — they mention
+// "birthday" or "born" — so an ordinary event date in the notes ("July 4 BBQ")
+// can't be mistaken for someone's birthday. Each hit's next occurrence is
+// computed from today; those within `withinDays` are returned, soonest first.
+export function upcomingBirthdays(knowledge, today, withinDays = 35) {
+  const out = [];
+  const seen = new Set();
+  const dateRe = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/gi;
+  // Gate per LINE (not per semicolon-clause): a single birthday fact often
+  // packs several people with the keyword stated once up front ("Birthdays:
+  // Chris — Feb 26; Kat — Aug 15"), so splitting on ';' would strand everyone
+  // after the first. Each date's person is resolved by looking back within the
+  // line, so multiple people on one line still attribute correctly.
+  for (const seg of String(knowledge || '').split(/\n+/)) {
+    if (!/birthday|born\b/i.test(seg)) continue;
+    let m;
+    dateRe.lastIndex = 0;
+    while ((m = dateRe.exec(seg))) {
+      const mon = MONTHS[m[1].slice(0, 3).toLowerCase()];
+      const day = Number(m[2]);
+      if (mon == null || day < 1 || day > 31) continue;
+      // The person is the last capitalized word before the date in this
+      // clause, skipping labels ("Birthdays", "Kids") and month names.
+      const names = (seg.slice(0, m.index).match(/[A-Z][a-zA-Z]+/g) || []).filter(
+        (w) => !/^(Birthday|Birthdays|Kids|Born|And|Both|The)$/i.test(w) && !(w.slice(0, 3).toLowerCase() in MONTHS)
+      );
+      const name = names.at(-1);
+      if (!name) continue;
+      const iso = (yy) => `${yy}-${String(mon + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const y = parseDate(today).getFullYear();
+      let occ = iso(y);
+      if (occ < today) occ = iso(y + 1); // already passed this year → next year
+      const daysAway = Math.round((parseDate(occ) - parseDate(today)) / 86400000);
+      if (daysAway < 0 || daysAway > withinDays) continue;
+      const key = `${name.toLowerCase()}|${mon}|${day}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ name, date: occ, daysAway });
+    }
+  }
+  return out.sort((a, b) => a.daysAway - b.daysAway);
+}
+
+// Format computed birthdays for the prompt: "- Kat: Sat, Aug 15 (in 31 days)".
+export function birthdaysText(list) {
+  return (list || []).map((b) => {
+    const when = b.daysAway === 0 ? 'today!' : b.daysAway === 1 ? 'tomorrow' : `in ${b.daysAway} days`;
+    return `- ${b.name}: ${fmtDay(b.date)} (${when})`;
+  }).join('\n');
 }
 
 // ---------- brief pins (synced — a pin either of you adds, both of you see) ----------

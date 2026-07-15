@@ -5,12 +5,18 @@
 // feature.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, disclosure, richText, plainText } from './ui.js';
+import { el, clear, toast, todayStr, fmtDay, addDays, parseDate, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, disclosure, richText, plainText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, claudifyItem, hasApiKey, AIError } from './ai.js';
 import { editChoreModal } from './chores.js';
-import { gatherContext, householdKnowledge, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
-import { meetingSection } from './meeting.js';
+import { gatherContext, householdKnowledge, upcomingBirthdays, birthdaysText, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
+import { meetingSection, nextFamilyMeetingDate } from './meeting.js';
+
+// Whole days from a→b (both YYYY-MM-DD). Uses local calendar dates, so DST
+// shifts can't push the count off by a day the way raw ms subtraction can.
+function daysBetween(a, b) {
+  return Math.round((parseDate(b) - parseDate(a)) / 86400000);
+}
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
@@ -235,16 +241,32 @@ export async function renderManager(root) {
       clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reviewing the week & checking what’s on nearby…')]));
       try {
         const settings = getSettings();
+        const today = todayStr();
+        // Plan through the next family meeting — the point the household next
+        // sits down together — so nothing between now and then goes unseen.
+        // If that meeting is under a week out, reach the following week's
+        // instead, so the horizon is always at least 7 days forward.
+        let throughDate = await nextFamilyMeetingDate();
+        while (daysBetween(today, throughDate) < 7) throughDate = addDays(throughDate, 7);
+        // +1 so the meeting day itself is inside the [start, start+days) window.
+        const windowDays = daysBetween(today, throughDate) + 1;
+        // Filter bygone 'learned' facts out of the memory block (keep-memory,
+        // filter-the-prompt), then compute upcoming birthdays from what's left
+        // so Claudia gets them as explicit dated lines, not date math to do.
+        const notes = await householdKnowledge(settings, { today });
+        const birthdays = birthdaysText(upcomingBirthdays(notes, today, 35));
         const [ctx, follow] = await Promise.all([
-          gatherContext({ start: todayStr(), days: 14, email: true }),
+          gatherContext({ start: today, days: windowDays, email: true }),
           followUpText(),
         ]);
         const out = await reviewWeek({
           family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
-          notes: await householdKnowledge(settings),
+          notes,
+          birthdays,
           interests: settings.familyInterests || '',
           kids: settings.kidsAges || DEFAULT_KIDS,
-          today: todayStr(),
+          today,
+          throughDate,
           events: ctx.eventsText,
           chores: ctx.choresText,
           groceries: ctx.groceriesText,

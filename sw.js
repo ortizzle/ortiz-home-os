@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v58-sharing-owner-colors';
+const CACHE = 'ohos-shell-v59-week-planning';
 const SHELL = [
   './',
   './index.html',

@@ -299,12 +299,12 @@ In the headline and notes, use **bold** (Markdown) sparingly — wrap only the f
 // Weekly review for the House Manager tab — proposes a concrete plan of items
 // to complete for the rest of the week. Each item is typed so it can be added
 // to the living weekly plan (or straight to tasks/calendar/grocery).
-export async function reviewWeek({ family = [], notes = '', interests = '', kids = '', today, events = '', chores = '', groceries = '', plan = '', meals = '', agenda = '', meetingDecisions = '', email = '', follow = '' } = {}) {
+export async function reviewWeek({ family = [], notes = '', birthdays = '', interests = '', kids = '', today, throughDate = '', events = '', chores = '', groceries = '', plan = '', meals = '', agenda = '', meetingDecisions = '', email = '', follow = '' } = {}) {
   const system = HM_ROLE(family) +
     ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
     ' CALENDAR ATTRIBUTION: events may sit on either parent\'s Google calendar — whose calendar an event is on says NOTHING about who attends or drives. Never guess who an event belongs to or who\'s taking the kids; name a person only when the event title/details or the household notes say so.' +
-    ' TRIPS: the calendar spans the next ~2 weeks and marks multi-day events as "(MULTI-DAY / trip)". For any trip in that window, plan around it with real lead time — a packing list (or packing reminder) a few days before, plus prep like holding mail, pet/plant care, travel documents, chargers, and confirming reservations. Note who is away and when, since that changes what else fits those days.' +
-    ' BIRTHDAYS: birthdays and anniversaries may be on the calendar OR listed in the household notes — watch both, and remember the year in a noted date is the birth year (compute the upcoming occurrence for this year). For any that falls within about the next 3 weeks, get ahead of it — add a plan item to choose and buy/order a gift with enough lead time to arrive, and in that item\'s "detail" name the person and offer 2-3 concrete, specific gift ideas fitted to them (use what you know of their age and interests; avoid generic "a gift card"). ALSO add a question asking what that person is into lately or would love right now, so the ideas can sharpen — address the person by name. Raise each birthday only once with real lead time, not every week.' +
+    ' TRIPS: the calendar spans the whole planning window and marks multi-day events as "(MULTI-DAY / trip)". For any trip in that window, plan around it with real lead time — a packing list (or packing reminder) a few days before, plus prep like holding mail, pet/plant care, travel documents, chargers, and confirming reservations. Note who is away and when, since that changes what else fits those days.' +
+    ' BIRTHDAYS: you are given a computed UPCOMING BIRTHDAYS list (already date-resolved from the notes — trust it, do not recompute) covering about the next month; also watch the calendar for any birthday/anniversary not on that list. For each one coming up, get ahead of it — add a plan item to choose and buy/order a gift with enough lead time to arrive, and in that item\'s "detail" name the person and offer 2-3 concrete, specific gift ideas fitted to them (use what you know of their age and interests; avoid generic "a gift card"). ALSO add a question asking what that person is into lately or would love right now, so the ideas can sharpen — address the person by name. Raise each birthday only once with real lead time, not every week.' +
     ' COUPLE RHYTHM: the household notes may set a standing couples cadence (e.g. a "2-2-2" rhythm: date night every 2 weeks, a weekend getaway every ~2 months, a destination trip every ~2 years). Help keep it alive. If the calendar and plan ahead don\'t already show the next one coming due, propose it as an "appointment" so it can go on the calendar, and put 2-3 concrete, specific ideas in the "detail": for date nights use their city and interests and web search for something real and timely (a show, a new restaurant, a seasonal event, with the real date/venue); for a getaway or trip, name a real, fitting destination for the season. Pace it to the cadence — a date night can surface most reviews when none is booked, but raise the getaway and the big trip only occasionally, and never re-raise one already suggested recently or already on the plan/calendar.' +
     ' If recent email surfaces something worth planning around (an RSVP, a bill due, a school notice, an invite), fold it into the plan — only when it\'s genuinely actionable, not just noise.' +
     ' Also look OUTWARD: use web search to find 1-2 timely, real things this family would genuinely enjoy this week — a movie they\'d love playing nearby, a local event, a seasonal activity — matched to their interests and their open evenings. Include the real date, time, and venue from the search results, and only suggest what you actually verified. If nothing good is on, say nothing rather than padding.' +
@@ -313,10 +313,16 @@ export async function reviewWeek({ family = [], notes = '', interests = '', kids
     ' GETTING TO KNOW THE FAMILY: the parents want you to build a richer picture of the household over time. Beyond plan-sharpening questions, ask a warm, specific "getting to know you" question or two — about the kids, the pets, routines, traditions, tastes, or what a good week feels like here. One topic at a time, easy to answer, and never re-ask anything already answered in your follow-through log; build on what you already know.' +
     ' FOLLOW-THROUGH: you get a log of your own past suggestions. Never re-ask a question the family already answered; build on their answer instead. Follow up ONCE, gently, on something that was added but never finished ("still want to get to X?"). Don\'t re-suggest something ignored twice in a row — let it go unless it becomes genuinely urgent. Briefly acknowledge a win if something you suggested got done. No nagging, no guilt, no scorekeeping.' +
     ' AVOID DUPLICATES: the family has already captured plenty. Before proposing anything, check it against the open tasks, weekly plan, calendar, meeting agenda, and grocery list below — never re-suggest something that already exists in any of them (e.g. don\'t suggest "get a small gift" if it\'s already an open task). This is the most common mistake; when in doubt, leave it out.';
-  const prompt = `Today is ${today}. Propose a plan of what's worth getting done for the rest of this week — and anything fun worth planning around.
+  const horizon = throughDate
+    ? `between now and the family's next family meeting on ${throughDate} (plan the whole stretch, not just the next day or two)`
+    : `for the rest of this week`;
+  const prompt = `Today is ${today}. Propose a plan of what's worth getting done ${horizon} — and anything fun worth planning around.
 
 HOUSEHOLD NOTES / PREFERENCES (background only — do not repeat back):
 ${notes || '(none provided)'}
+
+UPCOMING BIRTHDAYS (computed from the notes — plan gift lead time for these):
+${birthdays || '(none in the next month)'}
 
 FAMILY INTERESTS (for fun / outing ideas):
 ${interests || '(none listed — skip outing ideas)'}
@@ -327,7 +333,7 @@ ${follow || '(no history yet)'}
 DINNERS PLANNED THIS WEEK:
 ${meals || '(none planned)'}
 
-UPCOMING CALENDAR (next ~2 weeks):
+UPCOMING CALENDAR (now through your next family meeting${throughDate ? ` on ${throughDate}` : ''}):
 ${events || '(no calendar events available — Google Calendar may not be connected)'}
 
 OPEN TASKS (already captured — do NOT re-suggest these):
