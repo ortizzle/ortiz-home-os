@@ -35,7 +35,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v60 · opt-in memory on resolve';
+const APP_VERSION = 'v61 · prune follow-through log';
 
 // ---------- theme ----------
 
@@ -169,12 +169,25 @@ function memorySection(s, memory, memFacts = [], rerender = () => {}) {
     el('button', { class: 'btn seg-btn', style: 'margin-top: 4px', onclick: () => factModal(null) }, '+ Add a fact'),
   ];
 
+  // Forget one follow-through line — removes just that suggLog record (kept
+  // separate from the editable facts above). Synced, so it clears on both
+  // phones; tombstoned like any delete, so it won't drift back on next sync.
+  const forgetLog = (id, label) => el('button', {
+    class: 'link', style: 'flex: 0 0 auto; padding: 0 4px; font-size: 16px; line-height: 1',
+    'aria-label': `Forget: ${label}`, title: 'Forget this',
+    onclick: async () => { await remove('suggLog', id); toast('Forgotten'); rerender(); },
+  }, '×');
+  const logLi = (id, label, children) =>
+    el('li', { style: 'display: flex; align-items: baseline; justify-content: space-between; gap: 8px' }, [
+      el('span', {}, children), forgetLog(id, label),
+    ]);
+
   const memNodes = [];
   if (memory.resolved.length) {
     memNodes.push(
       heading('Questions you’ve answered'),
       el('ul', { class: 'meeting-list' }, memory.resolved.map((r) =>
-        el('li', {}, [el('strong', {}, r.question), r.answer ? ` — ${r.answer}` : ' — resolved'])
+        logLi(r.id, r.question, [el('strong', {}, r.question), r.answer ? ` — ${r.answer}` : ' — resolved'])
       ))
     );
   }
@@ -182,14 +195,14 @@ function memorySection(s, memory, memFacts = [], rerender = () => {}) {
     memNodes.push(
       heading('Suggestions you’ve added'),
       el('ul', { class: 'meeting-list' }, memory.added.slice(0, 15).map((a) =>
-        el('li', {}, `${a.title} — added ${fmtDay(a.addedAt)}${a.done ? ', done ✓' : ''}`)
+        logLi(a.id, a.title, `${a.title} — added ${fmtDay(a.addedAt)}${a.done ? ', done ✓' : ''}`)
       ))
     );
   }
   if (memory.repeated.length) {
     memNodes.push(
       heading('Suggested more than once, not added'),
-      el('ul', { class: 'meeting-list' }, memory.repeated.map((r) => el('li', {}, `${r.title} (×${r.shownCount})`)))
+      el('ul', { class: 'meeting-list' }, memory.repeated.map((r) => logLi(r.id, r.title, `${r.title} (×${r.shownCount})`)))
     );
   }
   if (!memNodes.length) {

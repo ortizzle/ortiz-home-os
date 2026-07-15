@@ -333,10 +333,11 @@ export async function followUpText() {
   return lines.join('\n');
 }
 
-// Read-only, human-facing view of Claudia's follow-through memory (for the
-// Settings "What Claudia knows" page). Same underlying data as
-// followUpText() but grouped for display and WITHOUT the pruning
-// side-effect — viewing your memory should never delete it.
+// Human-facing view of Claudia's follow-through memory (for the Settings
+// "What Claudia knows" page). Same underlying data as followUpText() but
+// grouped for display and WITHOUT the pruning side-effect — viewing your
+// memory should never delete it. Each entry carries its suggLog record `id`
+// so the Settings page can let you forget a single line (delete that record).
 export async function getSuggestionMemory() {
   const log = await getAll('suggLog');
   const resolved = [];
@@ -344,11 +345,11 @@ export async function getSuggestionMemory() {
   const repeated = [];
   for (const r of log) {
     if (r.type === 'question' && r.resolvedAt) {
-      resolved.push({ question: r.title, answer: r.answer || null, resolvedAt: r.resolvedAt });
+      resolved.push({ id: r.id, question: r.title, answer: r.answer || null, resolvedAt: r.resolvedAt });
     } else if (r.addedAt) {
-      added.push({ title: r.title, addedAt: r.addedAt, done: await targetDone(r.targetStore, r.targetId) });
+      added.push({ id: r.id, title: r.title, addedAt: r.addedAt, done: await targetDone(r.targetStore, r.targetId) });
     } else if ((r.shownCount || 1) >= 2) {
-      repeated.push({ title: r.title, shownCount: r.shownCount });
+      repeated.push({ id: r.id, title: r.title, shownCount: r.shownCount });
     }
   }
   resolved.sort((a, b) => (b.resolvedAt || '').localeCompare(a.resolvedAt || ''));
