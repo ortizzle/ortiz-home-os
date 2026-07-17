@@ -377,6 +377,53 @@ function openTasksShareText(groups) {
   return lines.join('\n').trim();
 }
 
+// ----- Tasks view: search / assignee / sort filter state -----
+// Kept at module scope so it survives a full re-render — ticking a task done
+// rebuilds the whole view, and your search + filters should stay put across
+// that. The bar only appears once the list is long enough to be worth
+// filtering (or a filter is already on), so short lists stay clutter-free.
+const FILTER_THRESHOLD = 8;
+const UNASSIGNED = ' unassigned'; // sentinel: assignee filter → "no owner"
+const taskFilter = { q: '', assignee: '', sort: 'due' };
+
+function taskFilterActive() {
+  return !!(taskFilter.q.trim() || taskFilter.assignee || taskFilter.sort !== 'due');
+}
+
+// Does a chore pass the active assignee + text filters? `q` is the search text
+// pre-lowercased once by the caller (not re-lowercased per row). Search spans
+// the title, notes, and assignee so "kat", a word from a note, or a name all
+// find the task.
+function matchesFilters(c, q) {
+  const a = taskFilter.assignee;
+  if (a === UNASSIGNED) { if (c.assignee) return false; }
+  else if (a && (c.assignee || '') !== a) return false;
+  if (q) {
+    const hay = `${c.title || ''} ${c.notes || ''} ${c.assignee || ''}`.toLowerCase();
+    if (!hay.includes(q)) return false;
+  }
+  return true;
+}
+
+// The four due-date buckets, each internally sorted by due date — the default
+// ('due') view. The other sorts render one flat list instead.
+function dueGroups(open, today) {
+  const sorted = open.slice().sort(byDue);
+  return [
+    ['Overdue', sorted.filter((c) => c.dueDate && c.dueDate < today)],
+    ['Today', sorted.filter((c) => c.dueDate === today)],
+    ['Upcoming', sorted.filter((c) => c.dueDate && c.dueDate > today)],
+    ['Someday', sorted.filter((c) => !c.dueDate)],
+  ];
+}
+
+function byTitle(a, b) {
+  return (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' });
+}
+function byNewest(a, b) {
+  return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1;
+}
+
 export async function renderChores(root) {
   clear(root);
   let chores = await getAll('chores');
@@ -392,28 +439,24 @@ export async function renderChores(root) {
   const rerender = preserveScroll(() => renderChores(root));
 
   const today = todayStr();
-  const open = chores.filter((c) => !c.done).sort(byDue);
-  const groups = [
-    ['Overdue', open.filter((c) => c.dueDate && c.dueDate < today)],
-    ['Today', open.filter((c) => c.dueDate === today)],
-    ['Upcoming', open.filter((c) => c.dueDate && c.dueDate > today)],
-    ['Someday', open.filter((c) => !c.dueDate)],
-  ];
-  const done = chores
-    .filter((c) => c.done)
-    .sort((a, b) => ((b.doneAt || '') < (a.doneAt || '') ? -1 : 1));
+  const members = familyMembers();
+  const openAll = chores.filter((c) => !c.done);
 
   root.append(
     el('div', { class: 'view-head-row' }, [
       el('h1', {}, 'Tasks'),
       el('div', { class: 'hm-actions' }, [
-        open.length
+        openAll.length
           ? el('button', {
               class: 'icon-btn',
               'aria-label': 'Share open tasks',
               title: 'Share open tasks',
               html: SHARE_SVG,
-              onclick: () => shareText({ title: 'Ortiz Home OS — open tasks', text: openTasksShareText(groups) }),
+              // Share what's on screen: if a filter is active, share that slice.
+              onclick: () => {
+                const groups = dueGroups(openAll.filter((c) => matchesFilters(c, taskFilter.q.trim().toLowerCase())), today);
+                shareText({ title: 'Ortiz Home OS — open tasks', text: openTasksShareText(groups) });
+              },
             })
           : null,
         el('button', { class: 'btn btn-primary', onclick: () => editChoreModal(null, rerender) }, '+ New task'),
@@ -428,19 +471,84 @@ export async function renderChores(root) {
         el('p', { class: 'muted' }, 'One-off household tasks live here. For recurring reminders (filters, gutters…), add them straight to Calendar.'),
       ])
     );
+    return;
   }
 
-  for (const [label, list] of groups) {
-    if (!list.length) continue;
-    root.append(
-      el('h4', { class: 'group-heading' }, label),
-      el('section', { class: 'panel' }, list.map((c) => choreRow(c, { onchange: rerender })))
-    );
+  // The list body re-renders on every search keystroke / filter change; the
+  // controls above it don't, so the search box keeps focus while you type.
+  const listHost = el('div', {});
+  const renderList = () => {
+    clear(listHost);
+    const q = taskFilter.q.trim().toLowerCase();
+    const open = openAll.filter((c) => matchesFilters(c, q));
+    const done = chores
+      .filter((c) => c.done && matchesFilters(c, q))
+      .sort((a, b) => ((b.doneAt || '') < (a.doneAt || '') ? -1 : 1));
+
+    if (taskFilterActive()) {
+      listHost.append(el('p', { class: 'muted small', style: 'margin: 0 0 10px' },
+        `${open.length} of ${openAll.length} open task${openAll.length === 1 ? '' : 's'}`));
+    }
+
+    if (!open.length && !done.length) {
+      listHost.append(el('div', { class: 'empty compact' }, [el('p', { class: 'muted' }, 'No tasks match.')]));
+    } else if (taskFilter.sort === 'due') {
+      for (const [label, list] of dueGroups(open, today)) {
+        if (!list.length) continue;
+        listHost.append(
+          el('h4', { class: 'group-heading' }, label),
+          el('section', { class: 'panel' }, list.map((c) => choreRow(c, { onchange: rerender })))
+        );
+      }
+    } else if (open.length) {
+      const sorted = open.slice().sort(taskFilter.sort === 'az' ? byTitle : byNewest);
+      listHost.append(el('section', { class: 'panel' }, sorted.map((c) => choreRow(c, { onchange: rerender }))));
+    }
+
+    if (done.length) {
+      listHost.append(disclosure(`Done (${done.length})`, el('section', { class: 'panel' }, done.slice(0, 20).map((c) => choreRow(c, { onchange: rerender })))));
+    }
+  };
+
+  // Show the filter bar once the list is long enough to warrant it, or whenever
+  // a filter is already active (so you can always see and clear it).
+  if (openAll.length >= FILTER_THRESHOLD || taskFilterActive()) {
+    const search = el('input', {
+      class: 'input task-search', type: 'search', placeholder: 'Search tasks…',
+      value: taskFilter.q, 'aria-label': 'Search tasks',
+      oninput: () => { taskFilter.q = search.value; renderList(); },
+    });
+    const assignee = el('select', {
+      class: 'input task-select', 'aria-label': 'Filter by assignee',
+      onchange: () => { taskFilter.assignee = assignee.value; renderList(); },
+    }, [
+      el('option', { value: '' }, 'Everyone'),
+      el('option', { value: UNASSIGNED, selected: taskFilter.assignee === UNASSIGNED ? 'selected' : null }, 'Unassigned'),
+      ...members.map((n) => el('option', { value: n, selected: taskFilter.assignee === n ? 'selected' : null }, n)),
+      // a filter left pointing at someone no longer in the family list — keep it
+      // selectable so it doesn't silently reset out from under you
+      taskFilter.assignee && taskFilter.assignee !== UNASSIGNED && !members.includes(taskFilter.assignee)
+        ? el('option', { value: taskFilter.assignee, selected: 'selected' }, taskFilter.assignee) : null,
+    ]);
+    const sort = el('select', {
+      class: 'input task-select', 'aria-label': 'Sort tasks',
+      onchange: () => { taskFilter.sort = sort.value; renderList(); },
+    }, [
+      el('option', { value: 'due', selected: taskFilter.sort === 'due' ? 'selected' : null }, 'By due date'),
+      el('option', { value: 'az', selected: taskFilter.sort === 'az' ? 'selected' : null }, 'A–Z'),
+      el('option', { value: 'added', selected: taskFilter.sort === 'added' ? 'selected' : null }, 'Newest'),
+    ]);
+    const clearBtn = taskFilterActive()
+      ? el('button', {
+          class: 'link task-filter-clear',
+          onclick: () => { taskFilter.q = ''; taskFilter.assignee = ''; taskFilter.sort = 'due'; rerender(); },
+        }, 'Clear')
+      : null;
+    root.append(el('div', { class: 'task-filters' }, [search, assignee, sort, clearBtn]));
   }
 
-  if (done.length) {
-    root.append(disclosure(`Done (${done.length})`, el('section', { class: 'panel' }, done.slice(0, 20).map((c) => choreRow(c, { onchange: rerender })))));
-  }
+  root.append(listHost);
+  renderList();
 
   // ----- Keep paste-import (Kat's list bridge) — collapsed: occasional use -----
   const importArea = el('textarea', { class: 'input', rows: 4, placeholder: 'Paste a to-do list from Google Keep — one item per line.\nBullets and checkboxes are fine.' });

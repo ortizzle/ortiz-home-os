@@ -368,6 +368,20 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .capture-kind .seg-btn { flex: 0 0 auto; padding: 7px 14px; font-size: 13px; }
 
 /* ---------- task/chore rows ---------- */
+/* Tasks view search + assignee + sort bar (see chores.js renderChores). Shows
+   once the list grows past a threshold, or whenever a filter is active. */
+.task-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+.task-filters .input { margin-bottom: 0; font-size: 14px; padding: 9px 12px; }
+.task-filters .task-search { flex: 1 1 150px; min-width: 130px; }
+.task-filters .task-select {
+  flex: 0 1 auto; width: auto; padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' fill='none' stroke='%23888' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 11px;
+}
+.task-filter-clear { flex: 0 0 auto; padding: 4px 6px; font-size: 13px; }
+
 .task-row {
   display: flex; align-items: center; gap: 12px;
   padding: 10px 0;
