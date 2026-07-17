@@ -5,13 +5,14 @@
 // feature.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, disclosure, richText, plainText } from './ui.js';
+import { el, clear, toast, todayStr, addDays, fmtDay, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, disclosure, richText, plainText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, claudifyItem, hasApiKey, AIError } from './ai.js';
 import { editChoreModal } from './chores.js';
-import { gatherContext, householdKnowledge, upcomingBirthdays, birthdaysText, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
+import { gatherContext, householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays, birthdaysText, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
 import { meetingSection, nextMeetingDates, planningHorizon } from './meeting.js';
 import { digestSection } from './digest.js';
+import { appointmentsFor } from './calendar.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
@@ -294,12 +295,18 @@ export async function renderManager(root) {
         // Filter bygone 'learned' facts out of the memory block (keep-memory,
         // filter-the-prompt), then compute upcoming birthdays from what's left
         // so Claudia gets them as explicit dated lines, not date math to do.
+        // Birthday-titled calendar events merge in too (deduped), so a
+        // birthday that lives only on the calendar still gets gift lead time.
         const notes = await householdKnowledge(settings, { today });
-        const birthdays = birthdaysText(upcomingBirthdays(notes, today, 35));
-        const [ctx, follow] = await Promise.all([
+        const [ctx, follow, bdayAppts] = await Promise.all([
           gatherContext({ start: today, days: windowDays, email: true }),
           followUpText(),
+          appointmentsFor(today, addDays(today, 36)).catch(() => []),
         ]);
+        const birthdays = birthdaysText(mergeBirthdays(
+          upcomingBirthdays(notes, today, 35),
+          calendarBirthdays(bdayAppts, today, 35)
+        ));
         const out = await reviewWeek({
           family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
           notes,

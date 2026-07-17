@@ -8,10 +8,11 @@
 import { getAll, getSettings } from './store.js';
 import { el, disclosure, navigate, fmtDay, todayStr, addDays } from './ui.js';
 import { appointmentsFor } from './calendar.js';
-import { householdKnowledge, upcomingBirthdays, getSuggestionMemory } from './hmcontext.js';
+import { householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays, getSuggestionMemory } from './hmcontext.js';
 import { planningHorizon, collapseAppts } from './meeting.js';
 
 const CAP = 6; // per-list cap — the digest is a scan, not an archive
+const BDAY_DAYS = 35; // birthday lookahead (~5 weeks), wider than the horizon
 
 function sub(text) {
   return el('h5', { class: 'meeting-unit-heading' }, text);
@@ -37,8 +38,12 @@ export async function digestSection({ open = true } = {}) {
   const today = todayStr();
   const settings = getSettings();
   const { throughDate } = await planningHorizon(today);
+  // Fetch through the LATER of the meeting horizon and the birthday lookahead
+  // (ISO strings, so max is lexical) — "Coming up" still cuts at throughDate,
+  // but the birthday scan below gets the full ~5 weeks of calendar to read.
+  const fetchEnd = [addDays(throughDate, 1), addDays(today, BDAY_DAYS + 1)].sort().at(-1);
   const [appts, chores, agenda, memory, knowledge] = await Promise.all([
-    appointmentsFor(today, addDays(throughDate, 1)).catch(() => []),
+    appointmentsFor(today, fetchEnd).catch(() => []),
     getAll('chores'),
     getAll('agenda'),
     getSuggestionMemory(),
@@ -62,8 +67,12 @@ export async function digestSection({ open = true } = {}) {
     for (const r of recurring) nodes.push(line(`↻ ${r.title} (${r.range}${r.startTime ? ', ' + to12(r.startTime) : ''})`));
   }
 
-  // ----- birthdays: computed from Claudia's memory, ~5 weeks out -----
-  const bdays = upcomingBirthdays(knowledge, today, 35);
+  // ----- birthdays: Claudia's memory + birthday-titled calendar events,
+  // ~5 weeks out, deduped so a birthday she knows isn't listed twice -----
+  const bdays = mergeBirthdays(
+    upcomingBirthdays(knowledge, today, BDAY_DAYS),
+    calendarBirthdays(appts, today, BDAY_DAYS)
+  );
   if (bdays.length) {
     nodes.push(sub('Birthdays'));
     for (const b of bdays) {

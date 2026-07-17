@@ -133,6 +133,45 @@ export function upcomingBirthdays(knowledge, today, withinDays = 35) {
   return out.sort((a, b) => a.daysAway - b.daysAway);
 }
 
+// Birthdays that live only on the CALENDAR (e.g. "Marelina Ortiz's Birthday")
+// rather than in Claudia's memory. Scans event titles for a birthday keyword,
+// pulls the person's name out of the title, and returns the same shape as
+// upcomingBirthdays() so the two lists merge with mergeBirthdays() below.
+export function calendarBirthdays(appts, today, withinDays = 35) {
+  const end = addDays(today, withinDays);
+  const out = [];
+  const seen = new Set();
+  const strip = (s) => s.replace(/\bhappy\b/gi, '').replace(/[🎂🎉🎈]/gu, '').replace(/^[\s:\-–—!,.'’]+|[\s:\-–—!,.'’]+$/g, '').trim();
+  for (const a of appts || []) {
+    if (!a?.date || a.date < today || a.date > end) continue;
+    const title = String(a.title || '');
+    const m = title.match(/\b(birthday|bday|b-day)\b/i);
+    if (!m) continue;
+    // The person is usually named before the keyword ("Marelina Ortiz's
+    // Birthday"), sometimes after ("Birthday: Marelina"); the raw title is the
+    // last resort so a match never gets dropped just because parsing failed.
+    const before = strip(title.slice(0, m.index).replace(/['’]s\s*$/i, ''));
+    const name = before || strip(title.slice(m.index + m[0].length)) || title.trim();
+    const daysAway = Math.round((parseDate(a.date) - parseDate(today)) / 86400000);
+    const key = `${name.toLowerCase()}|${a.date.slice(5)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ name, date: a.date, daysAway });
+  }
+  return out.sort((a, b) => a.daysAway - b.daysAway);
+}
+
+// Merge memory- and calendar-derived birthday lists, soonest first. A calendar
+// event duplicating a birthday Claudia already knows ("Kat's Birthday" on Aug
+// 15 when memory says Kat — Aug 15) is dropped by first-name + month-day, so
+// memory (which carries the exact name she uses) wins over the event title.
+export function mergeBirthdays(fromMemory, fromCalendar) {
+  const key = (b) => `${b.name.toLowerCase().split(/\s+/)[0]}|${b.date.slice(5)}`;
+  const seen = new Set((fromMemory || []).map(key));
+  const extra = (fromCalendar || []).filter((b) => !seen.has(key(b)));
+  return [...(fromMemory || []), ...extra].sort((a, b) => a.daysAway - b.daysAway);
+}
+
 // Format computed birthdays for the prompt: "- Kat: Sat, Aug 15 (in 31 days)".
 export function birthdaysText(list) {
   return (list || []).map((b) => {
