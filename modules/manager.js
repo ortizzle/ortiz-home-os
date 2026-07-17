@@ -96,6 +96,18 @@ function reviewState(r) {
   };
 }
 
+// How far through the decision queue a review is. total 0 = nothing proposed.
+function reviewProgress(out, state) {
+  const items = out.planItems || [];
+  const qs = out.questions || [];
+  return {
+    total: items.length + qs.length,
+    decided:
+      items.filter((i) => state.added.has(i.title) || state.dismissed.has(i.title)).length +
+      qs.filter((q) => state.resolved[q]).length,
+  };
+}
+
 // Route a review item or question onto a meeting agenda: pick Family or Admin,
 // and the text lands on that meeting's CURRENT cycle so it shows up in the
 // agenda below (and in Claudia's meeting draft). "We should discuss this" is a
@@ -252,8 +264,17 @@ export async function renderManager(root) {
   ]));
 
   // ----- the digest: computed facts first, so the state of the stretch is
-  // visible instantly and for free; Claudia's AI review below interprets it -----
-  root.append(await digestSection());
+  // visible instantly and for free; Claudia's AI review below interprets it.
+  // Collapsed while a review is mid-decision — the queue is the work then —
+  // and open otherwise (fresh tab, or the queue is done). -----
+  const cachedReview = await getReview();
+  const inProgress = (() => {
+    if (!cachedReview?.data) return false;
+    const { total, decided } = reviewProgress(cachedReview.data, reviewState(cachedReview));
+    return total > 0 && decided < total;
+  })();
+  const digestEl = await digestSection({ open: !inProgress });
+  root.append(digestEl);
 
   // ----- plan the week with Claudia (the persistent review, near the top) -----
   const host = el('div', {});
@@ -299,6 +320,9 @@ export async function renderManager(root) {
         });
         logShownSuggestions(out.planItems, 'review').catch(() => {});
         await saveReview(out); // persists until the next run, shared with Kat
+        // A fresh queue is now the work — tuck the digest away immediately
+        // (the next full render keeps it collapsed while items are undecided).
+        if ((out.planItems || []).length || (out.questions || []).length) digestEl.removeAttribute('open');
         renderReview(host, out, rerender, reviewState(await getReview()));
       } catch (err) {
         clear(host).append(el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Something went wrong: ${err.message}`));
@@ -310,7 +334,7 @@ export async function renderManager(root) {
   }, 'Plan the week');
   // Restore the persisted (shared) review so adds/dismisses — which re-render
   // the view — and even reloads never lose the rest of the list.
-  const cachedReview = await getReview();
+  // (cachedReview was fetched above, before the digest, to set its collapse.)
   if (cachedReview) renderReview(host, cachedReview.data, rerender, reviewState(cachedReview));
   // Fetches the review at tap time (not render time), so it shares whatever
   // is current even if a fresh plan landed after this header was built.
@@ -631,10 +655,7 @@ function renderReview(host, out, rerender, state) {
   // execution, not reading.
   const allItems = out.planItems || [];
   const allQs = out.questions || [];
-  const total = allItems.length + allQs.length;
-  const decided =
-    allItems.filter((i) => state.added.has(i.title) || state.dismissed.has(i.title)).length +
-    allQs.filter((q) => state.resolved[q]).length;
+  const { total, decided } = reviewProgress(out, state);
   if (total) {
     host.append(el('p', { class: 'muted small', style: 'margin: 0 0 8px' },
       decided === total ? `All ${total} decided.` : `Decided ${decided} of ${total} — each item needs a destination (or ✓ Not needed).`));

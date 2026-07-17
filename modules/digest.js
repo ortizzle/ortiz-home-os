@@ -30,7 +30,10 @@ function to12(t) {
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
-export async function digestSection() {
+// `open` controls whether the disclosure starts expanded — the Claudia tab
+// collapses it while a review is mid-decision so the queue stays front and
+// center, and re-opens it once the queue is done (or before a fresh run).
+export async function digestSection({ open = true } = {}) {
   const today = todayStr();
   const settings = getSettings();
   const { throughDate } = await planningHorizon(today);
@@ -70,14 +73,14 @@ export async function digestSection() {
 
   // ----- tasks, your responsibilities first -----
   const me = (settings.deviceName || '').trim().toLowerCase();
-  const open = chores.filter((c) => !c.done);
+  const openTasks = chores.filter((c) => !c.done);
   const isMine = (c) => me && (c.assignee || '').trim().toLowerCase() === me;
-  const mine = open.filter(isMine);
-  const unassigned = open.filter((c) => !c.assignee);
-  const others = open.filter((c) => c.assignee && !isMine(c));
+  const mine = openTasks.filter(isMine);
+  const unassigned = openTasks.filter((c) => !c.assignee);
+  const others = openTasks.filter((c) => c.assignee && !isMine(c));
   const overdue = (list) => list.filter((c) => c.dueDate && c.dueDate < today).length;
   nodes.push(sub(me ? `Tasks — yours first (${settings.deviceName})` : 'Tasks'));
-  if (!open.length) {
+  if (!openTasks.length) {
     nodes.push(line('No open tasks.'));
   } else {
     if (mine.length) {
@@ -118,6 +121,6 @@ export async function digestSection() {
   return disclosure(
     `The stretch ahead — through ${fmtDay(throughDate)}`,
     el('section', { class: 'panel' }, nodes),
-    { open: true }
+    { open }
   );
 }
