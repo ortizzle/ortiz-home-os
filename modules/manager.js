@@ -5,18 +5,13 @@
 // feature.
 
 import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, fmtDay, addDays, parseDate, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, disclosure, richText, plainText } from './ui.js';
+import { el, clear, toast, todayStr, fmtDay, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, disclosure, richText, plainText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, claudifyItem, hasApiKey, AIError } from './ai.js';
 import { editChoreModal } from './chores.js';
 import { gatherContext, householdKnowledge, upcomingBirthdays, birthdaysText, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
-import { meetingSection, nextFamilyMeetingDate } from './meeting.js';
-
-// Whole days from a→b (both YYYY-MM-DD). Uses local calendar dates, so DST
-// shifts can't push the count off by a day the way raw ms subtraction can.
-function daysBetween(a, b) {
-  return Math.round((parseDate(b) - parseDate(a)) / 86400000);
-}
+import { meetingSection, nextMeetingDates, planningHorizon } from './meeting.js';
+import { digestSection } from './digest.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
@@ -40,13 +35,15 @@ export function addButtons(sugg, { today, includePlan = false, onAdded, alreadyA
   }
   const mk = (type, label) => {
     // Marks the suggestion accepted once a record actually lands: logs where it
-    // went (follow-through memory), flips the button, and re-renders via onAdded.
+    // went (follow-through memory), flips the button, and re-renders via
+    // onAdded — which receives the destination store so the review can record
+    // what went where (the finalize summary reads it back).
     const markAdded = (store, rec) => {
       logSuggestionAdded(sugg.title, store, rec?.id).catch(() => {});
       b.textContent = 'Added ✓';
       b.disabled = 'disabled';
       toast(`Added: ${sugg.title}`, 'success');
-      onAdded?.();
+      onAdded?.(store, rec);
     };
     const b = el('button', {
       class: 'btn seg-btn hm-add',
@@ -95,7 +92,31 @@ function reviewState(r) {
     dismissed: new Set(r.dismissed || []),
     resolved: r.resolved || {},
     dives: r.dives || {},
+    dest: r.dest || {}, // title -> where it landed (store name / agenda-family / agenda-admin)
   };
+}
+
+// Route a review item or question onto a meeting agenda: pick Family or Admin,
+// and the text lands on that meeting's CURRENT cycle so it shows up in the
+// agenda below (and in Claudia's meeting draft). "We should discuss this" is a
+// real destination, not a dead end.
+async function pickMeeting(text, onRouted) {
+  const dates = await nextMeetingDates();
+  const go = (type) => el('button', {
+    class: 'btn btn-primary',
+    onclick: async () => {
+      const rec = await put('agenda', { text, reviewed: false, type, cycleDate: dates[type] });
+      m.close();
+      await onRouted(type, dates[type], rec);
+    },
+  }, `${type === 'admin' ? 'Admin' : 'Family'} — ${fmtDay(dates[type])}`);
+  const m = openModal('Discuss at which meeting?', [
+    el('p', { class: 'muted small', style: 'margin-top: 0' }, text),
+  ], [
+    el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
+    go('family'),
+    go('admin'),
+  ]);
 }
 
 // Deep link to the Claudia tab of the deployed app (same idea as the Tasks
@@ -230,6 +251,10 @@ export async function renderManager(root) {
     el('p', { class: 'muted' }, 'your house manager'),
   ]));
 
+  // ----- the digest: computed facts first, so the state of the stretch is
+  // visible instantly and for free; Claudia's AI review below interprets it -----
+  root.append(await digestSection());
+
   // ----- plan the week with Claudia (the persistent review, near the top) -----
   const host = el('div', {});
   const reviewBtn = el('button', {
@@ -242,14 +267,9 @@ export async function renderManager(root) {
       try {
         const settings = getSettings();
         const today = todayStr();
-        // Plan through the next family meeting — the point the household next
-        // sits down together — so nothing between now and then goes unseen.
-        // If that meeting is under a week out, reach the following week's
-        // instead, so the horizon is always at least 7 days forward.
-        let throughDate = await nextFamilyMeetingDate();
-        while (daysBetween(today, throughDate) < 7) throughDate = addDays(throughDate, 7);
-        // +1 so the meeting day itself is inside the [start, start+days) window.
-        const windowDays = daysBetween(today, throughDate) + 1;
+        // Plan through the next family meeting (≥7 days out) — the same
+        // horizon the digest shows, so Claudia reads what the family sees.
+        const { throughDate, windowDays } = await planningHorizon(today);
         // Filter bygone 'learned' facts out of the memory block (keep-memory,
         // filter-the-prompt), then compute upcoming birthdays from what's left
         // so Claudia gets them as explicit dated lines, not date math to do.
@@ -311,7 +331,7 @@ export async function renderManager(root) {
       cachedReview || hasApiKey() ? shareReview : null,
     ]),
     el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reads your calendar + lists, searches for fun things nearby that match your interests, and proposes what to plan. Add what you want with one tap, clear what you don’t (✓ Not needed). Run it a couple times a week.' : 'Add a Claude API key in Settings and Claudia will propose what to plan each week.'),
+      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reads the digest above (plus your interests and recent email) and proposes what to plan. Decide every item: add it with one tap, send it to a meeting (→ Meeting), or clear it (✓ Not needed) — when the count hits zero you get a shareable pre-read and the agenda below is seeded.' : 'Add a Claude API key in Settings and Claudia will propose what to plan each week.'),
       reviewBtn,
       host,
     ])
@@ -346,6 +366,7 @@ export async function renderManager(root) {
 
   // jump-to menu for this long tab
   tableOfContents(root, [
+    { label: 'Digest', at: 'The stretch ahead' },
     { label: 'Plan week', at: 'Plan the week' },
     { label: 'Checklist', at: "This week's plan" },
     { label: 'Meeting', at: 'Family meeting' },
@@ -360,13 +381,18 @@ function reviewIdea(item, rerender, state) {
   // (green ✓ + title) so the review stays scannable and space goes to the
   // items still needing a decision. Tap the row to expand the detail back.
   if (state.added.has(item.title)) {
+    // Where it landed — meeting-routed items say so, since "on the agenda"
+    // is a different promise than "it's a task now".
+    const dest = state.dest?.[item.title];
+    const destLabel = dest === 'agenda-family' ? 'family meeting' : dest === 'agenda-admin' ? 'admin meeting' : null;
     const wrap = el('div', { class: 'idea idea-added collapsed' }, [
       el('button', {
         class: 'idea-added-head', 'aria-label': `Added: ${item.title} — tap to expand`,
         onclick: () => wrap.classList.toggle('collapsed'),
       }, [
-        el('span', { class: 'idea-added-check' }, '✓'),
+        el('span', { class: 'idea-added-check' }, destLabel ? '→' : '✓'),
         el('span', { class: 'idea-added-title' }, item.title),
+        destLabel ? el('span', { class: 'pill' }, destLabel) : null,
         item.who ? el('span', { class: 'pill pill-accent' }, item.who) : null,
       ]),
       item.detail ? el('p', { class: 'idea-detail' }, richText(item.detail)) : null,
@@ -378,10 +404,24 @@ function reviewIdea(item, rerender, state) {
     today: todayStr(),
     includePlan: true,
     alreadyAdded: false,
-    // Record the add BEFORE re-rendering, so the restored (shared) review
-    // shows this item as Added ✓ on both phones and keeps the rest on screen.
-    onAdded: async () => { await markReviewAdded(item.title); rerender(); },
+    // Record the add (and where it went) BEFORE re-rendering, so the restored
+    // (shared) review shows this item as Added ✓ on both phones and the
+    // finalize summary can say what landed where.
+    onAdded: async (store) => { await markReviewAdded(item.title, store); rerender(); },
   });
+  // "We should discuss this" is a destination too — route the item onto the
+  // Family or Admin agenda's current cycle, where the meeting section picks
+  // it up for the final family review.
+  actions.append(el('button', {
+    class: 'btn seg-btn hm-add',
+    'aria-label': 'Queue for a meeting agenda',
+    onclick: () => pickMeeting(item.title, async (type, date, rec) => {
+      logSuggestionAdded(item.title, 'agenda', rec?.id).catch(() => {});
+      await markReviewAdded(item.title, `agenda-${type}`);
+      toast(`On the ${type} meeting agenda (${fmtDay(date)})`, 'success');
+      rerender();
+    }),
+  }, '→ Meeting'));
   const clearBtn = el('button', {
     class: 'btn seg-btn hm-add',
     'aria-label': 'Not needed — clear from this review',
@@ -441,6 +481,18 @@ function questionRow(q, rerender, state) {
       rerender();
     },
   }, '+ Task');
+  // A question the family should settle together goes on a meeting agenda —
+  // resolved here (so the review moves on) with a note saying where it went.
+  const meetBtn = el('button', {
+    class: 'btn seg-btn hm-add',
+    'aria-label': 'Discuss at a meeting',
+    onclick: () => pickMeeting(q, async (type, date) => {
+      await markQuestionResolved(q, `to discuss at the ${type} meeting (${fmtDay(date)})`);
+      logQuestionResolved(q, `queued for the ${type} meeting`).catch(() => {});
+      toast(`On the ${type} meeting agenda (${fmtDay(date)})`, 'success');
+      rerender();
+    }),
+  }, '→ Meeting');
   const resolveBtn = el('button', {
     class: 'btn seg-btn hm-add',
     onclick: () => {
@@ -512,8 +564,58 @@ function questionRow(q, rerender, state) {
   }, '✨ Claudify');
   return el('li', {}, [
     el('span', {}, richText(q)),
-    el('div', { class: 'hm-actions', style: 'margin: 6px 0 2px' }, [claudifyQBtn, taskBtn, resolveBtn]),
+    el('div', { class: 'hm-actions', style: 'margin: 6px 0 2px' }, [claudifyQBtn, taskBtn, meetBtn, resolveBtn]),
     diveHost,
+  ]);
+}
+
+// Human labels for the destinations the finalize summary reports.
+const DEST_LABELS = {
+  chores: 'tasks', appointments: 'calendar', plan: 'weekly plan', groceries: 'grocery list',
+  'agenda-family': 'family meeting', 'agenda-admin': 'admin meeting',
+};
+
+// The pre-read: what this review decided and where everything went — shared
+// as the meeting's summary once the queue is done.
+function finalizeShareText(out, state) {
+  const lines = [`🏡 Claudia's review — decided ${fmtDay(state.reviewedAt || todayStr())}`, ''];
+  if (out.overview) lines.push(plainText(out.overview), '');
+  const byDest = {};
+  for (const t of state.added) (byDest[state.dest[t] || 'added'] ||= []).push(t);
+  for (const [dest, titles] of Object.entries(byDest)) {
+    lines.push(`${DEST_LABELS[dest] ? `→ ${DEST_LABELS[dest][0].toUpperCase()}${DEST_LABELS[dest].slice(1)}` : 'Added'}:`);
+    for (const t of titles) lines.push(`  ✓ ${t}`);
+  }
+  if (state.dismissed.size) lines.push(`Cleared (not needed): ${[...state.dismissed].join(' · ')}`);
+  const answered = Object.entries(state.resolved);
+  if (answered.length) {
+    lines.push('', 'Questions settled:');
+    for (const [q, a] of answered) lines.push(`  • ${q}${typeof a === 'string' ? ` — ${a}` : ''}`);
+  }
+  lines.push('', `Open in the app: ${APP_CLAUDIA_URL}`);
+  return lines.join('\n').trim();
+}
+
+// Every item decided → the review is finished business: summarize what went
+// where, hand over the shareable pre-read, and point at the seeded agenda.
+function finalizeBar(out, state) {
+  const counts = {};
+  for (const t of state.added) counts[state.dest[t] || 'added'] = (counts[state.dest[t] || 'added'] || 0) + 1;
+  const parts = Object.entries(counts).map(([d, n]) => `${n} → ${DEST_LABELS[d] || 'added'}`);
+  if (state.dismissed.size) parts.push(`${state.dismissed.size} cleared`);
+  const answered = Object.keys(state.resolved).length;
+  if (answered) parts.push(`${answered} question${answered === 1 ? '' : 's'} settled`);
+  const toMeeting = [...state.added].some((t) => (state.dest[t] || '').startsWith('agenda'));
+  return el('div', { class: 'idea', style: 'border-left: 3px solid var(--good)' }, [
+    el('div', { class: 'idea-title' }, '✅ Review complete'),
+    el('p', { class: 'idea-detail' }, parts.length ? parts.join(' · ') : 'Nothing needed action this time.'),
+    toMeeting ? el('p', { class: 'idea-detail' }, 'Routed topics are on the meeting agenda below, ready for the family review.') : null,
+    el('div', { class: 'hm-actions' }, [
+      el('button', {
+        class: 'btn seg-btn hm-add',
+        onclick: () => shareText({ title: "Claudia's review — pre-read", text: finalizeShareText(out, state) }),
+      }, '📤 Share the pre-read'),
+    ]),
   ]);
 }
 
@@ -524,15 +626,29 @@ function renderReview(host, out, rerender, state) {
       `Planned ${state.reviewedAt === todayStr() ? 'today' : fmtDay(state.reviewedAt)} — tap Plan the week for a fresh look.`));
   }
   if (out.overview) host.append(el('p', { class: 'hm-overview' }, richText(out.overview)));
-  const items = (out.planItems || []).filter((item) => !state.dismissed.has(item.title));
+  // The decision queue: every item and question ends somewhere, and the
+  // review is done when the count hits zero — that's what makes this
+  // execution, not reading.
+  const allItems = out.planItems || [];
+  const allQs = out.questions || [];
+  const total = allItems.length + allQs.length;
+  const decided =
+    allItems.filter((i) => state.added.has(i.title) || state.dismissed.has(i.title)).length +
+    allQs.filter((q) => state.resolved[q]).length;
+  if (total) {
+    host.append(el('p', { class: 'muted small', style: 'margin: 0 0 8px' },
+      decided === total ? `All ${total} decided.` : `Decided ${decided} of ${total} — each item needs a destination (or ✓ Not needed).`));
+  }
+  if (total && decided === total) host.append(finalizeBar(out, state));
+  const items = allItems.filter((item) => !state.dismissed.has(item.title));
   for (const item of items) host.append(reviewIdea(item, rerender, state));
-  if (out.questions?.length) {
+  if (allQs.length) {
     host.append(
       el('div', { class: 'idea-questions' }, [
         el('h5', {}, 'Claudia wants to know'),
-        el('ul', { class: 'idea-actions' }, out.questions.map((q) => questionRow(q, rerender, state))),
+        el('ul', { class: 'idea-actions' }, allQs.map((q) => questionRow(q, rerender, state))),
       ])
     );
   }
-  if (!items.length && !out.questions?.length) host.append(el('p', { class: 'muted small' }, 'Nothing pressing for the rest of the week.'));
+  if (!items.length && !allQs.length) host.append(el('p', { class: 'muted small' }, 'Nothing pressing for the rest of the week.'));
 }

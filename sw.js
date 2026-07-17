@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v61-prune-log';
+const CACHE = 'ohos-shell-v62-streamlined-claudia';
 const SHELL = [
   './',
   './index.html',
@@ -18,6 +18,7 @@ const SHELL = [
   './modules/grocery.js',
   './modules/calendar.js',
   './modules/suggest.js',
+  './modules/digest.js',
   './modules/dashboard.js',
   './modules/meeting.js',
   './modules/ai.js',

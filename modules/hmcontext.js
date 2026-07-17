@@ -234,7 +234,13 @@ async function patchReview(fn) {
   const rec = await put('reviews', r);
   mirrorReview(rec);
 }
-export const markReviewAdded = (title) => patchReview((r) => { r.added = [...new Set([...(r.added || []), title])]; });
+// `dest` (optional) records where the item landed ('chores', 'appointments',
+// 'plan', 'groceries', 'agenda-family', 'agenda-admin') so the finalize
+// summary can say what went where.
+export const markReviewAdded = (title, dest) => patchReview((r) => {
+  r.added = [...new Set([...(r.added || []), title])];
+  if (dest) r.dest = { ...(r.dest || {}), [title]: dest };
+});
 export const markReviewDismissed = (title) => patchReview((r) => { r.dismissed = [...new Set([...(r.dismissed || []), title])]; });
 export const markQuestionResolved = (q, answer) => patchReview((r) => { r.resolved = { ...(r.resolved || {}), [q]: answer || true }; });
 // A deep-dive write-up (on a suggestion or a question) is worth keeping — it

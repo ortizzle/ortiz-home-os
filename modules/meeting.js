@@ -38,7 +38,8 @@ function wkShort(dateStr) {
 
 // Split week-ahead appointments into one-offs (the interesting stuff) and
 // recurring series that land on multiple days (shown once, with a day range).
-function collapseAppts(appts) {
+// Also used by the Claudia-tab digest.
+export function collapseAppts(appts) {
   const groups = new Map();
   for (const a of appts) {
     const key = a.seriesId || 'title:' + a.title;
@@ -107,12 +108,23 @@ async function getConcludedMap() {
   return map;
 }
 
-// The next FAMILY meeting date (YYYY-MM-DD), accounting for a concluded cycle.
-// Exported so the weekly review can anchor its planning horizon to it — the
-// plan should cover everything between now and when the family next sits down.
-export async function nextFamilyMeetingDate() {
+// Next meeting date per type (YYYY-MM-DD), accounting for concluded cycles.
+// Exported so the review can route an item onto the right agenda cycle.
+export async function nextMeetingDates() {
   const concluded = await getConcludedMap();
-  return nextMeetingDate('family', concluded.family);
+  return { family: nextMeetingDate('family', concluded.family), admin: nextMeetingDate('admin', concluded.admin) };
+}
+
+// The planning horizon shared by the weekly review and the Claudia-tab digest:
+// today through the next FAMILY meeting — the point the household next sits
+// down together — bumped a week at a time when that meeting is under 7 days
+// out, so the window always reaches at least a full week forward. windowDays
+// is +1 so the meeting day itself falls inside a [start, start+days) range.
+export async function planningHorizon(today = todayStr()) {
+  const days = (a, b) => Math.round((parseDate(b) - parseDate(a)) / 86400000);
+  let throughDate = (await nextMeetingDates()).family;
+  while (days(today, throughDate) < 7) throughDate = addDays(throughDate, 7);
+  return { throughDate, windowDays: days(today, throughDate) + 1 };
 }
 
 // Gather the next 7 days of household activity into a text summary for

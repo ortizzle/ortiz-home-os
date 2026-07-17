@@ -35,7 +35,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v61 · prune follow-through log';
+const APP_VERSION = 'v62 · streamlined Claudia: digest + routing';
 
 // ---------- theme ----------
 
@@ -672,7 +672,7 @@ const WATCHED_FILES = [
   './modules/store.js', './modules/ui.js', './modules/chores.js', './modules/grocery.js',
   './modules/calendar.js', './modules/suggest.js', './modules/dashboard.js', './modules/meeting.js',
   './modules/ai.js', './modules/gcal.js', './modules/hmcontext.js', './modules/manager.js',
-  './modules/meals.js', './modules/diag.js',
+  './modules/meals.js', './modules/diag.js', './modules/digest.js',
 ];
 
 let bootSignature = null;
