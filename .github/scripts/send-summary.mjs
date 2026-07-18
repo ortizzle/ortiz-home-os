@@ -18,7 +18,16 @@ const SECTIONS = [
 const sectionOf = (a) => (SECTIONS.some(([k]) => k === a.section) ? a.section : 'topic');
 
 const { data } = await readSnapshot();
-const to = process.env.SUMMARY_TO || process.env.GMAIL_USER || 'chris.ortiz@gmail.com';
+
+// Recipients: SUMMARY_TO (comma-separated) takes full control if set;
+// otherwise default to Chris + Kat, so both get the meeting agenda. Kat's
+// address is the same KAT_EMAIL secret the daily task email uses.
+const recipients = (
+  process.env.SUMMARY_TO
+    ? process.env.SUMMARY_TO.split(',')
+    : [process.env.GMAIL_USER || 'chris.ortiz@gmail.com', process.env.KAT_EMAIL]
+).map((s) => (s || '').trim()).filter(Boolean);
+const to = [...new Set(recipients)].join(', ');
 
 const start = today();
 const meetingDate = familyMeetingDate(data);
@@ -70,10 +79,14 @@ if (!structured) {
   }
 }
 
-// ----- decisions logged at recent past meetings (recap) -----
-const decided = live(data, 'agenda')
-  .filter((a) => (a.type || 'family') === 'family' && a.decision && a.cycleDate && a.cycleDate < meetingDate && a.cycleDate >= addDays(meetingDate, -21))
-  .sort((a, b) => (a.cycleDate < b.cycleDate ? 1 : -1));
+// ----- decisions logged at the LAST meeting (recap) -----
+// Only the single most recent past cycle — not a multi-week sweep — so the
+// recap always reads as "what we decided last time," never a decision from a
+// few meetings ago lingering around.
+const pastDecisions = live(data, 'agenda')
+  .filter((a) => (a.type || 'family') === 'family' && a.decision && a.cycleDate && a.cycleDate < meetingDate);
+const lastCycle = pastDecisions.reduce((m, a) => (a.cycleDate > m ? a.cycleDate : m), '');
+const decided = pastDecisions.filter((a) => a.cycleDate === lastCycle);
 
 // ----- the week ahead (next 7 days): appointments + tasks due -----
 const end = addDays(start, 7);
@@ -84,9 +97,13 @@ const dueTasks = live(data, 'chores')
   .filter((c) => !c.done && c.dueDate && c.dueDate >= start && c.dueDate < end)
   .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
 
-// ----- Claudia's latest weekly-review overview (bonus context, if present) --
+// ----- Claudia's latest weekly-review overview (bonus context) -----
+// Only if it's fresh (run within the last ~week). The review record is a
+// single "current" row that persists until the next run, so without this
+// guard a review nobody's refreshed in weeks would keep getting quoted.
 const review = live(data, 'reviews').find((r) => r && r.data);
-const overview = review && review.data && review.data.overview ? plain(review.data.overview) : '';
+const reviewFresh = review && review.reviewedAt && review.reviewedAt >= addDays(start, -8);
+const overview = reviewFresh && review.data.overview ? plain(review.data.overview) : '';
 
 // ----- assemble -----
 const textParts = [
@@ -96,7 +113,7 @@ const textParts = [
   agendaText.join('\n').trim(),
 ];
 if (decided.length) {
-  textParts.push('', 'DECIDED RECENTLY', ...decided.map((a) => `- ${plain(a.text)}: ${plain(a.decision)}`));
+  textParts.push('', 'DECIDED LAST MEETING', ...decided.map((a) => `- ${plain(a.text)}: ${plain(a.decision)}`));
 }
 if (appts.length || dueTasks.length) {
   textParts.push('', 'THE WEEK AHEAD');
@@ -110,7 +127,7 @@ const htmlParts = [`<div style="color:#6b7280;font-size:13px;margin:0 0 14px;">$
 htmlParts.push('<div style="font-weight:700;margin:0 0 6px;">Agenda</div>');
 htmlParts.push(structured ? agendaHtml.join('') : `<ul style="margin:0;padding-left:20px;">${agendaHtml.join('')}</ul>`);
 if (decided.length) {
-  htmlParts.push('<div style="font-weight:700;margin:20px 0 6px;">Decided recently</div><ul style="margin:0;padding-left:20px;">');
+  htmlParts.push('<div style="font-weight:700;margin:20px 0 6px;">Decided last meeting</div><ul style="margin:0;padding-left:20px;">');
   for (const a of decided) htmlParts.push(`<li style="margin:4px 0;">${esc(plain(a.text))} — <span style="color:#6b7280;">${esc(plain(a.decision))}</span></li>`);
   htmlParts.push('</ul>');
 }

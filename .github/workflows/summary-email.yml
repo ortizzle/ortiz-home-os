@@ -25,4 +25,5 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }} # optional; defaults to chris.ortiz@gmail.com
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-          SUMMARY_TO: ${{ secrets.SUMMARY_TO }} # optional; defaults to the Gmail sender
+          KAT_EMAIL: ${{ secrets.KAT_EMAIL }} # so Kat gets the agenda too (unless SUMMARY_TO overrides)
+          SUMMARY_TO: ${{ secrets.SUMMARY_TO }} # optional; comma-separated list takes full control of recipients
