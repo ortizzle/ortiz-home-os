@@ -135,10 +135,13 @@ export function isDryRun() {
 // built around. Set DRY_RUN=1 to log the message and skip sending — handy for
 // testing a workflow from the Actions "Run workflow" button before it's live.
 export async function sendMail({ to, subject, text, html }) {
-  const {
-    GMAIL_USER = 'chris.ortiz@gmail.com',
-    GMAIL_APP_PASSWORD,
-  } = process.env;
+  // Use || (not a destructuring default) so an empty-string env var — which is
+  // what an unset `${{ secrets.GMAIL_USER }}` passes — still falls back to the
+  // default account instead of authing with a blank username.
+  const GMAIL_USER = process.env.GMAIL_USER || 'chris.ortiz@gmail.com';
+  // Google displays app passwords as "abcd efgh ijkl mnop"; strip any spaces
+  // so a copy-paste-with-spaces still authenticates.
+  const GMAIL_APP_PASSWORD = (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
   if (isDryRun()) {
     console.log(`[DRY RUN — preview only, nothing sent]\nTo:      ${to || '(no recipient)'}\nSubject: ${subject}\n\n${text}\n`);
     return;
