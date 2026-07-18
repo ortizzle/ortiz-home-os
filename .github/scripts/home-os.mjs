@@ -167,19 +167,118 @@ export async function sendMail({ to, subject, text, html }) {
   console.log(`sent "${subject}" → ${to} (${info.messageId})`);
 }
 
-// Minimal, mobile-friendly HTML shell so the emails read cleanly in Gmail on
-// a phone. Inline styles only — email clients ignore <style>/external CSS.
-export function page(title, bodyHtml) {
-  return `<!doctype html><html><body style="margin:0;background:#f4f5f7;padding:20px 0;">
-  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1f2430;">
-    <div style="padding:20px 24px;border-bottom:1px solid #eceef1;">
-      <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8a94a6;font-weight:600;">Ortiz Home OS</div>
-      <div style="font-size:20px;font-weight:700;margin-top:2px;">${esc(title)}</div>
-    </div>
-    <div style="padding:20px 24px;font-size:15px;line-height:1.5;">${bodyHtml}</div>
-    <div style="padding:14px 24px 20px;color:#a0a8b6;font-size:12px;border-top:1px solid #eceef1;">
-      Sent automatically from the household Gist · <a href="https://ortizzle.github.io/ortiz-home-os/" style="color:#6b74e0;text-decoration:none;">Open Home OS</a>
-    </div>
-  </div>
-</body></html>`;
+// ---------- email UI kit ----------
+// A small set of composable, on-brand HTML builders so both emails read like
+// part of Home OS. Everything is table-based with fully inline styles — the
+// only markup email clients (Gmail, Apple Mail) render reliably; <style>
+// blocks, external CSS, and inline SVG are all stripped. Palette is the app's
+// own token set; the rose/maroon brand hue matches the installed app icon.
+const BRAND = '#9d174d';       // matches icons/icon-192.png (rose)
+const INK = '#1c2622';         // --text
+const INK_2 = '#5f6e68';       // --text-2
+const INK_3 = '#93a29b';       // --text-3
+const HAIR = '#f0f3f1';        // hairline between rows
+const FONT = "'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const APP_URL = 'https://ortizzle.github.io/ortiz-home-os/';
+const APP_ICON = 'https://ortizzle.github.io/ortiz-home-os/icons/icon-192.png';
+
+// Status chip palettes (text, background) — darkened for readable text on the
+// soft fills, matching the app's --bad / --warn / --surface-2 intent.
+const CHIP = {
+  overdue: ['#b4231c', '#fbeceb'],
+  today: ['#8a5a12', '#f8eeda'],
+  soon: ['#5f6e68', '#eaf0ed'],
+};
+// The app's six owner colors (text, background), assigned to people by name.
+const OWNERS = [
+  ['#0e7490', '#cffafe'], ['#0369a1', '#e0f2fe'], ['#4338ca', '#e0e7ff'],
+  ['#6d28d9', '#ede9fe'], ['#a21caf', '#fae8ff'], ['#9d174d', '#fce7f3'],
+];
+function ownerColors(name) {
+  let hash = 0;
+  for (const ch of String(name || '')) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return OWNERS[hash % OWNERS.length];
+}
+
+const pill = (fg, bg, text) =>
+  `<span style="display:inline-block;font-size:11px;font-weight:700;color:${fg};background:${bg};padding:2px 9px;border-radius:999px;white-space:nowrap;vertical-align:middle;line-height:1.5;">${esc(text)}</span>`;
+
+// A status chip (overdue / today / soon).
+export function chip(text, kind = 'soon') {
+  const [fg, bg] = CHIP[kind] || CHIP.soon;
+  return pill(fg, bg, text);
+}
+// A person chip in that person's owner color.
+export function ownerChip(name) {
+  const [fg, bg] = ownerColors(name);
+  return pill(fg, bg, name);
+}
+
+// A muted uppercase section label.
+export function h(label) {
+  return `<div style="font-size:12px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:${INK_3};margin:26px 0 6px;">${esc(label)}</div>`;
+}
+// A section label headed by a person, dotted and tinted in their owner color.
+export function ownerHeading(name, count) {
+  const [fg] = name === 'Unassigned' ? [INK_3] : ownerColors(name);
+  return `<div style="margin:26px 0 6px;font-size:14px;font-weight:700;color:${fg};">` +
+    `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${fg};margin-right:8px;vertical-align:middle;"></span>` +
+    `${esc(name)}<span style="color:${INK_3};font-weight:500;"> · ${count}</span></div>`;
+}
+
+// One divided item row: bold-ish title (may carry a trailing chip), optional
+// muted subline. `title` and `sub` may contain pre-built chip HTML, so they're
+// passed through as-is — callers escape their own text.
+export function row(title, { sub = '', last = false } = {}) {
+  return `<div style="padding:11px 0;${last ? '' : `border-bottom:1px solid ${HAIR};`}">` +
+    `<div style="font-size:15px;color:${INK};line-height:1.4;">${title}</div>` +
+    (sub ? `<div style="font-size:13px;color:${INK_2};margin-top:3px;">${sub}</div>` : '') +
+    `</div>`;
+}
+
+// A soft callout block — used for Claudia's weekly read.
+export function quote(text) {
+  return `<div style="background:#f6f8f7;border-left:3px solid ${BRAND};border-radius:8px;padding:12px 14px;font-size:14px;line-height:1.5;color:${INK};">${esc(text)}</div>`;
+}
+
+export function note(text) {
+  return `<p style="margin:0;font-size:15px;line-height:1.5;color:${INK};">${esc(text)}</p>`;
+}
+
+// The full page shell: brand bar, icon badge + wordmark + title, a subtitle
+// line (usually the date), the composed body, and a footer with the app link.
+export function page({ title, subtitle = '', body }) {
+  return `<!doctype html><html><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<meta name="color-scheme" content="light only"></head>` +
+    `<body style="margin:0;padding:0;background:#eef2f0;">` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f0;"><tr>` +
+    `<td align="center" style="padding:24px 12px;">` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#ffffff;border:1px solid #e2e8e5;border-radius:16px;overflow:hidden;font-family:${FONT};">` +
+    // brand bar
+    `<tr><td style="height:4px;background:${BRAND};font-size:0;line-height:0;">&nbsp;</td></tr>` +
+    // header
+    `<tr><td style="padding:22px 28px 18px;border-bottom:1px solid ${HAIR};">` +
+    `<table role="presentation" cellpadding="0" cellspacing="0"><tr>` +
+    `<td style="padding-right:13px;vertical-align:middle;">` +
+    // Maroon badge behind the icon: if a client blocks the external image, this
+    // shows as a solid on-brand square rather than a broken-image glyph.
+    `<table role="presentation" cellpadding="0" cellspacing="0"><tr>` +
+    `<td width="42" height="42" style="width:42px;height:42px;background:${BRAND};border-radius:11px;text-align:center;vertical-align:middle;font-size:0;line-height:0;">` +
+    `<img src="${APP_ICON}" width="42" height="42" alt="" style="display:block;width:42px;height:42px;border-radius:11px;">` +
+    `</td></tr></table>` +
+    `</td><td style="vertical-align:middle;">` +
+    `<div style="font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:${BRAND};font-weight:700;">Ortiz Home OS</div>` +
+    `<div style="font-size:21px;font-weight:700;color:${INK};line-height:1.2;margin-top:2px;">${esc(title)}</div>` +
+    `</td></tr></table>` +
+    (subtitle ? `<div style="font-size:13px;color:${INK_2};margin-top:10px;">${esc(subtitle)}</div>` : '') +
+    `</td></tr>` +
+    // body
+    `<tr><td style="padding:6px 28px 12px;">${body}</td></tr>` +
+    // footer
+    `<tr><td style="padding:18px 28px 24px;border-top:1px solid ${HAIR};">` +
+    `<a href="${APP_URL}" style="display:inline-block;font-size:13px;font-weight:600;color:${BRAND};text-decoration:none;">Open Home OS &rarr;</a>` +
+    `<div style="font-size:11px;color:${INK_3};margin-top:7px;">Sent automatically from your household Gist.</div>` +
+    `</td></tr>` +
+    `</table></td></tr></table></body></html>`;
 }

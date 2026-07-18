@@ -6,7 +6,7 @@
 // (defaults to the family Gmail).
 import {
   readSnapshot, live, today, addDays, fmtDay, familyMeetingDate,
-  plain, esc, sendMail, page,
+  plain, esc, sendMail, page, h, row, chip, ownerChip, quote, note,
 } from './home-os.mjs';
 
 const SECTIONS = [
@@ -16,6 +16,11 @@ const SECTIONS = [
   ['close', 'Close'],
 ];
 const sectionOf = (a) => (SECTIONS.some(([k]) => k === a.section) ? a.section : 'topic');
+const to12h = (t) => {
+  if (!t) return '';
+  const [hh, mm] = t.split(':').map(Number);
+  return `${((hh + 11) % 12) + 1}:${String(mm).padStart(2, '0')} ${hh >= 12 ? 'PM' : 'AM'}`;
+};
 
 const { data } = await readSnapshot();
 
@@ -49,7 +54,7 @@ if (!agenda.length) {
     to,
     subject,
     text: `${body}\n\nOpen Home OS: https://ortizzle.github.io/ortiz-home-os/`,
-    html: page('No agenda drafted yet', `<p style="margin:0;">${esc(body)}</p>`),
+    html: page({ title: 'No agenda drafted yet', subtitle: `Family meeting · ${meetingLabel}`, body: note(body) }),
   });
   console.log('nudge sent — no agenda for this cycle.');
   process.exit(0);
@@ -59,22 +64,24 @@ if (!agenda.length) {
 const structured = agenda.some((a) => sectionOf(a) !== 'topic');
 const agendaText = [];
 const agendaHtml = [];
+const agendaItemRow = (a, last) =>
+  row(esc(plain(a.text)), { sub: a.decision ? `Decided: ${esc(plain(a.decision))}` : '', last });
 if (!structured) {
-  for (const a of agenda) {
+  agendaHtml.push(h('Agenda'));
+  agenda.forEach((a, i) => {
     agendaText.push(`- ${plain(a.text)}${a.decision ? `\n    Decision: ${plain(a.decision)}` : ''}`);
-    agendaHtml.push(`<li style="margin:4px 0;">${esc(plain(a.text))}${a.decision ? `<div style="color:#6b7280;font-size:13px;">Decided: ${esc(plain(a.decision))}</div>` : ''}</li>`);
-  }
+    agendaHtml.push(agendaItemRow(a, i === agenda.length - 1));
+  });
 } else {
   for (const [key, label] of SECTIONS) {
     const items = agenda.filter((a) => sectionOf(a) === key);
     if (!items.length) continue;
     agendaText.push(`${label}:`);
-    agendaHtml.push(`<div style="font-weight:600;margin:12px 0 4px;color:#4b5563;">${label}</div><ul style="margin:0;padding-left:20px;">`);
-    for (const a of items) {
+    agendaHtml.push(h(label));
+    items.forEach((a, i) => {
       agendaText.push(`  - ${plain(a.text)}${a.decision ? `\n      Decision: ${plain(a.decision)}` : ''}`);
-      agendaHtml.push(`<li style="margin:4px 0;">${esc(plain(a.text))}${a.decision ? `<div style="color:#6b7280;font-size:13px;">Decided: ${esc(plain(a.decision))}</div>` : ''}</li>`);
-    }
-    agendaHtml.push('</ul>');
+      agendaHtml.push(agendaItemRow(a, i === items.length - 1));
+    });
     agendaText.push('');
   }
 }
@@ -123,27 +130,37 @@ if (appts.length || dueTasks.length) {
 if (overview) textParts.push('', "CLAUDIA'S WEEKLY READ", overview);
 textParts.push('', 'Open Home OS: https://ortizzle.github.io/ortiz-home-os/');
 
-const htmlParts = [`<div style="color:#6b7280;font-size:13px;margin:0 0 14px;">${esc(meetingLabel)}</div>`];
-htmlParts.push('<div style="font-weight:700;margin:0 0 6px;">Agenda</div>');
-htmlParts.push(structured ? agendaHtml.join('') : `<ul style="margin:0;padding-left:20px;">${agendaHtml.join('')}</ul>`);
+const htmlParts = [...agendaHtml];
 if (decided.length) {
-  htmlParts.push('<div style="font-weight:700;margin:20px 0 6px;">Decided last meeting</div><ul style="margin:0;padding-left:20px;">');
-  for (const a of decided) htmlParts.push(`<li style="margin:4px 0;">${esc(plain(a.text))} — <span style="color:#6b7280;">${esc(plain(a.decision))}</span></li>`);
-  htmlParts.push('</ul>');
+  htmlParts.push(h('Decided last meeting'));
+  decided.forEach((a, i) =>
+    htmlParts.push(row(esc(plain(a.text)), { sub: esc(plain(a.decision)), last: i === decided.length - 1 })));
 }
 if (appts.length || dueTasks.length) {
-  htmlParts.push('<div style="font-weight:700;margin:20px 0 6px;">The week ahead</div><ul style="margin:0;padding-left:20px;">');
-  for (const a of appts) htmlParts.push(`<li style="margin:4px 0;"><strong>${esc(fmtDay(a.date))}${a.startTime ? ' ' + esc(a.startTime) : ''}</strong> — ${esc(a.title)}${a.who ? ` <span style="color:#6b7280;">(${esc(a.who)})</span>` : ''}</li>`);
-  for (const c of dueTasks) htmlParts.push(`<li style="margin:4px 0;"><strong>${esc(fmtDay(c.dueDate))}</strong> · task — ${esc(c.title)}${c.assignee ? ` <span style="color:#6b7280;">(${esc(c.assignee)})</span>` : ''}</li>`);
-  htmlParts.push('</ul>');
+  htmlParts.push(h('The week ahead'));
+  const wk = [];
+  for (const a of appts) {
+    wk.push({
+      title: `${esc(a.title)}${a.who ? ' ' + ownerChip(a.who) : ''}`,
+      sub: `${esc(fmtDay(a.date))}${a.startTime ? ' · ' + esc(to12h(a.startTime)) : ''}`,
+    });
+  }
+  for (const c of dueTasks) {
+    wk.push({
+      title: `${esc(c.title)} ${chip('task', 'soon')}${c.assignee ? ' ' + ownerChip(c.assignee) : ''}`,
+      sub: `Due ${esc(fmtDay(c.dueDate))}`,
+    });
+  }
+  wk.forEach((r, i) => htmlParts.push(row(r.title, { sub: r.sub, last: i === wk.length - 1 })));
 }
 if (overview) {
-  htmlParts.push(`<div style="font-weight:700;margin:20px 0 6px;">Claudia's weekly read</div><p style="margin:0;color:#374151;">${esc(overview)}</p>`);
+  htmlParts.push(h("Claudia's weekly read"));
+  htmlParts.push(quote(overview));
 }
 
 await sendMail({
   to,
   subject: `Family meeting summary — ${meetingLabel}`,
   text: textParts.join('\n'),
-  html: page('Family meeting summary', htmlParts.join('')),
+  html: page({ title: 'Family meeting summary', subtitle: `Meeting on ${meetingLabel}`, body: htmlParts.join('') }),
 });

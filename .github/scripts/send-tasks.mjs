@@ -5,6 +5,7 @@
 // the absence of tasks is a signal, not silence.
 import {
   readSnapshot, live, today, fmtDay, esc, sendMail, page, isDryRun,
+  h, row, chip, ownerHeading, note,
 } from './home-os.mjs';
 
 const { data } = await readSnapshot();
@@ -42,12 +43,12 @@ const dateLabel = new Intl.DateTimeFormat('en-US', {
   timeZone: 'America/Phoenix', weekday: 'long', month: 'long', day: 'numeric',
 }).format(new Date());
 
-// When/how a task's due date reads.
+// How a task's due date reads — plain-text label + which status chip to show.
 function dueBits(c) {
-  if (!c.dueDate) return { text: '', tag: '', color: '#9aa3b2' };
-  if (c.dueDate < start) return { text: `overdue · ${fmtDay(c.dueDate)}`, tag: 'overdue', color: '#c2410c' };
-  if (c.dueDate === start) return { text: 'due today', tag: 'today', color: '#b45309' };
-  return { text: `due ${fmtDay(c.dueDate)}`, tag: '', color: '#6b7280' };
+  if (!c.dueDate) return { text: '' };
+  if (c.dueDate < start) return { text: `overdue · ${fmtDay(c.dueDate)}`, kind: 'overdue', chip: `Overdue · ${fmtDay(c.dueDate)}` };
+  if (c.dueDate === start) return { text: 'due today', kind: 'today', chip: 'Due today' };
+  return { text: `due ${fmtDay(c.dueDate)}`, kind: 'soon', chip: `Due ${fmtDay(c.dueDate)}` };
 }
 
 // ----- empty state -----
@@ -57,28 +58,24 @@ if (!open.length) {
     to,
     subject: `Task list — ${dateLabel} · all clear`,
     text: `${line}\n\nOpen Home OS: https://ortizzle.github.io/ortiz-home-os/`,
-    html: page('All clear', `<p style="margin:0;">${esc(line)}</p>`),
+    html: page({ title: 'All clear', subtitle: dateLabel, body: note(line) }),
   });
   process.exit(0);
 }
 
 // ----- text + html -----
 const textLines = [`Open tasks — ${dateLabel}`, ''];
-const htmlParts = [`<div style="color:#6b7280;font-size:13px;margin:0 0 14px;">${esc(dateLabel)} · ${open.length} open</div>`];
+const htmlParts = [];
 
 for (const [who, list] of orderedGroups) {
   textLines.push(`${who} (${list.length}):`);
-  htmlParts.push(`<div style="font-weight:700;margin:16px 0 6px;">${esc(who)} <span style="color:#9aa3b2;font-weight:400;font-size:13px;">(${list.length})</span></div><ul style="margin:0;padding-left:20px;">`);
-  for (const c of list) {
+  htmlParts.push(ownerHeading(who, list.length));
+  list.forEach((c, i) => {
     const d = dueBits(c);
     textLines.push(`  - ${c.title}${d.text ? ` [${d.text}]` : ''}`);
-    htmlParts.push(
-      `<li style="margin:5px 0;">${esc(c.title)}` +
-      (d.text ? ` <span style="color:${d.color};font-size:13px;font-weight:600;">${esc(d.text)}</span>` : '') +
-      `</li>`
-    );
-  }
-  htmlParts.push('</ul>');
+    const title = `${esc(c.title)}${d.kind ? ' ' + chip(d.chip, d.kind) : ''}`;
+    htmlParts.push(row(title, { last: i === list.length - 1 }));
+  });
   textLines.push('');
 }
 textLines.push('Open Home OS: https://ortizzle.github.io/ortiz-home-os/');
@@ -87,5 +84,5 @@ await sendMail({
   to,
   subject: `Task list — ${dateLabel} · ${open.length} open`,
   text: textLines.join('\n'),
-  html: page('Household tasks', htmlParts.join('')),
+  html: page({ title: 'Household tasks', subtitle: `${dateLabel} · ${open.length} open`, body: htmlParts.join('') }),
 });
