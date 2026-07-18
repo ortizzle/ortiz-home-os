@@ -1,0 +1,27 @@
+name: Daily task list to Kat
+
+# Emails Kat the household's open tasks every morning, grouped by who they're
+# on, with overdue and due-today called out. Reads the chores store from the
+# household Gist.
+# 14:30 UTC = 7:30 AM America/Phoenix (Arizona has no DST — stable year-round).
+on:
+  schedule:
+    - cron: '30 14 * * *'
+  workflow_dispatch: {} # run by hand from the Actions tab to test
+
+jobs:
+  tasks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install nodemailer@6 --no-save
+      - run: node .github/scripts/send-tasks.mjs
+        env:
+          GIST_ID: ${{ secrets.GIST_ID }}
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }} # optional; defaults to chris.ortiz@gmail.com
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          KAT_EMAIL: ${{ secrets.KAT_EMAIL }}
