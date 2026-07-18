@@ -7,7 +7,12 @@ name: Daily task list to Kat
 on:
   schedule:
     - cron: '30 14 * * *'
-  workflow_dispatch: {} # run by hand from the Actions tab to test
+  workflow_dispatch: # run by hand from the Actions tab to test
+    inputs:
+      dry_run:
+        description: 'Preview only — log the email in the run output instead of sending it'
+        type: boolean
+        default: true
 
 jobs:
   tasks:
@@ -20,6 +25,7 @@ jobs:
       - run: npm install nodemailer@6 --no-save
       - run: node .github/scripts/send-tasks.mjs
         env:
+          DRY_RUN: ${{ github.event.inputs.dry_run }} # empty on schedule → real send
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GMAIL_USER: ${{ secrets.GMAIL_USER }} # optional; defaults to chris.ortiz@gmail.com

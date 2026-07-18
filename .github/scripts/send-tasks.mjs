@@ -4,11 +4,13 @@
 // KAT_EMAIL. Sends every day, including an "all clear" line on empty days so
 // the absence of tasks is a signal, not silence.
 import {
-  readSnapshot, live, today, fmtDay, esc, sendMail, page,
+  readSnapshot, live, today, fmtDay, esc, sendMail, page, isDryRun,
 } from './home-os.mjs';
 
 const { data } = await readSnapshot();
-const to = process.env.KAT_EMAIL;
+// A real send needs a recipient; a preview run can proceed without one so it's
+// testable before the secret is set (the log just shows the placeholder).
+const to = process.env.KAT_EMAIL || (isDryRun() ? '(KAT_EMAIL not set — preview)' : null);
 if (!to) {
   throw new Error('Missing repo secret KAT_EMAIL — add Kat\'s address under GitHub → repo Settings → Secrets and variables → Actions.');
 }

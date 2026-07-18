@@ -122,6 +122,14 @@ export function esc(s) {
 
 // ---------- mail ----------
 
+// Whether this run should log instead of send. Parsed carefully: the Actions
+// "Run workflow" button passes a boolean input as the STRING 'true' or
+// 'false', and 'false' is truthy in JS — so only these exact values count as
+// on. A scheduled run has DRY_RUN unset (empty) → a real send.
+export function isDryRun() {
+  return /^(1|true|yes|on)$/i.test((process.env.DRY_RUN || '').trim());
+}
+
 // Send from the family Gmail over SMTP using an app password (Google Account
 // → Security → App passwords). GMAIL_USER defaults to the account the app is
 // built around. Set DRY_RUN=1 to log the message and skip sending — handy for
@@ -130,10 +138,9 @@ export async function sendMail({ to, subject, text, html }) {
   const {
     GMAIL_USER = 'chris.ortiz@gmail.com',
     GMAIL_APP_PASSWORD,
-    DRY_RUN,
   } = process.env;
-  if (DRY_RUN) {
-    console.log(`[DRY_RUN] would send "${subject}" → ${to || '(no recipient)'}\n--- text ---\n${text}\n---`);
+  if (isDryRun()) {
+    console.log(`[DRY RUN — preview only, nothing sent]\nTo:      ${to || '(no recipient)'}\nSubject: ${subject}\n\n${text}\n`);
     return;
   }
   if (!GMAIL_APP_PASSWORD) {
