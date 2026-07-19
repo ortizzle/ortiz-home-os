@@ -80,11 +80,15 @@ export async function memoryText({ today } = {}) {
 }
 
 // The single knowledge block every Claudia call should use for `notes`: the
-// freeform notes field + the memory facts. `{ today }` (passed by the weekly
-// review) filters stale 'learned' facts out of the memory block.
+// freeform notes field + the memory facts. Stale 'learned' facts — ones whose
+// only dates are well past — are dropped from the block. This now defaults to
+// today for EVERY caller (brief, meeting, claudify, review, digest): a
+// finished event should never be recited anywhere, not just in the review. A
+// caller can still override `today`; only dated 'learned' facts are ever
+// filtered, so standing facts (family, rhythms, preferences) are untouched.
 export async function householdKnowledge(settings, opts = {}) {
   const notes = ((settings || {}).householdNotes || DEFAULT_HOUSEHOLD_NOTES).trim();
-  const mem = await memoryText(opts);
+  const mem = await memoryText({ today: todayStr(), ...opts });
   return mem ? `${notes}\n\nCLAUDIA'S MEMORY — standing facts about this family (treat as true):\n${mem}` : notes;
 }
 

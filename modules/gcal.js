@@ -236,8 +236,22 @@ function toAppt(ev) {
 // than one selected calendar, or a local appointment that predates Google
 // being connected. Used both across calendars here and against local
 // appointments in calendar.js's appointmentsFor().
+//
+// The title is normalized so trivial punctuation differences don't defeat the
+// match: the family keeps the same event on more than one calendar with
+// titles like "Chris's Self-Care Day" and "Chris Self-Care Day" — same day,
+// same time, one real event. Dropping the possessive 's and reducing to bare
+// words collapses those to one key. The date+time anchor keeps genuinely
+// distinct events (and each day of a recurring series) separate.
+function normTitle(t) {
+  return (t || '')
+    .toLowerCase()
+    .replace(/['’]s\b/g, '')      // possessive: "chris's" -> "chris" (not "chriss")
+    .replace(/[^a-z0-9]+/g, ' ')  // punctuation/whitespace -> single spaces
+    .trim();
+}
 export function apptKey(a) {
-  return `${(a.title || '').trim().toLowerCase()}|${a.date}|${a.allDay ? 'allday' : (a.startTime || '')}`;
+  return `${normTitle(a.title)}|${a.date}|${a.allDay ? 'allday' : (a.startTime || '')}`;
 }
 
 async function apiGet(url) {
