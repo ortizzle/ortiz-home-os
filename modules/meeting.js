@@ -193,6 +193,12 @@ function agendaRow(item, rerender) {
     ]),
     el('button', {
       class: 'link',
+      style: 'padding: 4px 6px; font-size: 13px; line-height: 1',
+      'aria-label': 'Edit item',
+      onclick: () => startEdit(),
+    }, 'Edit'),
+    el('button', {
+      class: 'link',
       style: 'padding: 4px 6px; font-size: 15px; line-height: 1',
       'aria-label': 'Remove item',
       onclick: async () => {
@@ -201,6 +207,33 @@ function agendaRow(item, rerender) {
       },
     }, '×'),
   ]);
+
+  // Inline edit: tap Edit to reword an item in place — fix an icebreaker
+  // Claudia proposed, tweak a topic — without deleting and retyping. Only the
+  // text changes; section, order, cycle, and any logged decision are kept.
+  // Empty is rejected; Enter/Save commits, Escape/Cancel backs out.
+  function startEdit() {
+    const input = el('input', { class: 'input', style: 'font-size: 14px' });
+    input.value = item.text;
+    const save = async () => {
+      const t = input.value.trim();
+      if (!t) return;
+      if (t !== item.text) await put('agenda', { ...item, text: t });
+      rerender();
+    };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') save();
+      else if (e.key === 'Escape') rerender();
+    });
+    clear(row).append(el('div', { class: 'grocery-add', style: 'width: 100%' }, [
+      input,
+      el('button', { class: 'btn btn-primary', onclick: save }, 'Save'),
+      el('button', { class: 'btn', onclick: () => rerender() }, 'Cancel'),
+    ]));
+    input.focus();
+    input.setSelectionRange(item.text.length, item.text.length);
+  }
+
   // Decision capture: once an item is checked off, offer a one-line "what did
   // we decide?" note. Saved onto the item, recapped at the next meeting, and
   // fed to Claudia so settled decisions aren't re-raised.

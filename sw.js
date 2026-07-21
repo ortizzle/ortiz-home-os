@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v64-calendar-dedupe';
+const CACHE = 'ohos-shell-v65-edit-agenda';
 const SHELL = [
   './',
   './index.html',
