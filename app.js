@@ -25,7 +25,7 @@ import { errandWindow } from './modules/suggest.js';
 import { getUsage, estimateCost, resetUsage } from './modules/ai.js';
 import { pushSupported, getPushState, enablePush, disablePush } from './modules/push.js';
 import { diagnosticsSection } from './modules/diag.js';
-import { el, clear, toast, navigate, openModal, todayStr, fmtDay, disclosure } from './modules/ui.js';
+import { el, clear, toast, navigate, openModal, todayStr, fmtDay, disclosure, preserveScroll } from './modules/ui.js';
 
 const view = document.getElementById('view');
 
@@ -126,6 +126,12 @@ const DEFAULT_ADMIN_ATTENDEES = 'Chris, Kat';
 // plus what she's picked up from actual use (accepted suggestions, answered
 // questions, things suggested repeatedly but never taken). Settings →
 // Export JSON has the raw data; this is the readable version.
+// Remember whether "What Claudia knows" is expanded. Forgetting or editing a
+// fact re-renders Settings; without this the section would collapse each time,
+// so forgetting several facts in a row meant re-expanding and re-scrolling
+// after every one. Persisting the open state (plus preserved scroll) lets you
+// work through them without redoing steps.
+let memoryDiscOpen = false;
 function memorySection(s, memory, memFacts = [], rerender = () => {}) {
   const row = (label, value, wrap = false) =>
     value ? el('p', { class: 'muted small', style: `margin: 2px 0${wrap ? '; white-space: pre-wrap' : ''}` }, [el('strong', {}, label + ': '), value]) : null;
@@ -209,7 +215,7 @@ function memorySection(s, memory, memFacts = [], rerender = () => {}) {
     memNodes.push(el('p', { class: 'muted small' }, 'No follow-through history yet — this fills in as you use Ask, the weekly review, and the daily brief.'));
   }
 
-  return disclosure('What Claudia knows', el('section', { class: 'panel' }, [
+  const disc = disclosure('What Claudia knows', el('section', { class: 'panel' }, [
     el('p', { class: 'muted small', style: 'margin-top: 0' }, 'Claudia’s memory feeds every brief, review, meeting, and dinner plan. Facts sync to both phones; answers you give her distill in automatically.'),
     ...factNodes,
     heading('Also in play'),
@@ -220,7 +226,11 @@ function memorySection(s, memory, memFacts = [], rerender = () => {}) {
     row('Food rules', s.foodNotes || DEFAULT_FOOD_NOTES, true),
     row('Household notes', s.householdNotes || DEFAULT_HOUSEHOLD_NOTES, true),
     ...memNodes,
-  ]));
+  ]), { open: memoryDiscOpen });
+  // Keep the section's expanded state across the re-render that edits/forgets
+  // trigger, so you can work through several facts in a row.
+  disc.addEventListener('toggle', () => { memoryDiscOpen = disc.open; });
+  return disc;
 }
 
 // Claude usage & estimated cost, accumulated per device (see ai.js). Cost is an
@@ -430,7 +440,7 @@ async function renderSettings(root) {
       el('p', { class: 'muted small' }, 'Claudia (powered by Claude) runs the daily brief, weekly review, dinner plans, meeting drafts, and Ask. Notes are background context so her ideas fit your family; interests + city let her search the web for real nearby things — a movie you’d love this week, local events — with actual dates and times. Used for direct browser calls to Anthropic; never leaves your device except to Anthropic.'),
     ])),
 
-    memorySection(s, memory, memFacts, () => renderSettings(root)),
+    memorySection(s, memory, memFacts, preserveScroll(() => renderSettings(root))),
     usageSection(root),
     notificationsSection(),
 
