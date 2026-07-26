@@ -152,7 +152,7 @@ async function gatherWeekAhead() {
   const lines = [];
   if (oneoffs.length) {
     lines.push('One-off events (of most interest):');
-    for (const a of oneoffs) lines.push(`  - ${fmtDay(a.date)}${a.startTime ? ' ' + to12h(a.startTime) : ''}: ${a.title}${a.who ? ` (${a.who})` : ''}`);
+    for (const a of oneoffs) lines.push(`  - ${fmtDay(a.date)}${a.startTime ? ' ' + to12h(a.startTime) : ''}: ${a.title}${a.who ? ` (${a.who})` : ''}${a.calendar ? ` [${a.calendar}]` : ''}`);
   }
   if (recurring.length) {
     lines.push('Recurring this week (daily/repeating — mention once):');

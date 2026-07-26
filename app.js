@@ -35,7 +35,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v68 · plans merge into tasks + subtasks';
+const APP_VERSION = 'v69 · events say which calendar they came from';
 
 // ---------- theme ----------
 

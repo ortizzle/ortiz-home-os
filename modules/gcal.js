@@ -201,7 +201,10 @@ function pad(n) { return String(n).padStart(2, '0'); }
 // A Google event instance -> the same appointment shape the app renders.
 // We slice the RFC3339 strings rather than parse via Date() so the wall-clock
 // time is preserved exactly as Google stores it (no browser-TZ shifting).
-function toAppt(ev) {
+// `calName` is the display name of the calendar the event came from — real
+// attribution signal (Family vs a parent's personal calendar) for both the
+// views and the AI prompts.
+function toAppt(ev, calName) {
   if (ev.status === 'cancelled') return null;
   const start = ev.start || {};
   const end = ev.end || {};
@@ -226,6 +229,7 @@ function toAppt(ev) {
     location: ev.location || null,
     seriesId: ev.recurringEventId || null,
     source: 'gcal',
+    calendar: calName || null, // which Google calendar this came from
     htmlLink: ev.htmlLink || null, // open/edit this event in Google
   };
 }
@@ -272,6 +276,28 @@ export async function listCalendars() {
     primary: Boolean(c.primary),
     accessRole: c.accessRole, // owner | writer | reader | freeBusyReader
   }));
+}
+
+// id -> display name for the account's calendars, fetched once per session.
+// Failure degrades to raw ids (events still flow, just unlabeled).
+let calNamesCache = null;
+async function calendarNames() {
+  if (!calNamesCache) {
+    try {
+      calNamesCache = Object.fromEntries((await listCalendars()).map((c) => [c.id, c.summary]));
+    } catch {
+      calNamesCache = {};
+    }
+  }
+  return calNamesCache;
+}
+
+// A primary calendar's summary is the raw account email — shorten to the
+// local part so labels read "chris.ortiz", not a full address. Named
+// calendars ("Family", "Personal Schedule") pass through untouched.
+function shortCalName(summary) {
+  const s = (summary || '').trim();
+  return s.includes('@') ? s.split('@')[0] : s;
 }
 
 // Calendars this account can WRITE to (for the "Save to" target). Cached.
@@ -342,7 +368,16 @@ export async function eventsForRange(start, end, { force = false } = {}) {
   // Content-based apptKey() catches both; distinct events and each day of a
   // recurring series still have different keys, so those survive untouched.
   const seen = new Set();
-  for (const cal of getSelectedCalendars()) {
+  const names = await calendarNames();
+  // Family calendar first: first-seen wins in this loop, so when the same
+  // event lives on several calendars, the shared Family copy is the one that
+  // survives dedupe — and the one whose calendar name the views and the AI
+  // see. Stable sort keeps the user's order among the rest.
+  const cals = getSelectedCalendars().slice().sort((a, b) => {
+    const fam = (id) => (/family/i.test(names[id] || id) ? 0 : 1);
+    return fam(a) - fam(b);
+  });
+  for (const cal of cals) {
     try {
       const data = await apiGet(
         `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal)}/events` +
@@ -350,7 +385,7 @@ export async function eventsForRange(start, end, { force = false } = {}) {
         `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`
       );
       for (const ev of data.items || []) {
-        const a = toAppt(ev);
+        const a = toAppt(ev, shortCalName(names[cal] || ''));
         if (!a) continue;
         const dedupeKey = apptKey(a);
         if (seen.has(dedupeKey)) continue;

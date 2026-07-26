@@ -191,7 +191,11 @@ function apptRow(a, rerender) {
         : editAppointmentModal(a, a.date, rerender),
   }, [
     el('span', { class: 'event-time' }, a.allDay || !a.startTime ? 'All day' : to12(a.startTime)),
-    el('span', { class: 'event-title' }, [a.title, a.who ? el('span', { class: 'event-who' }, `· ${a.who}`) : null]),
+    el('span', { class: 'event-title' }, [
+      a.title,
+      a.who ? el('span', { class: 'event-who' }, `· ${a.who}`) : null,
+      a.calendar ? el('span', { class: 'event-who' }, `· ${a.calendar}`) : null,
+    ]),
   ]);
 }
 

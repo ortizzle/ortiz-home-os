@@ -62,7 +62,7 @@ export async function digestSection({ open = true } = {}) {
     nodes.push(...capped(oneoffs, (a) =>
       line(a.endDate && a.endDate > a.date
         ? [el('strong', {}, `${fmtDay(a.date)}–${fmtDay(a.endDate)}`), ` · ${a.title} (trip)`]
-        : [el('strong', {}, fmtDay(a.date)), `${a.startTime ? ' ' + to12(a.startTime) : ''} · ${a.title}${a.who ? ` (${a.who})` : ''}`])
+        : [el('strong', {}, fmtDay(a.date)), `${a.startTime ? ' ' + to12(a.startTime) : ''} · ${a.title}${a.who ? ` (${a.who})` : ''}`, a.calendar ? el('span', { class: 'muted' }, ` · ${a.calendar}`) : null])
     ));
     for (const r of recurring) nodes.push(line(`↻ ${r.title} (${r.range}${r.startTime ? ', ' + to12(r.startTime) : ''})`));
   }

@@ -290,6 +290,7 @@ async function renderDay(root, date) {
                 a.title,
                 isMultiDay(a) ? el('span', { class: 'event-who' }, (({ n, total }) => `· day ${n} of ${total}`)(spanProgress(a, date))) : null,
                 a.who ? el('span', { class: 'event-who' }, `· ${a.who}`) : null,
+                a.calendar ? el('span', { class: 'event-who' }, `· ${a.calendar}`) : null,
               ]),
             ])
           )
