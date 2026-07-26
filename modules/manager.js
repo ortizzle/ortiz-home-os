@@ -1,34 +1,32 @@
 // manager.js — the Claudia tab: have her plan the week (a persistent review
-// whose items add/dismiss with one tap), the family's shared weekly
-// checklist, and the family meeting. Recurring upkeep and vendor contacts
+// whose items add/dismiss with one tap) and the family meeting. Review items
+// land directly in Tasks (dateless = "Someday"); the separate weekly-plan
+// checklist merged into Tasks in v68. Recurring upkeep and vendor contacts
 // live as plain Calendar appointments now — no separate maintenance/vendor
 // feature.
 
-import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
-import { el, clear, toast, todayStr, addDays, fmtDay, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, disclosure, richText, plainText } from './ui.js';
+import { put, getSettings } from './store.js';
+import { el, clear, toast, todayStr, addDays, fmtDay, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, richText, plainText } from './ui.js';
 import { addGroceryItem, STORES } from './grocery.js';
-import { reviewWeek, claudifyItem, hasApiKey, AIError } from './ai.js';
+import { reviewWeek, adviseQuestion, hasApiKey, AIError } from './ai.js';
 import { editChoreModal } from './chores.js';
-import { gatherContext, householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays, birthdaysText, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logQuestionResolved, followUpText } from './hmcontext.js';
+import { gatherContext, householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays, birthdaysText, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logSuggestionDismissed, logQuestionResolved, followUpText } from './hmcontext.js';
 import { meetingSection, nextMeetingDates, planningHorizon } from './meeting.js';
 import { digestSection } from './digest.js';
 import { appointmentsFor } from './calendar.js';
-
-const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 
 // Turn a suggestion into a real record. `type` decides the store.
 // Returns { store, rec } so callers can log where the suggestion landed.
 export async function applyAdd(type, { title, date, detail, store, who } = {}, today = todayStr()) {
   if (type === 'appointment') return { store: 'appointments', rec: await put('appointments', { title, date: date || today, allDay: true, startTime: null, endTime: null, who: who || null }) };
   if (type === 'grocery') return { store: 'groceries', rec: await addGroceryItem(title, store || STORES[0]) };
-  if (type === 'plan') return { store: 'plan', rec: await put('plan', { title, detail: detail || null, done: false }) };
-  return { store: 'chores', rec: await put('chores', { title, dueDate: date || null, assignee: who || null, done: false }) }; // task
+  // 'plan' (from a cached pre-v68 review) and 'task' both land in Tasks now.
+  return { store: 'chores', rec: await put('chores', { title, dueDate: date || null, assignee: who || null, notes: detail || null, done: false }) };
 }
 
-// The add buttons for an AI suggestion. `includePlan` adds a "+ Plan" option
-// (used in the weekly review, not the daily brief). `alreadyAdded` renders the
-// restored "Added ✓" state when a persisted result is re-rendered.
-export function addButtons(sugg, { today, includePlan = false, onAdded, alreadyAdded = false } = {}) {
+// The add buttons for an AI suggestion. `alreadyAdded` renders the restored
+// "Added ✓" state when a persisted result is re-rendered.
+export function addButtons(sugg, { today, onAdded, alreadyAdded = false } = {}) {
   if (alreadyAdded) {
     const done = el('button', { class: 'btn seg-btn hm-add' }, 'Added ✓');
     done.disabled = true;
@@ -52,10 +50,10 @@ export function addButtons(sugg, { today, includePlan = false, onAdded, alreadyA
         // A task is the one thing that needs deciding who's on it and by when —
         // so open the task sheet prefilled from the suggestion and let the
         // family confirm assignment + due date before it's saved. Everything
-        // else (grocery, calendar, plan) adds in one tap as before.
+        // else (grocery, calendar) adds in one tap as before.
         if (type === 'task') {
           editChoreModal(
-            { title: sugg.title, dueDate: sugg.date || sugg.day || null, assignee: sugg.who || null },
+            { title: sugg.title, dueDate: sugg.date || sugg.day || null, assignee: sugg.who || null, notes: sugg.detail || null },
             null,
             { onSaved: (rec) => markAdded('chores', rec) },
           );
@@ -74,12 +72,10 @@ export function addButtons(sugg, { today, includePlan = false, onAdded, alreadyA
     return b;
   };
   const out = [];
-  if (includePlan) out.push(mk('plan', '+ Plan'));
   const t = sugg.suggestedType || sugg.type || 'task';
   if (t === 'appointment') out.push(mk('appointment', '+ Calendar'));
   else if (t === 'grocery') out.push(mk('grocery', '+ Grocery'));
-  else if (t === 'task') out.push(mk('task', '+ Task'));
-  else if (!includePlan) out.push(mk('task', '+ Task'));
+  else out.push(mk('task', '+ Task')); // 'task', legacy 'plan', anything else
   return el('div', { class: 'hm-actions' }, out);
 }
 
@@ -161,36 +157,23 @@ function reviewShareText(out, state) {
   return lines.join('\n').trim();
 }
 
-// "Claudify" a plan item: expand it into a fuller, concrete write-up
-// (steps, considerations, timeline) shown inline below the row, with a
-// Share/Copy button so it can be pasted into email, Notes, Google Docs,
-// wherever. Saved on the plan record (p.claudified) so it survives
-// rerenders/navigation — it sticks around until re-claudified or the item
-// is marked done.
-function renderClaudified(resultHost, p, text) {
-  clear(resultHost).append(
-    el('p', { class: 'idea-detail', style: 'white-space: pre-wrap' }, text),
-    el('button', {
-      class: 'btn seg-btn hm-add', style: 'margin-top: 6px',
-      onclick: () => shareText({ title: p.title, text }),
-    }, '📤 Share / copy')
-  );
-}
-
-// Shared deep-dive runner: gathers the next-2-weeks calendar so the write-up
-// fits the family's actual schedule, calls claudifyItem, and renders inline.
-// `onText` (optional) persists the result (e.g. onto the plan record).
-async function runClaudify({ title, detail = '', kind, resultHost, onText, loadingLabel = 'Claudia is expanding this…' }) {
+// Decision-aid runner for one of Claudia's open questions: gathers the
+// next-2-weeks calendar so the advice fits the actual schedule, calls
+// adviseQuestion, and renders inline. `onText` persists the write-up onto
+// the review. (v68: the universal deep dive is gone — tasks break down into
+// subtasks from the task sheet instead; questions are where a write-up
+// still earns its cost.)
+async function runAdvise({ title, resultHost, onText }) {
   if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
-  clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, loadingLabel)]));
+  clear(resultHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is working through the options…')]));
   try {
     const settings = getSettings();
     const ctx = await gatherContext({ start: todayStr(), days: 14, email: false });
-    const text = await claudifyItem({
+    const text = await adviseQuestion({
       family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
       notes: await householdKnowledge(settings),
       events: ctx.eventsText,
-      title, detail, kind,
+      title,
     });
     await onText?.(text);
     return text;
@@ -200,64 +183,9 @@ async function runClaudify({ title, detail = '', kind, resultHost, onText, loadi
   }
 }
 
-function claudifyBtn(p, resultHost) {
-  return el('button', {
-    class: 'link', style: 'padding: 4px 6px; font-size: 13px',
-    'aria-label': 'Claudify — expand into a fuller plan',
-    onclick: async () => {
-      const text = await runClaudify({
-        title: p.title, detail: p.detail || '', kind: 'plan', resultHost,
-        onText: (t) => put('plan', { ...p, claudified: t }),
-      });
-      if (text) renderClaudified(resultHost, p, text);
-    },
-  }, '✨ Claudify');
-}
-
-function planRow(p, rerender) {
-  const resultHost = el('div', {});
-  if (p.claudified && !p.done) renderClaudified(resultHost, p, p.claudified);
-  return el('div', { class: 'plan-row-wrap' }, [
-    el('div', { class: 'task-row' + (p.done ? ' done' : '') }, [
-      el('button', {
-        class: 'task-check',
-        'aria-label': p.done ? 'Mark not done' : 'Mark done',
-        html: p.done ? CHECK_SVG : '',
-        onclick: async () => {
-          await put('plan', { ...p, done: !p.done, doneAt: !p.done ? now() : null, doneBy: !p.done ? deviceName() : null, claudified: !p.done ? null : p.claudified });
-          rerender();
-        },
-      }),
-      el('div', { class: 'task-main' }, [
-        el('span', { class: 'task-name' }, p.title),
-        (p.detail || p.by) ? el('span', { class: 'task-meta' }, [
-          p.detail ? el('span', { class: 'muted small' }, p.detail) : null,
-          p.by ? el('span', { class: 'pill' }, p.by) : null,
-        ]) : null,
-      ]),
-      claudifyBtn(p, resultHost),
-      el('button', {
-        class: 'link', style: 'padding: 4px 6px; font-size: 15px; line-height: 1', 'aria-label': 'Remove',
-        onclick: async () => { await remove('plan', p.id); rerender(); },
-      }, '×'),
-    ]),
-    resultHost,
-  ]);
-}
-
 export async function renderManager(root) {
   clear(root);
   const rerender = preserveScroll(() => renderManager(root));
-  let plan = await getAll('plan');
-  // Done plan items have an end state: kept ~60 days (doneAt required — a
-  // legacy item without a timestamp is kept), then pruned.
-  const doneCutoff = new Date(Date.now() - 60 * 86400000).toISOString();
-  for (const p of plan.filter((x) => x.done && x.doneAt && x.doneAt < doneCutoff)) {
-    await remove('plan', p.id);
-    plan = plan.filter((x) => x.id !== p.id);
-  }
-  const openPlan = plan.filter((p) => !p.done).sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
-  const donePlan = plan.filter((p) => p.done);
 
   root.append(el('div', { class: 'view-head' }, [
     el('h1', {}, 'Claudia'),
@@ -318,7 +246,6 @@ export async function renderManager(root) {
           events: ctx.eventsText,
           chores: ctx.choresText,
           groceries: ctx.groceriesText,
-          plan: ctx.planText,
           meals: ctx.mealsText,
           agenda: ctx.agendaText,
           meetingDecisions: ctx.meetingDecisionsText,
@@ -368,30 +295,6 @@ export async function renderManager(root) {
     ])
   );
 
-  // ----- this week's plan (the shared checklist review items land in) -----
-  const planInput = el('input', { class: 'input', placeholder: 'Add a plan item…' });
-  async function addPlan() {
-    if (!planInput.value.trim()) return;
-    await put('plan', { title: planInput.value.trim(), done: false });
-    planInput.value = '';
-    // The re-render replaces the whole view (and this input with it) — put
-    // focus back on the NEW input so several items can be added in a row.
-    await rerender();
-    document.querySelector('input[placeholder="Add a plan item…"]')?.focus();
-  }
-  planInput.addEventListener('keydown', (e) => e.key === 'Enter' && addPlan());
-  root.append(
-    el('div', { class: 'panel-head' }, [el('h4', {}, `This week's plan (${openPlan.length})`)]),
-    el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top: 0' }, 'The family’s shared checklist — what we’re getting done this week, on both phones. Claudia’s review adds to it; unfinished items carry forward.'),
-      ...(openPlan.length ? openPlan.map((p) => planRow(p, rerender)) : [el('p', { class: 'muted small' }, 'Nothing planned yet. Add items below, or have Claudia review the week above.')]),
-      el('div', { class: 'grocery-add', style: 'margin-top: 10px' }, [planInput, el('button', { class: 'btn btn-primary', onclick: addPlan }, 'Add')]),
-    ])
-  );
-  if (donePlan.length) {
-    root.append(disclosure(`Done this week (${donePlan.length})`, el('section', { class: 'panel' }, donePlan.slice(0, 20).map((p) => planRow(p, rerender)))));
-  }
-
   // ----- family meeting (moved from its own tab) -----
   root.append(...(await meetingSection(rerender)));
 
@@ -399,14 +302,13 @@ export async function renderManager(root) {
   tableOfContents(root, [
     { label: 'Digest', at: 'The stretch ahead' },
     { label: 'Plan week', at: 'Plan the week' },
-    { label: 'Checklist', at: "This week's plan" },
     { label: 'Meeting', at: 'Family meeting' },
   ]);
 }
 
-// One review suggestion: add buttons plus a clear (✓) that just clears it
-// from THIS review — a satisfying checked-off feeling, not a permanent veto.
-// Claudia keeps no memory of it, so it's fair game for a future review.
+// One review suggestion: add buttons plus a clear (✓) that clears it from
+// this review AND logs the dismissal, so Claudia stops re-suggesting it for
+// a few weeks — not a permanent veto (the log entry prunes away).
 function reviewIdea(item, rerender, state) {
   // Once added, an item is done business — collapse it to a single line
   // (green ✓ + title) so the review stays scannable and space goes to the
@@ -433,7 +335,6 @@ function reviewIdea(item, rerender, state) {
 
   const actions = addButtons(item, {
     today: todayStr(),
-    includePlan: true,
     alreadyAdded: false,
     // Record the add (and where it went) BEFORE re-rendering, so the restored
     // (shared) review shows this item as Added ✓ on both phones and the
@@ -458,37 +359,18 @@ function reviewIdea(item, rerender, state) {
     'aria-label': 'Not needed — clear from this review',
     onclick: async () => {
       await markReviewDismissed(item.title);
+      logSuggestionDismissed(item.title).catch(() => {});
       toast('Cleared');
       rerender();
     },
   }, '✓ Not needed');
   actions.append(clearBtn);
-  // Deep dive: expand the suggestion into a concrete, calendar-aware plan
-  // inline — steps, timing, what to have on hand — before deciding to add it.
-  // Persisted on the review (synced), so it survives rerenders and shows on
-  // both phones until the next review replaces it.
-  const diveHost = el('div', {});
-  const showDive = (text) => clear(diveHost).append(
-    el('p', { class: 'idea-detail', style: 'white-space: pre-wrap; margin-top: 8px' }, text),
-    el('button', { class: 'btn seg-btn hm-add', style: 'margin-top: 6px', onclick: () => shareText({ title: item.title, text }) }, '📤 Share / copy'),
-  );
-  if (state.dives[item.title]) showDive(state.dives[item.title]);
-  actions.append(el('button', {
-    class: 'btn seg-btn hm-add',
-    'aria-label': 'Claudify — deep dive into this suggestion',
-    onclick: async () => {
-      const text = await runClaudify({
-        title: item.title, detail: item.detail || '', kind: 'plan', resultHost: diveHost,
-        onText: (t) => markReviewDived(item.title, t),
-      });
-      if (text) showDive(text);
-    },
-  }, '✨ Deep dive'));
+  // (v68: no per-suggestion deep dive — add it as a task, then break it into
+  // subtasks from the task sheet if it needs steps.)
   return el('div', { class: 'idea' }, [
     el('div', { class: 'idea-title' }, [item.title, item.who ? el('span', { class: 'pill pill-accent', style: 'margin-left: 6px' }, item.who) : null]),
     item.detail ? el('p', { class: 'idea-detail' }, richText(item.detail)) : null,
     actions,
-    diveHost,
   ]);
 }
 
@@ -585,9 +467,8 @@ function questionRow(q, rerender, state) {
     class: 'btn seg-btn hm-add',
     'aria-label': 'Claudify — have Claudia work through this question',
     onclick: async () => {
-      const text = await runClaudify({
-        title: q, kind: 'question', resultHost: diveHost,
-        loadingLabel: 'Claudia is working through the options…',
+      const text = await runAdvise({
+        title: q, resultHost: diveHost,
         onText: (t) => markReviewDived(q, t),
       });
       if (text) showDive(text);

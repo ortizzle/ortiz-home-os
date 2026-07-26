@@ -35,7 +35,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v63 · digest tucks away mid-review';
+const APP_VERSION = 'v68 · plans merge into tasks + subtasks';
 
 // ---------- theme ----------
 
@@ -236,7 +236,7 @@ function memorySection(s, memory, memFacts = [], rerender = () => {}) {
 // Claude usage & estimated cost, accumulated per device (see ai.js). Cost is an
 // estimate from published Sonnet 5 rates — the real bill is on the Anthropic
 // console; this is a running gut-check so an expensive habit doesn't surprise.
-const USAGE_KIND_LABELS = { brief: 'Daily brief', review: 'Weekly review', meals: 'Dinner plans', meeting: 'Meeting agendas', claudify: 'Claudify', other: 'Other' };
+const USAGE_KIND_LABELS = { brief: 'Daily brief', review: 'Weekly review', meals: 'Dinner plans', meeting: 'Meeting agendas', subtasks: 'Subtask breakdowns', claudify: 'Question deep-dives', other: 'Other' };
 function usdShort(n) {
   if (n <= 0) return '$0.00';
   if (n < 0.01) return '<$0.01';
@@ -595,6 +595,31 @@ async function chooseCalendars(afterSave) {
 
 // ---------- boot ----------
 
+// v68: Plans merged into Tasks. Any plan record — local, or arriving later
+// from a not-yet-updated phone's snapshot — becomes a dateless task, with the
+// plan's detail and deep-dive write-up folded into the task notes. The task
+// id is derived from the plan id, so both phones migrating the same record
+// converge to ONE task through sync instead of duplicating it. Runs on every
+// boot and after background pulls; a no-op once the plan store is empty.
+async function migratePlans() {
+  const plans = await getAll('plan');
+  for (const p of plans) {
+    await put('chores', {
+      id: 'plan-' + p.id,
+      title: p.title || p.text || 'Untitled',
+      dueDate: null,
+      assignee: null,
+      notes: [p.detail, p.claudified].filter(Boolean).join('\n\n') || null,
+      done: Boolean(p.done),
+      doneAt: p.doneAt || null,
+      doneBy: p.doneBy || null,
+      createdAt: p.createdAt,
+      by: p.by,
+    });
+    await remove('plan', p.id);
+  }
+}
+
 async function boot() {
   applyTheme();
 
@@ -619,6 +644,7 @@ async function boot() {
     console.error('initStore failed', err);
     toast(`Storage error — some data may be unavailable (${err?.message || err})`, 'error');
   }
+  await migratePlans().catch((err) => console.warn('plan migration failed', err));
 
   // First run: get the device name set so attribution works from record one.
   if (!getSettings().deviceName && !location.hash) {
@@ -645,6 +671,8 @@ async function boot() {
     if (!syncConfigured() || document.visibilityState !== 'visible') return;
     const changed = await pullFromGist();
     if (!changed) return;
+    // The other phone may still be on pre-merge code and pushing plan records.
+    await migratePlans().catch(() => {});
     const typing = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
     const modalOpen = Boolean(document.querySelector('.modal-overlay'));
     if (typing || modalOpen) return; // next tick will catch it

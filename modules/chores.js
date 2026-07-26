@@ -1,10 +1,10 @@
 // chores.js — one-off household tasks: due date, assignee. Same interaction
 // grammar as Focus OS tasks.
 
-import { getAll, put, remove, now, deviceName, getSettings } from './store.js';
+import { getAll, put, remove, now, uid, deviceName, getSettings } from './store.js';
 import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText, SHARE_SVG, ownerPillClass } from './ui.js';
 import { parseImport } from './grocery.js';
-import { claudifyItem, hasApiKey, AIError } from './ai.js';
+import { suggestSubtasks, hasApiKey, AIError } from './ai.js';
 import { gatherContext, householdKnowledge } from './hmcontext.js';
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
@@ -38,6 +38,10 @@ export function choreRow(chore, { onchange, showDue = true } = {}) {
   if (showDue && chore.dueDate) {
     const overdue = !chore.done && chore.dueDate < todayStr();
     meta.push(el('span', { class: 'pill' + (overdue ? ' pill-overdue' : '') }, fmtDue(chore.dueDate)));
+  }
+  if (chore.subtasks?.length) {
+    const done = chore.subtasks.filter((s) => s.done).length;
+    meta.push(el('span', { class: 'pill' + (done === chore.subtasks.length ? ' pill-done' : '') }, `☑ ${done}/${chore.subtasks.length}`));
   }
   if (chore.assignee) meta.push(el('span', { class: `pill ${ownerPillClass(chore.assignee, familyMembers())}` }, chore.assignee));
   if (chore.notes && chore.notes.trim()) meta.push(el('span', { class: 'pill pill-note', title: 'Has a note', 'aria-label': 'Has a note', html: NOTE_SVG }));
@@ -231,38 +235,6 @@ function openFocusModal(chore, onchange) {
     },
   }, chore.notes || '');
 
-  // Deep dive: Claudia drafts a concrete plan of attack for this task —
-  // steps in order, rough times, what to have on hand, where it fits the next
-  // two weeks — straight into the notes, so it's saved with the task.
-  const diveStatus = el('span', { class: 'muted small' });
-  const diveBtn = el('button', {
-    class: 'link', style: 'padding: 4px 0; font-size: 13px',
-    onclick: async () => {
-      if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
-      diveBtn.disabled = 'disabled';
-      diveStatus.textContent = ' Claudia is working out a plan…';
-      try {
-        const settings = getSettings();
-        const ctx = await gatherContext({ start: todayStr(), days: 14, email: false });
-        const text = await claudifyItem({
-          family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
-          notes: await householdKnowledge(settings),
-          events: ctx.eventsText,
-          title: chore.title,
-          detail: notes.value || '',
-          kind: 'task',
-        });
-        notes.value = (notes.value ? notes.value.trimEnd() + '\n\n' : '') + text;
-        await put('chores', { ...chore, notes: notes.value });
-        diveStatus.textContent = '';
-      } catch (err) {
-        diveStatus.textContent = '';
-        toast(err instanceof AIError ? err.message : `Something went wrong: ${err.message}`, 'error');
-      }
-      diveBtn.disabled = null;
-    },
-  }, '✨ Deep dive — have Claudia plan this task');
-
   const m = openModal(chore.title, [
     presetRow,
     customRow,
@@ -271,7 +243,6 @@ function openFocusModal(chore, onchange) {
     el('div', { class: 'field-row', style: 'margin-top: 10px' }, [startPauseBtn, resetBtn]),
     el('label', { class: 'field-label', style: 'margin-top: 14px' }, 'Notes'),
     notes,
-    el('div', {}, [diveBtn, diveStatus]),
   ], [
     el('button', { class: 'btn btn-primary', onclick: () => m.close() }, 'Done'),
   ], {
@@ -309,6 +280,79 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
   // would silently drop it), so the existing note is passed as a child.
   const notes = el('textarea', { class: 'input', rows: 3, placeholder: 'Notes…' }, c.notes || '');
 
+  // ----- subtasks: a checklist on the task -----
+  // Checks, adds, and removes persist immediately on an existing task — the
+  // frequent action (checking a step off) must not depend on remembering to
+  // hit Save. On a NEW task they ride along with the first Save.
+  let subs = (c.subtasks || []).map((s) => ({ ...s }));
+  const subHost = el('div', {});
+  async function persistSubs() {
+    if (isNew) return;
+    await put('chores', { ...c, subtasks: subs });
+  }
+  function renderSubs() {
+    clear(subHost).append(...subs.map((s) => el('div', { class: 'subtask-row' + (s.done ? ' done' : '') }, [
+      el('button', {
+        class: 'task-check subtask-check',
+        'aria-label': s.done ? 'Mark subtask not done' : 'Mark subtask done',
+        html: s.done ? CHECK_SVG : '',
+        onclick: async () => { s.done = !s.done; await persistSubs(); renderSubs(); },
+      }),
+      el('span', { class: 'subtask-text' }, s.text),
+      el('button', {
+        class: 'link', style: 'padding: 4px 8px; font-size: 15px; line-height: 1', 'aria-label': 'Remove subtask',
+        onclick: async () => { subs = subs.filter((x) => x !== s); await persistSubs(); renderSubs(); },
+      }, '×'),
+    ])));
+  }
+  renderSubs();
+  const subInput = el('input', { class: 'input', placeholder: 'Add a subtask…' });
+  async function addSub() {
+    const text = subInput.value.trim();
+    if (!text) return;
+    subs.push({ id: uid(), text, done: false });
+    subInput.value = '';
+    await persistSubs();
+    renderSubs();
+    subInput.focus();
+  }
+  subInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addSub(); } });
+
+  // ✨ The deep dive, reworked: instead of a prose write-up, Claudia proposes
+  // a few concrete, calendar-aware subtasks that land on this checklist —
+  // delete any that miss. Structured and cheap, and the output is checkable.
+  const aiStatus = el('span', { class: 'muted small' });
+  const aiBtn = el('button', {
+    class: 'link', style: 'padding: 4px 0; font-size: 13px',
+    onclick: async () => {
+      if (!hasApiKey()) return toast('Add a Claude API key in Settings', 'warn');
+      if (!title.value.trim()) return toast('Give the task a title first', 'warn');
+      aiBtn.disabled = 'disabled';
+      aiStatus.textContent = ' Claudia is breaking it down…';
+      try {
+        const settings = getSettings();
+        const ctx = await gatherContext({ start: todayStr(), days: 14, email: false });
+        const out = await suggestSubtasks({
+          family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
+          notes: await householdKnowledge(settings),
+          events: ctx.eventsText,
+          title: title.value.trim(),
+          detail: notes.value.trim(),
+        });
+        const have = new Set(subs.map((s) => s.text.toLowerCase()));
+        const fresh = (out.subtasks || []).map((t) => String(t).trim()).filter((t) => t && !have.has(t.toLowerCase()));
+        subs.push(...fresh.map((text) => ({ id: uid(), text, done: false })));
+        await persistSubs();
+        renderSubs();
+        toast(fresh.length ? `Claudia proposed ${fresh.length} step${fresh.length === 1 ? '' : 's'} — remove any that miss` : 'Claudia had nothing to add', 'success');
+      } catch (err) {
+        toast(err instanceof AIError ? err.message : `Something went wrong: ${err.message}`, 'error');
+      }
+      aiStatus.textContent = '';
+      aiBtn.disabled = null;
+    },
+  }, '✨ Break it down — have Claudia suggest subtasks');
+
   const actions = [
     !isNew &&
       el('button', {
@@ -332,6 +376,7 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
           dueDate: due.value || null,
           assignee: assignee.value || null,
           notes: notes.value.trim() || null,
+          subtasks: subs.length ? subs : null,
           done: c.done || false,
         });
         m.close();
@@ -350,6 +395,10 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
     ]),
     el('label', { class: 'field-label' }, 'Notes'),
     notes,
+    el('label', { class: 'field-label' }, 'Subtasks'),
+    subHost,
+    el('div', { class: 'grocery-add' }, [subInput, el('button', { class: 'btn', onclick: addSub }, 'Add')]),
+    el('div', {}, [aiBtn, aiStatus]),
   ], actions);
   title.focus();
 }

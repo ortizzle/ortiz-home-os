@@ -198,7 +198,7 @@ async function generateJSON({ system, prompt, maxTokens, tools, kind = 'other' }
 // ops/projects/finances, no kid content).
 export async function draftMeeting({ attendees = [], notes = '', meetingDate, when = '', weekAhead = '', openItems = '', currentAgenda = '', stillOpen = '', decisions = '', covered = '', type = 'family' } = {}) {
   const system = (type === 'admin'
-    ? `You are Claudia, the Ortiz house manager, helping ${attendees.join(' and ') || 'Chris and Kat'} run a quick admin meeting — just the two of them, no kids. Draft an agenda drawn from real open household items: tasks, the weekly plan, projects, decisions, budgeting — never invent anything not in the data. Focus tightly on core household items — brisk and businesslike, like a well-run status check between two people running a household together, not a family gathering. No icebreakers or kid activities. Respond with JSON only — no markdown, no fences.`
+    ? `You are Claudia, the Ortiz house manager, helping ${attendees.join(' and ') || 'Chris and Kat'} run a quick admin meeting — just the two of them, no kids. Draft an agenda drawn from real open household items: tasks, projects, decisions, budgeting — never invent anything not in the data. Focus tightly on core household items — brisk and businesslike, like a well-run status check between two people running a household together, not a family gathering. No icebreakers or kid activities. Respond with JSON only — no markdown, no fences.`
     : `You are Claudia, the Ortiz family's AI house manager, helping them run a warm, fun weekly family meeting. Family: ${attendees.join(', ') || 'the family'} (Sedona and River are kids). Draft an agenda drawn from the week's real events and open items — never invent events, people, or commitments. Make it feel like a family moment, not a status meeting: consider icebreakers and connections to fun family activities or memories, so it feels nostalgic and togetherness-building, not a checklist. Keep everything concrete and kid-friendly. Respond with JSON only — no markdown, no fences.`)
     + ' FOLLOW-THROUGH: some topics from last meeting were never checked off — genuinely fold in the ones that still matter (it\'s fine to drop something that clearly resolved itself), so nothing quietly falls through the cracks.'
     + ' Your job is to ORGANIZE, not just list: take the items the family has already jotted down, assign each a section, and order them into an effective run-of-show — then add anything important they missed.';
@@ -211,7 +211,7 @@ ${notes || '(none)'}
 THE WEEK AHEAD (real calendar + household):
 ${weekAhead || '(nothing logged)'}
 
-OPEN ITEMS FROM DURING THE WEEK (tasks, plans worth raising):
+OPEN ITEMS FROM DURING THE WEEK (open tasks worth raising):
 ${openItems || '(none)'}
 
 STILL OPEN FROM LAST MEETING (never checked off — follow up on what still matters):
@@ -253,7 +253,7 @@ const HM_ROLE = (family) =>
 // Daily brief for the Home page — a short read on TODAY plus a few concrete,
 // one-tap-addable suggestions. Each suggestion is typed so the app can turn it
 // into a task, appointment, or grocery item.
-export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', agenda = '', meetingDecisions = '', email = '' } = {}) {
+export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', agenda = '', meetingDecisions = '', email = '', declined = '' } = {}) {
   const system = HM_ROLE(family) + ` This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon. If dinner is planned for tonight, mention it in a note. Kids (${kids || 'none listed'}) don't use the app — when a small chore genuinely fits one of them, suggest it as a task with their name in "who".` +
     ' CALENDAR ATTRIBUTION: events may sit on either parent\'s Google calendar — whose calendar an event is on says NOTHING about who attends or drives. Never guess who an event belongs to or who\'s taking the kids; name a person only when the event title/details or the household notes say so, otherwise leave it unattributed.' +
     ' The family\'s recent meeting decisions inform planning, but the calendar is the authority on what is actually scheduled: only present two events as one combined gathering when BOTH events are themselves on the calendar. Never introduce an event, gathering, or attendee that a decision or note mentions if it is not on the calendar — leave it out rather than assert it. Don\'t re-raise what\'s already been decided.' +
@@ -279,6 +279,9 @@ ${agenda || '(none)'}
 DECIDED AT RECENT MEETINGS (settled — treat as fact when reading today):
 ${meetingDecisions || '(none)'}
 
+RECENTLY DECLINED (the family marked these "not needed" — do NOT suggest them again):
+${declined || '(none)'}
+
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
 
@@ -291,7 +294,7 @@ Return JSON with exactly this shape:
   "notes": ["1-3 short lines: what matters today, timing to watch, a heads-up"],
   "suggestions": [ { "type": "task" | "appointment" | "grocery", "title": "short imperative, e.g. 'Prep gym bag for River'", "date": "YYYY-MM-DD (optional; for a task due date or appointment date)", "who": "family member name (optional; who should do it)", "detail": "one short clause on why", "store": "Costco | Walmart | Trader Joe's (REQUIRED for type grocery — match the store it's actually for; never leave it to default)" } ]
 }
-Give 0-4 suggestions, only genuinely useful ones for today or the next day. Before suggesting anything, check it against the lists above — never re-suggest something that's already an open task, on the calendar, on a meeting agenda, or on the grocery list (this is the most common mistake — a family member already captured it). For grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Empty arrays are fine.
+Give 0-4 suggestions, only genuinely useful ones for today or the next day. Before suggesting anything, check it against the lists above — never re-suggest something that's already an open task, on the calendar, on a meeting agenda, or on the grocery list, and never re-raise a settled decision or a declined suggestion (this is the most common mistake — the family already captured or settled it). For grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Empty arrays are fine.
 In the headline and notes, use **bold** (Markdown) sparingly — wrap only the few words that carry the most weight (a name, a time, a place, one key action), never whole sentences or more than a couple of phrases total. No other Markdown.`;
 
   return generateJSON({ system, prompt, maxTokens: 1400, kind: 'brief' });
@@ -300,12 +303,12 @@ In the headline and notes, use **bold** (Markdown) sparingly — wrap only the f
 // Weekly review for the House Manager tab — proposes a concrete plan of items
 // to complete for the rest of the week. Each item is typed so it can be added
 // to the living weekly plan (or straight to tasks/calendar/grocery).
-export async function reviewWeek({ family = [], notes = '', birthdays = '', interests = '', kids = '', today, throughDate = '', events = '', chores = '', groceries = '', plan = '', meals = '', agenda = '', meetingDecisions = '', email = '', follow = '' } = {}) {
+export async function reviewWeek({ family = [], notes = '', birthdays = '', interests = '', kids = '', today, throughDate = '', events = '', chores = '', groceries = '', meals = '', agenda = '', meetingDecisions = '', email = '', follow = '' } = {}) {
   const system = HM_ROLE(family) +
     ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
     ' CALENDAR ATTRIBUTION: events may sit on either parent\'s Google calendar — whose calendar an event is on says NOTHING about who attends or drives. Never guess who an event belongs to or who\'s taking the kids; name a person only when the event title/details or the household notes say so.' +
     ' TRIPS: the calendar spans the whole planning window and marks multi-day events as "(MULTI-DAY / trip)". For any trip in that window, plan around it with real lead time — a packing list (or packing reminder) a few days before, plus prep like holding mail, pet/plant care, travel documents, chargers, and confirming reservations. Note who is away and when, since that changes what else fits those days.' +
-    ' BIRTHDAYS: you are given a computed UPCOMING BIRTHDAYS list (already date-resolved from the notes AND from birthday-titled calendar events — trust it, do not recompute) covering about the next month; also watch the calendar for any birthday/anniversary not on that list. For each one coming up, get ahead of it — add a plan item to choose and buy/order a gift with enough lead time to arrive, and in that item\'s "detail" name the person and offer 2-3 concrete, specific gift ideas fitted to them (use what you know of their age and interests; avoid generic "a gift card"). ALSO add a question asking what that person is into lately or would love right now, so the ideas can sharpen — address the person by name. Raise each birthday only once with real lead time, not every week.' +
+    ' BIRTHDAYS: you are given a computed UPCOMING BIRTHDAYS list (already date-resolved from the notes AND from birthday-titled calendar events — trust it, do not recompute) covering about the next month; also watch the calendar for any birthday/anniversary not on that list. For each one coming up, get ahead of it — add an item to choose and buy/order a gift with enough lead time to arrive, and in that item\'s "detail" name the person and offer 2-3 concrete, specific gift ideas fitted to them (use what you know of their age and interests; avoid generic "a gift card"). ALSO add a question asking what that person is into lately or would love right now, so the ideas can sharpen — address the person by name. Raise each birthday only once with real lead time, not every week.' +
     ' COUPLE RHYTHM: the household notes may set a standing couples cadence (e.g. a "2-2-2" rhythm: date night every 2 weeks, a weekend getaway every ~2 months, a destination trip every ~2 years). Help keep it alive. If the calendar and plan ahead don\'t already show the next one coming due, propose it as an "appointment" so it can go on the calendar, and put 2-3 concrete, specific ideas in the "detail": for date nights use their city and interests and web search for something real and timely (a show, a new restaurant, a seasonal event, with the real date/venue); for a getaway or trip, name a real, fitting destination for the season. Pace it to the cadence — a date night can surface most reviews when none is booked, but raise the getaway and the big trip only occasionally, and never re-raise one already suggested recently or already on the plan/calendar.' +
     ' If recent email surfaces something worth planning around (an RSVP, a bill due, a school notice, an invite), fold it into the plan — only when it\'s genuinely actionable, not just noise.' +
     ' Also look OUTWARD: use web search to find 1-2 timely, real things this family would genuinely enjoy this week — a movie they\'d love playing nearby, a local event, a seasonal activity — matched to their interests and their open evenings. Include the real date, time, and venue from the search results, and only suggest what you actually verified. If nothing good is on, say nothing rather than padding.' +
@@ -313,7 +316,7 @@ export async function reviewWeek({ family = [], notes = '', birthdays = '', inte
     ' STANDING CARE: the household notes may list recurring care the family does NOT track as tasks and tends to forget (e.g. weekly pet care). Each review, fold any that is due into the plan as a gentle reminder — prefer placing it on the weekend (set "day" to the coming Saturday/Sunday) — even though it will NOT appear in the open-tasks list. This is a deliberate exception to the avoid-duplicates rule; a routine that lives only in the notes still deserves a nudge. Keep it to one line each, no guilt.' +
     ' GETTING TO KNOW THE FAMILY: the parents want you to build a richer picture of the household over time. Beyond plan-sharpening questions, ask a warm, specific "getting to know you" question or two — about the kids, the pets, routines, traditions, tastes, or what a good week feels like here. One topic at a time, easy to answer, and never re-ask anything already answered in your follow-through log; build on what you already know.' +
     ' FOLLOW-THROUGH: you get a log of your own past suggestions. Never re-ask a question the family already answered; build on their answer instead. Follow up ONCE, gently, on something that was added but never finished ("still want to get to X?"). Don\'t re-suggest something ignored twice in a row — let it go unless it becomes genuinely urgent. Briefly acknowledge a win if something you suggested got done. No nagging, no guilt, no scorekeeping.' +
-    ' AVOID DUPLICATES: the family has already captured plenty. Before proposing anything, check it against the open tasks, weekly plan, calendar, meeting agenda, and grocery list below — never re-suggest something that already exists in any of them (e.g. don\'t suggest "get a small gift" if it\'s already an open task). This is the most common mistake; when in doubt, leave it out.';
+    ' AVOID DUPLICATES: the family has already captured plenty. Before proposing anything, check it against the open tasks, calendar, meeting agenda, and grocery list below — never re-suggest something that already exists in any of them (e.g. don\'t suggest "get a small gift" if it\'s already an open task). This is the most common mistake; when in doubt, leave it out.';
   const horizon = throughDate
     ? `between now and the family's next family meeting on ${throughDate} (plan the whole stretch, not just the next day or two)`
     : `for the rest of this week`;
@@ -352,16 +355,13 @@ ${groceries || '(empty)'}
 RECENT EMAIL (sender — subject: snippet; may be noise, use judgment):
 ${email || '(no email available)'}
 
-ALREADY ON THE WEEKLY PLAN (do NOT re-suggest these):
-${plan || '(nothing planned yet)'}
-
 Return JSON with exactly this shape:
 {
   "overview": "2-3 sentences reading the week and what to prioritize",
-  "planItems": [ { "title": "short imperative plan item", "detail": "one sentence: what, why, and roughly when", "suggestedType": "plan" | "task" | "appointment" | "grocery", "day": "YYYY-MM-DD (optional)", "who": "family member name (optional)", "store": "Costco | Walmart | Trader Joe's (REQUIRED for suggestedType grocery — match the store it's actually for; never leave it to default)" } ],
+  "planItems": [ { "title": "short imperative item", "detail": "one sentence: what, why, and roughly when", "suggestedType": "task" | "appointment" | "grocery", "day": "YYYY-MM-DD (optional; a task's due date)", "who": "family member name (optional)", "store": "Costco | Walmart | Trader Joe's (REQUIRED for suggestedType grocery — match the store it's actually for; never leave it to default)" } ],
   "questions": ["a short question — either one whose answer sharpens the plan, or a warm 'getting to know the family' one"]
 }
-Give 3-8 plan items, most time-sensitive first — quality over quantity; never pad with generic errands. Never suggest a grocery item already on the list above; for grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Ask 2-4 questions: include any that would change your advice this week, plus 1-2 that build your long-term awareness of the family — but never re-ask anything already answered in the follow-through log. Empty arrays are fine.
+Give 3-8 items, most time-sensitive first — quality over quantity; never pad with generic errands. Never suggest a grocery item already on the list above; for grocery suggestions the title must be the bare item name (e.g. 'sunscreen'), not an action phrase. Ask 2-4 questions: include any that would change your advice this week, plus 1-2 that build your long-term awareness of the family — but never re-ask anything already answered in the follow-through log. Empty arrays are fine.
 In the overview and item details, use **bold** (Markdown) sparingly — wrap only the few words that carry the most weight (a name, a date, a deadline, one key action), never whole sentences or more than a couple of phrases total. No other Markdown.`;
 
   return generateJSON({ system, prompt, maxTokens: 3000, tools: [webSearchTool()], kind: 'review' });
@@ -398,26 +398,38 @@ One meal per empty night, dated correctly. Empty arrays are fine.`;
   return generateJSON({ system, prompt, maxTokens: 2400, kind: 'meals' });
 }
 
-// "Claudify" one item — the universal deep-dive. Takes a single line (a plan
-// item, a task, or one of Claudia's own questions) and expands it into a
-// genuinely useful write-up, aware of the family's next two weeks so the
-// advice fits the actual schedule. Plain text, meant to be read/copied.
-// `kind` shapes the output:
-//   'plan'     → concrete steps, considerations, rough timeline
-//   'task'     → a step-by-step plan of attack for getting it done
-//   'question' → a decision aid: the realistic options, tradeoffs, and a
-//                clear recommendation (answer her own question well)
-export async function claudifyItem({ family = [], notes = '', events = '', title, detail = '', kind = 'plan' } = {}) {
-  const framing = {
-    plan: 'Turn this plan item into a genuinely useful, concrete write-up the family could act on directly or paste into another app or email — a short lead-in line, then steps, considerations, and a rough timeline where relevant.',
-    task: 'Turn this task into a concrete plan of attack: the steps in the order to do them, roughly how long each takes, what to have on hand, and where it can slot into the days ahead given the calendar. End with the single best next action.',
-    question: 'This is an open question the family needs to settle. Act as a decision aid: lay out the 2-4 realistic options, the honest tradeoffs of each (cost, effort, timing against their calendar), then give ONE clear recommendation and why. Take a position — do not hedge with "it depends."',
-  }[kind] || 'Expand this into something concrete and actionable.';
-  const system = `You are Claudia, the Ortiz family's house manager. ${framing} Ground everything in what's given — never invent specifics (addresses, prices, names, dates) that aren't provided, though for the question kind you may draw on general knowledge of typical options. Keep it tight: short prose or plain dashes. No JSON, no markdown headers, no filler, no restating the obvious.`;
-  const prompt = `${kind === 'question' ? 'Help decide' : 'Expand'} this for ${family.join(', ') || 'the family'}:
+// Break one task into subtasks — the deep dive, reworked (v68). Instead of a
+// prose write-up nobody re-reads, Claudia returns a few concrete, ordered
+// steps that land on the task as a checkable list. Far fewer output tokens
+// than the old essay, and the result lives somewhere durable.
+export async function suggestSubtasks({ family = [], notes = '', events = '', title, detail = '' } = {}) {
+  const system = `You are Claudia, the Ortiz family's house manager. Break the task into 3-6 concrete subtasks — the actual steps in the order to do them, each a short imperative someone can check off (e.g. "Call two roofers for quotes", not "Research options"). Where timing genuinely matters, fit steps around the calendar provided and say the day in the step. Ground everything in what's given — never invent specifics (addresses, prices, names) that aren't provided. Respond with JSON only — no markdown, no fences.`;
+  const prompt = `Break down this task for ${family.join(', ') || 'the family'}:
 
-${kind === 'question' ? 'QUESTION' : kind === 'task' ? 'TASK' : 'PLAN ITEM'}: ${title}
+TASK: ${title}
 ${detail ? `NOTES ALREADY ON IT: ${detail}\n` : ''}
+THE NEXT TWO WEEKS ON THEIR CALENDAR (for timing):
+${events || '(no calendar available)'}
+
+HOUSEHOLD NOTES / PREFERENCES (background):
+${notes || '(none)'}
+
+Return JSON with exactly this shape:
+{ "subtasks": ["short imperative step", ...] }
+3-6 steps, in doing order, each under ~10 words. Quality over padding — if the task is genuinely one step, return one.`;
+
+  return generateJSON({ system, prompt, maxTokens: 500, kind: 'subtasks' });
+}
+
+// Claudia as decision aid — takes one of her own open questions and lays out
+// the realistic options, tradeoffs, and ONE clear recommendation. The single
+// surviving "deep dive": questions are where a write-up earns its cost.
+export async function adviseQuestion({ family = [], notes = '', events = '', title } = {}) {
+  const system = `You are Claudia, the Ortiz family's house manager. This is an open question the family needs to settle. Act as a decision aid: lay out the 2-4 realistic options, the honest tradeoffs of each (cost, effort, timing against their calendar), then give ONE clear recommendation and why. Take a position — do not hedge with "it depends." Ground everything in what's given — never invent specifics (addresses, prices, names, dates) that aren't provided, though you may draw on general knowledge of typical options. Keep it tight: short prose or plain dashes. No JSON, no markdown headers, no filler, no restating the obvious.`;
+  const prompt = `Help decide this for ${family.join(', ') || 'the family'}:
+
+QUESTION: ${title}
+
 THE NEXT TWO WEEKS ON THEIR CALENDAR (fit advice around this):
 ${events || '(no calendar available)'}
 

@@ -329,6 +329,29 @@ export async function logSuggestionAdded(title, targetStore, targetId) {
   if (entry) await put('suggLog', { ...entry, addedAt: todayStr(), targetStore, targetId: targetId || null });
 }
 
+// Record that a suggestion was declined ("not needed") so near-future briefs
+// and reviews stop re-raising it. Not a permanent veto — the entry fades out
+// with the log's normal pruning, so a genuinely recurring need can come back.
+export async function logSuggestionDismissed(title) {
+  const key = normKey(title);
+  if (!key) return;
+  const log = await getAll('suggLog');
+  const entry = log.find((r) => r.key === key);
+  const base = entry || { key, title, type: 'task', source: 'brief', firstShownAt: todayStr(), lastShownAt: todayStr(), shownCount: 1, addedAt: null, targetStore: null, targetId: null };
+  await put('suggLog', { ...base, dismissedAt: todayStr() });
+}
+
+// Suggestions the family declined in the last ~3 weeks — fed to the daily
+// brief so "not needed" actually sticks instead of resurfacing next morning.
+export async function recentlyDeclinedText() {
+  const log = await getAll('suggLog');
+  const cutoff = addDays(todayStr(), -21);
+  return log
+    .filter((r) => !r.addedAt && (r.dismissedAt || '') >= cutoff)
+    .map((r) => `- ${r.title}`)
+    .join('\n');
+}
+
 // Record the family's answer to one of Claudia's questions (or a plain
 // "resolved") so she builds on it instead of re-asking. The answer always
 // lands in the follow-through log (prevents re-asking, and rides into the
@@ -375,6 +398,8 @@ export async function followUpText() {
     if (r.addedAt) {
       const done = await targetDone(r.targetStore, r.targetId);
       lines.push(`- "${r.title}" — added ${fmtDay(r.addedAt)}${done ? ', DONE ✓' : ', not completed yet'}`);
+    } else if (r.dismissedAt) {
+      lines.push(`- "${r.title}" — the family said "not needed" (${fmtDay(r.dismissedAt)}); do not re-suggest it`);
     } else if ((r.shownCount || 1) >= 2) {
       lines.push(`- "${r.title}" — suggested ${r.shownCount} times, never added (the family may not want this)`);
     }
@@ -418,10 +443,9 @@ export function emailText(emails) {
 // bound the calendar window pulled from the live Google overlay. Pass
 // `email: true` to also pull recent Gmail (when the scope was granted).
 export async function gatherContext({ start, days, email = false }) {
-  const [chores, groceries, plan, meals, agenda] = await Promise.all([
+  const [chores, groceries, meals, agenda] = await Promise.all([
     getAll('chores'),
     getAll('groceries'),
-    getAll('plan'),
     getAll('meals'),
     getAll('agenda'),
   ]);
@@ -450,8 +474,6 @@ export async function gatherContext({ start, days, email = false }) {
   for (const g of groceries.filter((x) => !x.gotAt)) { const s = g.store || STORES[0]; (byStore[s] ||= []).push(g.name); }
   const groceriesText = Object.entries(byStore).map(([s, names]) => `${s}: ${names.join(', ')}`).join('\n');
 
-  const planText = plan.filter((p) => !p.done).map((p) => `- ${p.title}`).join('\n');
-
   // Open (unreviewed) meeting-agenda items, so suggestions don't duplicate a
   // topic the family already queued for a meeting.
   const agendaText = agenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
@@ -470,5 +492,5 @@ export async function gatherContext({ start, days, email = false }) {
     .sort((a, b) => (a.date < b.date ? -1 : 1));
   const mealsText = mealsInRange.map((m) => `- ${fmtDay(m.date)}: ${m.title}`).join('\n');
 
-  return { events, eventsText, choresText, groceriesText, planText, agendaText, meetingDecisionsText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
+  return { events, eventsText, choresText, groceriesText, agendaText, meetingDecisionsText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
 }

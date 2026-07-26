@@ -20,7 +20,7 @@ export const STORES = [
   'appointments',
   'goals',
   'agenda',
-  'plan',
+  'plan', // legacy — v68 merged Plans into Tasks; kept so old snapshots still merge and migrate (see app.js migratePlans)
   'meals', // planned dinners: {date, title, detail}
   'suggLog', // AI follow-through memory: what was suggested, added, done
   'briefs', // Claudia's daily brief, one per date — shared, so both phones see the same read

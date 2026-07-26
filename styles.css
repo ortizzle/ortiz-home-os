@@ -388,10 +388,6 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
   border-top: 1px solid var(--border);
 }
 .task-row:first-of-type { border-top: none; }
-/* Plan rows are wrapped (for the inline Claudify result), which makes every
-   inner .task-row :first-of-type — put the separator on the wrapper instead. */
-.plan-row-wrap .task-row { border-top: none; }
-.plan-row-wrap + .plan-row-wrap { border-top: 1px solid var(--border); }
 .task-check {
   flex-shrink: 0;
   width: 26px; height: 26px;
@@ -412,6 +408,15 @@ h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; color: 
 .task-row.done .task-name { text-decoration: line-through; color: var(--text-3); }
 .task-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .task-meta .pill { font-size: 11px; padding: 2px 8px; }
+/* Subtask checklist (task edit sheet). Rows stay comfortably tappable via
+   padding; the check reuses .task-check, sized down. */
+.subtask-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--border); }
+.subtask-row:first-of-type { border-top: none; }
+.subtask-check { width: 22px; height: 22px; }
+.subtask-check svg { width: 12px; height: 12px; }
+.subtask-row.done .subtask-check { background: var(--accent); border-color: var(--accent); }
+.subtask-text { flex: 1; min-width: 0; font-size: 14px; line-height: 1.4; }
+.subtask-row.done .subtask-text { text-decoration: line-through; color: var(--text-3); }
 .task-focus-btn { flex-shrink: 0; padding: 4px 6px; }
 .task-focus-btn svg { width: 17px; height: 17px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .focus-timer-display { text-align: center; font-size: 48px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 14px 0 0; letter-spacing: 0.02em; }

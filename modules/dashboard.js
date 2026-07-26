@@ -9,7 +9,7 @@ import { choreRow } from './chores.js';
 import { addGroceryItem } from './grocery.js';
 import { editAppointmentModal, appointmentsFor } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
-import { gatherContext, householdKnowledge, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions } from './hmcontext.js';
+import { gatherContext, householdKnowledge, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions, logSuggestionDismissed, recentlyDeclinedText } from './hmcontext.js';
 import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
 
@@ -276,7 +276,10 @@ async function runBrief(host, rerender, { today, settings }) {
   briefInFlight = true;
   clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reading your day…')]));
   try {
-    const ctx = await gatherContext({ start: today, days: 2, email: true });
+    const [ctx, declined] = await Promise.all([
+      gatherContext({ start: today, days: 2, email: true }),
+      recentlyDeclinedText(),
+    ]);
     const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long' });
     const out = await analyzeDay({
       family: (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean),
@@ -291,6 +294,7 @@ async function runBrief(host, rerender, { today, settings }) {
       agenda: ctx.agendaText,
       meetingDecisions: ctx.meetingDecisionsText,
       email: ctx.emailsText,
+      declined,
     });
     logShownSuggestions(out.suggestions, 'brief').catch(() => {});
     await saveBrief(today, out);
@@ -322,13 +326,12 @@ function renderBrief(host, out, rerender, addedSet, dismissedSet, pins, today) {
   if (out.headline) host.append(el('p', { class: 'brief-headline' }, richText(out.headline)));
   if (out.notes?.length) host.append(el('ul', { class: 'brief-notes' }, out.notes.map((n) => el('li', {}, richText(n)))));
   // Added suggestions become real tasks (drop off the brief); "Not needed"
-  // just clears the item from view with no permanent memory — satisfying,
-  // like checking something off, but fair game for a future brief.
+  // clears the item from view AND logs the dismissal, so future briefs stop
+  // re-raising it for a few weeks (it fades back in via log pruning).
   const live = (out.suggestions || []).filter((s) => !addedSet.has(s.title) && !dismissedSet.has(s.title));
   for (const s of live) {
     const actions = addButtons(s, {
       today: todayStr(),
-      includePlan: false,
       onAdded: async () => { await markBriefAdded(today, s.title); rerender(); },
     });
     actions.append(el('button', {

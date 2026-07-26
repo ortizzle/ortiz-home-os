@@ -364,10 +364,12 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       createBtn.textContent = 'Organizing…';
       clear(statusHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is structuring the agenda…')]));
       try {
-        const plan = await getAll('plan');
+        // Dated tasks due this week, plus dateless ("someday") tasks — the
+        // latter are the old weekly-plan items, merged into Tasks in v68.
+        const chores = await getAll('chores');
         const openItems = [
           ...week.dueChores.map((c) => `- ${c.title} (due ${fmtDay(c.dueDate)})`),
-          ...plan.filter((p) => !p.done).map((p) => `- ${p.title || p.text}`),
+          ...chores.filter((c) => !c.done && !c.dueDate).map((c) => `- ${c.title}`),
         ].join('\n');
         const currentAgenda = cycleAgenda.filter((a) => !a.reviewed).map((a) => `- ${a.text}`).join('\n');
         const stillOpen = stillOpenItems.map((a) => `- ${a.text}`).join('\n');

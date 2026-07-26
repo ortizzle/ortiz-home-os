@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v67-memory-edit-flow';
+const CACHE = 'ohos-shell-v68-plans-subtasks';
 const SHELL = [
   './',
   './index.html',
