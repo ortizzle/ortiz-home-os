@@ -194,7 +194,7 @@ function apptRow(a, rerender) {
     el('span', { class: 'event-title' }, [
       a.title,
       a.who ? el('span', { class: 'event-who' }, `· ${a.who}`) : null,
-      a.calendar ? el('span', { class: 'event-who' }, `· ${a.calendar}`) : null,
+      a.calendar ? el('span', { class: 'event-who' }, `· ${a.calendar}${a.tentative ? ' (tentative)' : ''}`) : null,
     ]),
   ]);
 }

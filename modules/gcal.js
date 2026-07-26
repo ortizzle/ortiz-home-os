@@ -367,7 +367,12 @@ export async function eventsForRange(start, end, { force = false } = {}) {
   // copy-pasted duplicate (different id/iCalUID, identical title+date+time).
   // Content-based apptKey() catches both; distinct events and each day of a
   // recurring series still have different keys, so those survive untouched.
-  const seen = new Set();
+  // Dedupe MERGES rather than skips: the surviving copy (Family-first)
+  // collects every calendar the event appears on, so the label can read
+  // "Family" for a shared event, "chris + kat" for a couple event living on
+  // both parents' calendars, and the tentative flag can detect an event that
+  // lives ONLY on the Social (soft-plans) calendar.
+  const seen = new Map(); // apptKey -> surviving appointment
   const names = await calendarNames();
   // Family calendar first: first-seen wins in this loop, so when the same
   // event lives on several calendars, the shared Family copy is the one that
@@ -388,14 +393,30 @@ export async function eventsForRange(start, end, { force = false } = {}) {
         const a = toAppt(ev, shortCalName(names[cal] || ''));
         if (!a) continue;
         const dedupeKey = apptKey(a);
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
+        const existing = seen.get(dedupeKey);
+        if (existing) {
+          if (a.calendar && !existing.calendars.includes(a.calendar)) existing.calendars.push(a.calendar);
+          continue;
+        }
+        a.calendars = a.calendar ? [a.calendar] : [];
+        seen.set(dedupeKey, a);
         out.push(a);
       }
     } catch (err) {
       if (err.code === 'expired' || err.code === 'not-connected') throw err;
       // A calendar this account can't read (e.g. not subscribed) — skip it.
     }
+  }
+  // Finalize labels now that every copy has been seen. Family wins as the
+  // display name (a Family event is confirmed and shared no matter where
+  // else it's mirrored); otherwise the label lists every calendar it's on —
+  // "chris + kat" reads as a couple event. An event living ONLY on a
+  // "Social" calendar is a soft plan the family hasn't confirmed: flag it
+  // tentative so views and prompts present it as a possibility, not a fact.
+  for (const a of out) {
+    const fam = a.calendars.find((n) => /family/i.test(n));
+    a.calendar = fam || (a.calendars.join(' + ') || null);
+    a.tentative = a.calendars.length > 0 && a.calendars.every((n) => /social/i.test(n));
   }
   cache.set(key, out);
   return out;

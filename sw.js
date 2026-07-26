@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v69-calendar-names';
+const CACHE = 'ohos-shell-v70-calendar-semantics';
 const SHELL = [
   './',
   './index.html',

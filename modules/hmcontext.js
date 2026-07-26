@@ -39,6 +39,7 @@ const MEMORY_SEEDS = [
   { id: 'm-care', cat: 'rhythms', text: "Weekly care the family forgets: clean Sunny's terrarium + brush the dogs' teeth — nudge on weekends; not tracked as tasks." },
   { id: 'm-222', cat: 'rhythms', text: 'Chris & Kat 2-2-2 rhythm: date night every 2 weeks, weekend getaway every ~2 months, destination trip every ~2 years — keep it on the calendar, ideas welcome.' },
   { id: 'm-dance', cat: 'rhythms', text: "Monday 'dance party': Eshe and her sister Akilah come to the house for dance exercise — it's Kat and both girls at home; sits on Chris's calendar but isn't Chris's event." },
+  { id: 'm-calendars', cat: 'logistics', text: "Calendar scheme: 'Family' = confirmed family events. 'Social' = soft/tentative plans — not real until moved to Family or a named calendar; an event ONLY on Social is a possibility worth flagging, never a scheduled fact. River's and Sedona's calendars = that girl's school/sports/activities. Chris's and Kat's calendars = that parent's own commitments; an event on BOTH parents' calendars (not Family) is a couple thing — just the two of them." },
 ];
 
 export async function seedMemory() {
@@ -464,7 +465,7 @@ export async function gatherContext({ start, days, email = false }) {
     .map((e) => {
       // Source calendar in [brackets] — attribution signal the prompts teach
       // Claudia to read (Family = shared; a parent's calendar = theirs).
-      const cal = e.calendar ? ` [${e.calendar}]` : '';
+      const cal = e.calendar ? ` [${e.calendar}${e.tentative ? ' — TENTATIVE' : ''}]` : '';
       return e.endDate && e.endDate > e.date
         // Multi-day event (a trip/vacation) — show the full span so Claudia
         // can plan lead-time around it (packing, prep, who's away when).
