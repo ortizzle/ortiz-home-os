@@ -193,7 +193,13 @@ export function silentRenew() {
 
 // ---------- events ----------
 
-const cache = new Map(); // `${start}|${end}` -> appointment-shaped array
+// `${start}|${end}` -> { at, events }. Entries expire: an installed PWA can
+// resume a suspended session hours or days later, and without a TTL the
+// calendar half of every view (and of the daily brief) would keep serving
+// events from the last fetch while the Gist half refreshed every 45s —
+// confidently wrong about the one thing the family checks most.
+const CACHE_TTL_MS = 5 * 60_000;
+const cache = new Map();
 export function clearCache() { cache.clear(); }
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -279,15 +285,16 @@ export async function listCalendars() {
 }
 
 // id -> display name for the account's calendars, fetched once per session.
-// Failure degrades to raw ids (events still flow, just unlabeled).
+// A FAILURE IS NOT CACHED: leaving the cache null means the next call retries,
+// so one dropped request (or a token that expires mid-session) doesn't mute
+// every calendar label — and the tentative flag with them — until a reload.
 let calNamesCache = null;
 async function calendarNames() {
-  if (!calNamesCache) {
-    try {
-      calNamesCache = Object.fromEntries((await listCalendars()).map((c) => [c.id, c.summary]));
-    } catch {
-      calNamesCache = {};
-    }
+  if (calNamesCache) return calNamesCache;
+  try {
+    calNamesCache = Object.fromEntries((await listCalendars()).map((c) => [c.id, c.summary]));
+  } catch {
+    return null; // caller falls back to the calendar id
   }
   return calNamesCache;
 }
@@ -357,7 +364,8 @@ function addDaysStr(dateStr, n) {
 export async function eventsForRange(start, end, { force = false } = {}) {
   if (!isConnected() && !(await silentRenew())) return [];
   const key = `${start}|${end}`;
-  if (!force && cache.has(key)) return cache.get(key);
+  const hit = cache.get(key);
+  if (!force && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.events;
 
   const timeMin = new Date(`${start}T00:00:00`).toISOString();
   const timeMax = new Date(`${end}T00:00:00`).toISOString();
@@ -373,35 +381,47 @@ export async function eventsForRange(start, end, { force = false } = {}) {
   // both parents' calendars, and the tentative flag can detect an event that
   // lives ONLY on the Social (soft-plans) calendar.
   const seen = new Map(); // apptKey -> surviving appointment
+  // Null when the name lookup failed — fall back to the calendar id, which
+  // is usually the account email and still labels the event usefully.
   const names = await calendarNames();
+  const nameOf = (id) => shortCalName((names && names[id]) || id || '');
   // Family calendar first: first-seen wins in this loop, so when the same
   // event lives on several calendars, the shared Family copy is the one that
   // survives dedupe — and the one whose calendar name the views and the AI
   // see. Stable sort keeps the user's order among the rest.
   const cals = getSelectedCalendars().slice().sort((a, b) => {
-    const fam = (id) => (/family/i.test(names[id] || id) ? 0 : 1);
+    const fam = (id) => (/family/i.test(nameOf(id)) ? 0 : 1);
     return fam(a) - fam(b);
   });
   for (const cal of cals) {
     try {
-      const data = await apiGet(
-        `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal)}/events` +
-        `?singleEvents=true&orderBy=startTime&maxResults=250` +
-        `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}`
-      );
-      for (const ev of data.items || []) {
-        const a = toAppt(ev, shortCalName(names[cal] || ''));
-        if (!a) continue;
-        const dedupeKey = apptKey(a);
-        const existing = seen.get(dedupeKey);
-        if (existing) {
-          if (a.calendar && !existing.calendars.includes(a.calendar)) existing.calendars.push(a.calendar);
-          continue;
+      // Page through: with singleEvents=true a daily recurrence expands to one
+      // item per day, so a busy calendar over a multi-week window blows past
+      // any single page — and the dropped events would vanish silently from
+      // both the views and Claudia's context.
+      let pageToken = null;
+      do {
+        const data = await apiGet(
+          `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(cal)}/events` +
+          `?singleEvents=true&orderBy=startTime&maxResults=250` +
+          `&timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}` +
+          (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '')
+        );
+        for (const ev of data.items || []) {
+          const a = toAppt(ev, nameOf(cal));
+          if (!a) continue;
+          const dedupeKey = apptKey(a);
+          const existing = seen.get(dedupeKey);
+          if (existing) {
+            if (a.calendar && !existing.calendars.includes(a.calendar)) existing.calendars.push(a.calendar);
+            continue;
+          }
+          a.calendars = a.calendar ? [a.calendar] : [];
+          seen.set(dedupeKey, a);
+          out.push(a);
         }
-        a.calendars = a.calendar ? [a.calendar] : [];
-        seen.set(dedupeKey, a);
-        out.push(a);
-      }
+        pageToken = data.nextPageToken || null;
+      } while (pageToken);
     } catch (err) {
       if (err.code === 'expired' || err.code === 'not-connected') throw err;
       // A calendar this account can't read (e.g. not subscribed) — skip it.
@@ -418,7 +438,7 @@ export async function eventsForRange(start, end, { force = false } = {}) {
     a.calendar = fam || (a.calendars.join(' + ') || null);
     a.tentative = a.calendars.length > 0 && a.calendars.every((n) => /social/i.test(n));
   }
-  cache.set(key, out);
+  cache.set(key, { at: Date.now(), events: out });
   return out;
 }
 

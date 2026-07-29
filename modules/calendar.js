@@ -49,7 +49,13 @@ export async function appointmentsFor(start, end) {
     eventsForRange(start, end).catch(() => []),
   ]);
   const connected = isConnected();
-  const base = connected ? stored.filter((a) => a.source !== 'gcal') : stored;
+  // Range-filter the STORED side too. eventsForRange() bounds the live half,
+  // but stored appointments came back unfiltered — day/week views re-filter
+  // with spansDay() and never noticed, while Home's "upcoming events" stat
+  // counted every appointment ever saved (a year-old dentist visit included).
+  // [start, end) with multi-day spans counted if any part overlaps.
+  const inRange = (a) => (a.date || '') < end && (a.endDate || a.date || '') >= start;
+  const base = (connected ? stored.filter((a) => a.source !== 'gcal') : stored).filter(inRange);
   // De-dupe a local appointment against a live Google event with the same
   // title/date/time (shared apptKey — see gcal.js, which uses the same key
   // to de-dupe the live events across multiple selected calendars too) —
@@ -74,8 +80,10 @@ function fmtTime(t) {
 }
 
 // Does a (possibly multi-day) appointment cover `day`? Single-day events have
-// no endDate, so this reduces to a plain date match for them.
-function spansDay(a, day) {
+// no endDate, so this reduces to a plain date match for them. Exported because
+// Home needs it too — a trip must stay visible every day it runs, not just on
+// its first day.
+export function spansDay(a, day) {
   return a.date <= day && day <= (a.endDate || a.date);
 }
 

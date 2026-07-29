@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: npm install web-push@3 --no-save
+      - run: npm install web-push@3 --no-save --ignore-scripts --no-audit --no-fund
       - run: node .github/scripts/send-push.mjs
         env:
           GIST_ID: ${{ secrets.GIST_ID }}

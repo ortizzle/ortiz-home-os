@@ -372,15 +372,20 @@ export async function logQuestionResolved(question, answer = '', { remember = fa
   }
 }
 
-// Did the record a suggestion turned into actually get done?
-async function targetDone(store, id) {
-  if (!store || !id) return false;
+// What became of the record a suggestion turned into?
+//   'done' — completed/bought/happened
+//   'open' — still outstanding
+//   'gone' — the record was DELETED (or never resolvable). Deleting a task is
+//            how this household says "not doing it", so a gone target must
+//            never be nagged about; callers drop these entirely.
+async function targetState(store, id) {
+  if (!store || !id) return 'gone';
   const rec = await get(store, id).catch(() => null);
-  if (!rec) return false;
-  if (store === 'chores' || store === 'plan') return Boolean(rec.done);
-  if (store === 'groceries') return Boolean(rec.gotAt);
-  if (store === 'appointments') return (rec.date || '') < todayStr(); // it happened
-  return false;
+  if (!rec) return 'gone';
+  if (store === 'chores' || store === 'plan') return rec.done ? 'done' : 'open';
+  if (store === 'groceries') return rec.gotAt ? 'done' : 'open';
+  if (store === 'appointments') return (rec.date || '') < todayStr() ? 'done' : 'open'; // it happened
+  return 'open';
 }
 
 // The follow-through block for the weekly review prompt — and housekeeping:
@@ -397,8 +402,11 @@ export async function followUpText() {
     }
     if ((r.lastShownAt || '') < cutoff) { await removeRec('suggLog', r.id); continue; }
     if (r.addedAt) {
-      const done = await targetDone(r.targetStore, r.targetId);
-      lines.push(`- "${r.title}" — added ${fmtDay(r.addedAt)}${done ? ', DONE ✓' : ', not completed yet'}`);
+      const state = await targetState(r.targetStore, r.targetId);
+      // Deleted target = the family dropped it on purpose. Say nothing rather
+      // than following up on something they deliberately removed.
+      if (state === 'gone') continue;
+      lines.push(`- "${r.title}" — added ${fmtDay(r.addedAt)}${state === 'done' ? ', DONE ✓' : ', not completed yet'}`);
     } else if (r.dismissedAt) {
       lines.push(`- "${r.title}" — the family said "not needed" (${fmtDay(r.dismissedAt)}); do not re-suggest it`);
     } else if ((r.shownCount || 1) >= 2) {
@@ -422,7 +430,10 @@ export async function getSuggestionMemory() {
     if (r.type === 'question' && r.resolvedAt) {
       resolved.push({ id: r.id, question: r.title, answer: r.answer || null, resolvedAt: r.resolvedAt });
     } else if (r.addedAt) {
-      added.push({ id: r.id, title: r.title, addedAt: r.addedAt, done: await targetDone(r.targetStore, r.targetId) });
+      // `gone` = the record was deleted; the digest drops these from its
+      // loose-ends list rather than reporting them as still open.
+      const state = await targetState(r.targetStore, r.targetId);
+      added.push({ id: r.id, title: r.title, addedAt: r.addedAt, done: state === 'done', gone: state === 'gone' });
     } else if ((r.shownCount || 1) >= 2) {
       repeated.push({ id: r.id, title: r.title, shownCount: r.shownCount });
     }

@@ -40,7 +40,16 @@ const gh = (path, opts = {}) =>
     },
   });
 
-const gist = await (await gh(`/gists/${GIST_ID}`)).json();
+// Check the status: on a 401 (expired GIST_TOKEN), 404, or rate limit the
+// JSON body is an error object, `gist.files` is undefined, and the run would
+// otherwise report "no subscriptions" and exit GREEN — the morning push
+// silently dying with a passing checkmark in the Actions tab.
+const gistRes = await gh(`/gists/${GIST_ID}`);
+if (!gistRes.ok) {
+  console.error(`Gist fetch failed: ${gistRes.status} ${gistRes.statusText}\n${await gistRes.text()}`);
+  process.exit(1);
+}
+const gist = await gistRes.json();
 const file = gist.files && gist.files[SUBS_FILE];
 let subs = [];
 try { subs = JSON.parse((file && file.content) || '[]'); } catch { subs = []; }

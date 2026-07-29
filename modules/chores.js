@@ -1,7 +1,7 @@
 // chores.js — one-off household tasks: due date, assignee. Same interaction
 // grammar as Focus OS tasks.
 
-import { getAll, put, remove, now, uid, deviceName, getSettings } from './store.js';
+import { getAll, get, put, remove, now, uid, deviceName, getSettings } from './store.js';
 import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText, SHARE_SVG, ownerPillClass } from './ui.js';
 import { parseImport } from './grocery.js';
 import { suggestSubtasks, hasApiKey, AIError } from './ai.js';
@@ -285,10 +285,17 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
   // frequent action (checking a step off) must not depend on remembering to
   // hit Save. On a NEW task they ride along with the first Save.
   let subs = (c.subtasks || []).map((s) => ({ ...s }));
+  let subsDirty = false; // subtasks changed since the row was last redrawn
   const subHost = el('div', {});
   async function persistSubs() {
+    subsDirty = true;
     if (isNew) return;
-    await put('chores', { ...c, subtasks: subs });
+    // Re-read before writing: the other phone may have ticked this task off
+    // (or logged focus time) while this sheet sat open, and app.js skips
+    // background re-renders whenever a modal is up — so `c` is exactly the
+    // snapshot most likely to be stale. Only the subtasks are ours to change.
+    const fresh = (await get('chores', c.id)) || c;
+    await put('chores', { ...fresh, subtasks: subs });
   }
   function renderSubs() {
     clear(subHost).append(...subs.map((s) => el('div', { class: 'subtask-row' + (s.done ? ' done' : '') }, [
@@ -360,6 +367,7 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
         onclick: async () => {
           await remove('chores', c.id);
           toast('Task deleted');
+          subsDirty = false; // this handler re-renders; don't double up on close
           m.close();
           onchange?.();
         },
@@ -379,6 +387,7 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
           subtasks: subs.length ? subs : null,
           done: c.done || false,
         });
+        subsDirty = false; // this handler re-renders; don't double up on close
         m.close();
         onSaved?.(rec);
         onchange?.();
@@ -399,7 +408,12 @@ export async function editChoreModal(chore, onchange, { onSaved } = {}) {
     subHost,
     el('div', { class: 'grocery-add' }, [subInput, el('button', { class: 'btn', onclick: addSub }, 'Add')]),
     el('div', {}, [aiBtn, aiStatus]),
-  ], actions);
+  ], actions, {
+    // Subtask checks save immediately, so closing with Cancel (or a scrim
+    // tap) still changed the data — redraw the row, or its ☑ n/m pill keeps
+    // showing the old count until something else forces a render.
+    onClose: () => { if (subsDirty) onchange?.(); },
+  });
   title.focus();
 }
 

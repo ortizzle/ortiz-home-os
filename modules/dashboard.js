@@ -7,7 +7,7 @@ import { getAll, put, getSettings } from './store.js';
 import { el, clear, navigate, toast, todayStr, addDays, fmtDay, fmtDue, preserveScroll, richText, plainText, shareText, SHARE_SVG } from './ui.js';
 import { choreRow } from './chores.js';
 import { addGroceryItem } from './grocery.js';
-import { editAppointmentModal, appointmentsFor } from './calendar.js';
+import { editAppointmentModal, appointmentsFor, spansDay } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
 import { gatherContext, householdKnowledge, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions, logSuggestionDismissed, recentlyDeclinedText } from './hmcontext.js';
 import { addButtons } from './manager.js';
@@ -15,6 +15,7 @@ import { buildSuggestions, errandWindow } from './suggest.js';
 
 const CART_SVG = '<svg viewBox="0 0 24 24"><path d="M3.5 4.5H6l2.3 10.5h9.4l2.3-8.5H7"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="16.5" cy="19" r="1.5"/></svg>';
 let briefInFlight = false;
+let briefError = null; // last generation failure, shown until a retry succeeds
 
 function greeting() {
   const h = new Date().getHours();
@@ -40,8 +41,11 @@ export async function renderDashboard(root) {
   const openGroceries = groceries.filter((g) => !g.gotAt);
   const dueToday = chores.filter((c) => c.dueDate === today && !c.done);
   const overdue = chores.filter((c) => c.dueDate && c.dueDate < today && !c.done);
-  const todayAppts = apptsWeek.filter((a) => a.date === today).sort(byTime);
-  const tomorrowAppts = apptsWeek.filter((a) => a.date === tomorrow).sort(byTime);
+  // spansDay, not a date match: a trip or camp week has to stay on Home for
+  // every day it covers ("is Kat away today?" is exactly what Home answers),
+  // not just its first day.
+  const todayAppts = apptsWeek.filter((a) => spansDay(a, today)).sort(byTime);
+  const tomorrowAppts = apptsWeek.filter((a) => spansDay(a, tomorrow)).sort(byTime);
 
   // ----- header + stats: tasks due · grocery items · upcoming events -----
   root.append(
@@ -253,9 +257,15 @@ async function dailyBriefSection(rerender, { today, settings }) {
     renderBrief(host, cached.data, rerender, new Set(cached.added || []), new Set(cached.dismissed || []), await pinsFor(today), today);
   } else if (briefInFlight) {
     // A generation kicked off by a previous render is still running — show
-    // the spinner here rather than a blank panel (the finished brief lands on
-    // the next re-render, or via the guard-free path below next time).
+    // the spinner here; runBrief re-renders the whole view when it lands.
     host.append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reading your day…')]));
+  } else if (briefError) {
+    // Held in module state (not painted into a possibly-orphaned host) so the
+    // failure is still visible after navigating away and back.
+    host.append(
+      el('p', { class: 'muted small' }, briefError),
+      el('button', { class: 'btn', style: 'margin-top: 8px', onclick: () => { briefError = null; runBrief(host, rerender, { today, settings }); } }, 'Try again')
+    );
   } else if (hasApiKey()) {
     runBrief(host, rerender, { today, settings }); // auto-generate for the day
   } else {
@@ -302,15 +312,17 @@ async function runBrief(host, rerender, { today, settings }) {
     });
     logShownSuggestions(out.suggestions, 'brief').catch(() => {});
     await saveBrief(today, out);
-    renderBrief(host, out, rerender, new Set(), new Set(), await pinsFor(today), today);
+    briefError = null;
   } catch (err) {
-    clear(host).append(
-      el('p', { class: 'muted small' }, err instanceof AIError ? err.message : `Couldn't generate today's brief: ${err.message}`),
-      el('button', { class: 'btn', style: 'margin-top: 8px', onclick: () => runBrief(host, rerender, { today, settings }) }, 'Try again')
-    );
+    briefError = err instanceof AIError ? err.message : `Couldn't generate today's brief: ${err.message}`;
   } finally {
     briefInFlight = false;
   }
+  // Re-render the whole view rather than painting into the captured `host`:
+  // navigating away and back mid-generation replaces that node, and the
+  // finished brief would land in an orphan — leaving a spinner on screen
+  // forever with the brief invisible until a manual re-navigation.
+  await rerender();
 }
 
 // Notes pinned from Ask — shown at the top of the brief until dismissed.
@@ -343,6 +355,9 @@ function renderBrief(host, out, rerender, addedSet, dismissedSet, pins, today) {
       'aria-label': 'Not needed — clear from today’s brief',
       onclick: async () => {
         await markBriefDismissed(today, s.title);
+        // The log is what tomorrow's brief actually reads (recentlyDeclinedText);
+        // markBriefDismissed only hides it from TODAY's saved brief.
+        logSuggestionDismissed(s.title).catch(() => {});
         toast('Cleared');
         rerender();
       },

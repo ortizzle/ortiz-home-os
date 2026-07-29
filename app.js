@@ -35,7 +35,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v70 · calendar scheme: tentative Social, couple events';
+const APP_VERSION = 'v71 · trust fixes: declines stick, safer sync, real dates';
 
 // ---------- theme ----------
 
@@ -201,7 +201,7 @@ function memorySection(s, memory, memFacts = [], rerender = () => {}) {
     memNodes.push(
       heading('Suggestions you’ve added'),
       el('ul', { class: 'meeting-list' }, memory.added.slice(0, 15).map((a) =>
-        logLi(a.id, a.title, `${a.title} — added ${fmtDay(a.addedAt)}${a.done ? ', done ✓' : ''}`)
+        logLi(a.id, a.title, `${a.title} — added ${fmtDay(a.addedAt)}${a.done ? ', done ✓' : a.gone ? ', deleted' : ''}`)
       ))
     );
   }

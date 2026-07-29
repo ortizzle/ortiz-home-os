@@ -114,7 +114,8 @@ export async function digestSection({ open = true } = {}) {
   const cutoff = addDays(today, -35);
   const decisions = agenda.filter((a) => a.reviewed && a.decision && a.cycleDate && a.cycleDate >= cutoff);
   const answers = memory.resolved.filter((r) => (r.resolvedAt || '') >= cutoff);
-  const looseEnds = memory.added.filter((a) => !a.done && (a.addedAt || '') >= cutoff);
+  // `gone` items were deleted on purpose — not loose ends, so don't nag.
+  const looseEnds = memory.added.filter((a) => !a.done && !a.gone && (a.addedAt || '') >= cutoff);
   if (decisions.length || answers.length || looseEnds.length) {
     nodes.push(sub('Recalled from the last month'));
     nodes.push(...capped(decisions, (a) => line([`✓ Decided: ${a.text} — `, el('strong', {}, a.decision)]), 4));

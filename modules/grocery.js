@@ -3,7 +3,7 @@
 // item carries its intended store but you can check it off anywhere.
 
 import { getAll, put, remove, now } from './store.js';
-import { el, clear, toast, todayStr, tableOfContents, preserveScroll, disclosure } from './ui.js';
+import { el, clear, toast, todayStr, dateStr, tableOfContents, preserveScroll, disclosure } from './ui.js';
 import { dinnersSection } from './meals.js';
 
 export const STORES = ['Costco', 'Walmart', "Trader Joe's"];
@@ -19,8 +19,12 @@ export async function getOpenGroceries() {
 
 // Items checked off today stay visible ("what we already grabbed"); older
 // checked items are archive — kept in the store, hidden from the view.
+// gotAt is a UTC ISO timestamp, so it must be converted to the LOCAL day
+// before comparing: slicing the string compares UTC days, and after ~5pm
+// Phoenix that reads as tomorrow — items you just checked off would vanish
+// from the list mid-aisle on an evening run.
 function gotToday(g) {
-  return g.gotAt && g.gotAt.slice(0, 10) === todayStr();
+  return Boolean(g.gotAt) && dateStr(new Date(g.gotAt)) === todayStr();
 }
 
 // Case-insensitive dedupe against the open list — a re-suggested or

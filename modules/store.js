@@ -247,27 +247,40 @@ async function gistFetch(path, options = {}) {
 // a stale-code phone must never strip newer shared data from the Gist.
 let lastRemoteData = null;
 
+// The pull, THROWING on failure. pushToGist needs to tell "remote merged
+// cleanly" apart from "the network ate it" — pushing after a failed merge
+// replaces the shared file with this phone's local state, which is how a
+// phone with stale (or freshly cleared) storage could wipe the household's
+// data while the UI cheerfully reported "synced".
+async function pullOnce() {
+  const { gistId } = getSettings();
+  const gist = await gistFetch(`/gists/${gistId}`);
+  const file = gist.files && gist.files[GIST_FILENAME];
+  if (!file || !file.content) {
+    // An empty/absent data file is a legitimate first-run state, not a
+    // failure: nothing to merge, and a push may now seed it.
+    lastRemoteData = null;
+    return 0;
+  }
+  const snapshot = JSON.parse(file.content);
+  lastRemoteData = snapshot.data || null;
+  return mergeSnapshot(snapshot);
+}
+
 // Returns how many local records changed (0 on no-op or failure), so the
 // background sync can re-render only when there's actually something new.
 export async function pullFromGist() {
   if (!syncConfigured()) return 0;
-  const { gistId } = getSettings();
   emitSync('syncing');
-  let changed = 0;
   try {
-    const gist = await gistFetch(`/gists/${gistId}`);
-    const file = gist.files && gist.files[GIST_FILENAME];
-    if (file && file.content) {
-      const snapshot = JSON.parse(file.content);
-      lastRemoteData = snapshot.data || null;
-      changed = await mergeSnapshot(snapshot);
-    }
+    const changed = await pullOnce();
     emitSync('synced');
+    return changed;
   } catch (err) {
     console.warn('pullFromGist failed', err);
     emitSync('error');
+    return 0;
   }
-  return changed;
 }
 
 export async function pushToGist() {
@@ -275,9 +288,11 @@ export async function pushToGist() {
   const { gistId } = getSettings();
   emitSync('syncing');
   try {
-    // Merge remote first so a push can never clobber records this phone
-    // hasn't seen (e.g. items the other phone added an hour ago).
-    await pullFromGist();
+    // Merge remote FIRST so a push can never clobber records this phone
+    // hasn't seen. pullOnce() throws if that merge didn't happen, which
+    // skips the PATCH below entirely — a failed pull must never become a
+    // full-file overwrite.
+    await pullOnce();
     const snapshot = await exportSnapshot();
     // Preserve remote stores this code version doesn't know about.
     if (lastRemoteData) snapshot.data = { ...lastRemoteData, ...snapshot.data };
@@ -291,14 +306,18 @@ export async function pushToGist() {
   } catch (err) {
     console.warn('pushToGist failed', err);
     emitSync('error');
+    // Skipping the push keeps the shared file safe, but these local changes
+    // still need to land — retry on a slow backoff instead of waiting for
+    // the next unrelated write. Single timer, so retries coalesce.
+    scheduleSync(60_000);
   }
 }
 
-// Debounced push (~5s) after writes.
-function scheduleSync() {
+// Debounced push (~5s after a write; longer when retrying a failed push).
+function scheduleSync(delay = 5000) {
   if (!syncConfigured()) return;
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => pushToGist(), 5000);
+  syncTimer = setTimeout(() => pushToGist(), delay);
 }
 
 // Called once on boot: open db, then pull remote if configured.

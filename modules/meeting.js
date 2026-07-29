@@ -589,7 +589,12 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
 // the meeting flows the way she structured it. Returns { organized, added }.
 async function applyStructuredAgenda(out, cycleAgenda, type, cycleDate) {
   const openItems = cycleAgenda.filter((a) => !a.reviewed);
-  const byText = new Map(openItems.map((a) => [a.text.trim().toLowerCase(), a]));
+  // Match against EVERY item in the cycle, not just the open ones: a topic
+  // already checked off (and possibly decided) must not come back as a new
+  // open row just because it fell out of the open list. Re-running the draft
+  // mid-meeting is the normal flow, so this is the difference between the
+  // agenda respecting your decisions and quietly undoing them.
+  const byText = new Map(cycleAgenda.map((a) => [a.text.trim().toLowerCase(), a]));
   const seen = new Set();
   let order = 0, organized = 0, added = 0;
   for (const entry of out.agenda || []) {
@@ -599,6 +604,7 @@ async function applyStructuredAgenda(out, cycleAgenda, type, cycleDate) {
     seen.add(key);
     const section = AGENDA_SECTIONS.some(([k]) => k === entry.section) ? entry.section : 'topic';
     const existing = byText.get(key);
+    if (existing?.reviewed) continue; // settled this cycle — leave it alone
     if (existing) {
       await put('agenda', { ...existing, section, order });
       organized++;

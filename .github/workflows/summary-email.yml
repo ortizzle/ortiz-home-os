@@ -23,7 +23,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: npm install nodemailer@6 --no-save
+      - run: npm install nodemailer@6 --no-save --ignore-scripts --no-audit --no-fund
       - run: node .github/scripts/send-summary.mjs
         env:
           DRY_RUN: ${{ github.event.inputs.dry_run }} # empty on schedule → real send
