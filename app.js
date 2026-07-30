@@ -35,7 +35,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v71 · trust fixes: declines stick, safer sync, real dates';
+const APP_VERSION = 'v72 · digest collapsed by default';
 
 // ---------- theme ----------
 

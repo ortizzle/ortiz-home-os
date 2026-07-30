@@ -194,15 +194,10 @@ export async function renderManager(root) {
 
   // ----- the digest: computed facts first, so the state of the stretch is
   // visible instantly and for free; Claudia's AI review below interprets it.
-  // Collapsed while a review is mid-decision — the queue is the work then —
-  // and open otherwise (fresh tab, or the queue is done). -----
+  // Collapsed by default — a quick-reference panel, not the first thing to
+  // read on every visit; tap to expand when you actually want it. -----
   const cachedReview = await getReview();
-  const inProgress = (() => {
-    if (!cachedReview?.data) return false;
-    const { total, decided } = reviewProgress(cachedReview.data, reviewState(cachedReview));
-    return total > 0 && decided < total;
-  })();
-  const digestEl = await digestSection({ open: !inProgress });
+  const digestEl = await digestSection();
   root.append(digestEl);
 
   // ----- plan the week with Claudia (the persistent review, near the top) -----
@@ -268,7 +263,7 @@ export async function renderManager(root) {
   }, 'Plan the week');
   // Restore the persisted (shared) review so adds/dismisses — which re-render
   // the view — and even reloads never lose the rest of the list.
-  // (cachedReview was fetched above, before the digest, to set its collapse.)
+  // (cachedReview was fetched above, alongside the digest.)
   if (cachedReview) renderReview(host, cachedReview.data, rerender, reviewState(cachedReview));
   // Fetches the review at tap time (not render time), so it shares whatever
   // is current even if a fresh plan landed after this header was built.

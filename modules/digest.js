@@ -34,7 +34,7 @@ function to12(t) {
 // `open` controls whether the disclosure starts expanded — the Claudia tab
 // collapses it while a review is mid-decision so the queue stays front and
 // center, and re-opens it once the queue is done (or before a fresh run).
-export async function digestSection({ open = true } = {}) {
+export async function digestSection({ open = false } = {}) {
   const today = todayStr();
   const settings = getSettings();
   const { throughDate } = await planningHorizon(today);
