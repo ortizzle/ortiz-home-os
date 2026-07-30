@@ -677,7 +677,12 @@ select.input { appearance: none; }
 .field-label { display: block; font-size: 13px; font-weight: 500; color: var(--text-2); margin-bottom: 6px; }
 .field-row { display: flex; gap: 10px; }
 .field-row > * { flex: 1; min-width: 0; }
-.check-label { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 10px; cursor: pointer; }
+.check-label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
+/* Calendar picker: checkbox row + a "call it…" label input right under it,
+   so renaming a calendar happens exactly where you're already looking at it. */
+.cal-pick-row { margin-bottom: 10px; }
+.cal-pick-row .check-label { margin-bottom: 4px; }
+.cal-label-input { margin-left: 26px; width: calc(100% - 26px); padding: 5px 10px; font-size: 13px; }
 
 .settings-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .accent-row { display: flex; gap: 10px; margin-bottom: 10px; }

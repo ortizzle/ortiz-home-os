@@ -40,6 +40,24 @@ export function setSelectedCalendars(ids) {
   clearCache();
 }
 
+// Per-calendar display-name overrides (id -> short label), set from the
+// Settings calendar picker. Most calendars need no entry here — guessCalName
+// below derives a first name automatically — this only exists for the ones
+// that don't, like a personal Google account whose address has no relation
+// to the person's name ("kheningburg@..." for Kat).
+const CAL_LABELS_KEY = 'ohos.gcalCalendarLabels';
+export function getCalendarLabelOverrides() {
+  try {
+    const o = JSON.parse(localStorage.getItem(CAL_LABELS_KEY));
+    if (o && typeof o === 'object') return o;
+  } catch {}
+  return {};
+}
+export function setCalendarLabelOverrides(overrides) {
+  localStorage.setItem(CAL_LABELS_KEY, JSON.stringify(overrides || {}));
+  clearCache();
+}
+
 export class GcalError extends Error {
   constructor(message, code) { super(message); this.code = code; }
 }
@@ -299,12 +317,22 @@ async function calendarNames() {
   return calNamesCache;
 }
 
-// A primary calendar's summary is the raw account email — shorten to the
-// local part so labels read "chris.ortiz", not a full address. Named
-// calendars ("Family", "Personal Schedule") pass through untouched.
-function shortCalName(summary) {
+// A primary calendar's summary is usually a raw account identifier — an
+// email (shorten to the local part: "chris.ortiz@gmail.com" -> "chris.ortiz")
+// or an org-style dotted name ("sedona.nicole.ortiz") — so take just the
+// first segment and capitalize it, reading as a first name ("Chris",
+// "Sedona") instead of a slug. Named calendars ("Family", "Personal
+// Schedule") have no dot before a word break, so they pass through as-is —
+// re-capitalizing an already-capitalized first letter is a no-op.
+// This is only a GUESS: an account whose address has no textual relation to
+// the person's name (e.g. Kat's "kheningburg@...") won't resolve correctly —
+// that's what the override map (below) is for, set from the Settings
+// calendar picker.
+export function guessCalName(summary) {
   const s = (summary || '').trim();
-  return s.includes('@') ? s.split('@')[0] : s;
+  const local = s.includes('@') ? s.split('@')[0] : s;
+  const first = local.split('.')[0];
+  return first ? first[0].toUpperCase() + first.slice(1) : local;
 }
 
 // Calendars this account can WRITE to (for the "Save to" target). Cached.
@@ -384,7 +412,8 @@ export async function eventsForRange(start, end, { force = false } = {}) {
   // Null when the name lookup failed — fall back to the calendar id, which
   // is usually the account email and still labels the event usefully.
   const names = await calendarNames();
-  const nameOf = (id) => shortCalName((names && names[id]) || id || '');
+  const overrides = getCalendarLabelOverrides();
+  const nameOf = (id) => overrides[id] || guessCalName((names && names[id]) || id || '');
   // Family calendar first: first-seen wins in this loop, so when the same
   // event lives on several calendars, the shared Family copy is the one that
   // survives dedupe — and the one whose calendar name the views and the AI

@@ -20,7 +20,7 @@ import { renderCalendar } from './modules/calendar.js';
 import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
 import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestionMemory, seedMemory, MEMORY_CATS } from './modules/hmcontext.js';
-import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars } from './modules/gcal.js';
+import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars, getCalendarLabelOverrides, setCalendarLabelOverrides, guessCalName } from './modules/gcal.js';
 import { errandWindow } from './modules/suggest.js';
 import { getUsage, estimateCost, resetUsage } from './modules/ai.js';
 import { pushSupported, getPushState, enablePush, disablePush } from './modules/push.js';
@@ -35,7 +35,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v74 · Claudia tab renders faster';
+const APP_VERSION = 'v75 · calendars can be renamed to first names';
 
 // ---------- theme ----------
 
@@ -569,22 +569,44 @@ async function chooseCalendars(afterSave) {
   if (!cals.length) return toast('No calendars found', 'warn');
 
   const selected = new Set(getSelectedCalendars());
+  const overrides = getCalendarLabelOverrides();
   const rows = cals.map((c) => {
     const cb = el('input', { type: 'checkbox', checked: selected.has(c.id) ? 'checked' : null });
     cb.dataset.calId = c.id;
-    return el('label', { class: 'check-label' }, [cb, c.summary + (c.primary ? ' (primary)' : '')]);
+    // The label shown everywhere (Calendar, Home, Claudia's prompts) for this
+    // calendar — defaults to a guessed first name (works for anything like
+    // "chris.ortiz@…"), editable for the ones that don't guess right (an
+    // account address with no relation to the person's name, e.g. Kat's).
+    const labelInput = el('input', {
+      class: 'input cal-label-input',
+      placeholder: guessCalName(c.summary),
+      value: overrides[c.id] || '',
+    });
+    labelInput.dataset.calId = c.id;
+    return el('div', { class: 'cal-pick-row' }, [
+      el('label', { class: 'check-label' }, [cb, c.summary + (c.primary ? ' (primary)' : '')]),
+      labelInput,
+    ]);
   });
 
   const m = openModal('Calendars to show', [
-    el('p', { class: 'muted small', style: 'margin-top:0' }, 'Pick which Google calendars overlay on the Calendar and Meeting tabs. Choice is per device.'),
+    el('p', { class: 'muted small', style: 'margin-top:0' }, 'Pick which Google calendars overlay on the Calendar and Meeting tabs, and what to call each one — shown in the app and read by Claudia. Leave blank to use the guessed name. Choice is per device.'),
     ...rows,
   ], [
     el('button', { class: 'btn', onclick: () => m.close() }, 'Cancel'),
     el('button', {
       class: 'btn btn-primary',
       onclick: () => {
-        const chosen = rows.map((r) => r.querySelector('input')).filter((cb) => cb.checked).map((cb) => cb.dataset.calId);
+        const checkboxes = rows.map((r) => r.querySelector('input[type="checkbox"]'));
+        const chosen = checkboxes.filter((cb) => cb.checked).map((cb) => cb.dataset.calId);
         setSelectedCalendars(chosen);
+        const nextOverrides = {};
+        for (const r of rows) {
+          const input = r.querySelector('.cal-label-input');
+          const v = input.value.trim();
+          if (v) nextOverrides[input.dataset.calId] = v;
+        }
+        setCalendarLabelOverrides(nextOverrides);
         toast('Calendars updated', 'success');
         m.close();
         afterSave?.();

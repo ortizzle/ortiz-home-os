@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v74-faster-claudia-tab';
+const CACHE = 'ohos-shell-v75-calendar-names';
 const SHELL = [
   './',
   './index.html',
