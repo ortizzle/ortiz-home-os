@@ -307,7 +307,11 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
     agenda.push(a);
   }
   agenda.sort((a, b) => ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
-  const week = await gatherWeekAhead();
+  // gatherWeekAhead() is 3 store reads plus a live Google Calendar fetch —
+  // real cost, and its only consumer is the "Create the agenda" click below.
+  // Computing it here ran it on EVERY render of this section (every tick,
+  // add, or Family/Admin toggle re-renders the whole Claudia tab), which is
+  // most of why that tab felt slow. Fetch it only when actually needed.
 
   const meta = `${isToday ? 'Today' : DAY_NAMES[meetingDay(type)]} · ${fmtDay(meetingDate)}, ${meetingTime(type)} — ${attendeesFor(type).join(', ')}`;
   // Embedded (Claudia tab): "2." — this is step 2 of the plan-then-organize
@@ -368,6 +372,7 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       createBtn.textContent = 'Organizing…';
       clear(statusHost).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is structuring the agenda…')]));
       try {
+        const week = await gatherWeekAhead();
         // Dated tasks due this week, plus dateless ("someday") tasks — the
         // latter are the old weekly-plan items, merged into Tasks in v68.
         const chores = await getAll('chores');

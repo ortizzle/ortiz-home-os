@@ -31,13 +31,12 @@ function to12(t) {
   return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
-// `open` controls whether the disclosure starts expanded — the Claudia tab
-// collapses it while a review is mid-decision so the queue stays front and
-// center, and re-opens it once the queue is done (or before a fresh run).
-export async function digestSection({ open = false } = {}) {
-  const today = todayStr();
+// Builds the actual content: a live calendar fetch, three store reads, and
+// (inside getSuggestionMemory) a get-per-suggestion loop against suggLog —
+// real cost, deliberately paid only when someone actually opens the panel
+// (see digestSection below), not on every render of the Claudia tab.
+async function buildBody(today, throughDate) {
   const settings = getSettings();
-  const { throughDate } = await planningHorizon(today);
   // Fetch through the LATER of the meeting horizon and the birthday lookahead
   // (ISO strings, so max is lexical) — "Coming up" still cuts at throughDate,
   // but the birthday scan below gets the full ~5 weeks of calendar to read.
@@ -127,10 +126,34 @@ export async function digestSection({ open = false } = {}) {
     el('button', { class: 'link', style: 'padding: 0', onclick: () => navigate('#/calendar') }, 'Calendar →'),
     el('button', { class: 'link', style: 'padding: 0', onclick: () => navigate('#/tasks') }, 'All tasks →'),
   ]));
+  return nodes;
+}
 
-  return disclosure(
-    `The stretch ahead — through ${fmtDay(throughDate)}`,
-    el('section', { class: 'panel' }, nodes),
-    { open }
-  );
+// `open` controls whether the disclosure starts expanded — the Claudia tab
+// collapses it while a review is mid-decision so the queue stays front and
+// center, and re-opens it once the queue is done (or before a fresh run).
+// The heading needs `throughDate` (one cheap store read via planningHorizon),
+// so that much is computed up front; the expensive body — the calendar
+// fetch, task/memory reads, and the suggestion-log loop in
+// getSuggestionMemory — is deferred until the panel is actually opened, so a
+// tab that's collapsed by default (v72) doesn't pay for a read nobody's
+// looking at on every single render.
+export async function digestSection({ open = false } = {}) {
+  const today = todayStr();
+  const { throughDate } = await planningHorizon(today);
+
+  const body = el('section', { class: 'panel' }, [el('p', { class: 'muted small', style: 'margin: 0' }, 'Loading…')]);
+  const details = disclosure(`The stretch ahead — through ${fmtDay(throughDate)}`, body, { open });
+
+  let loaded = false;
+  async function load() {
+    if (loaded) return;
+    loaded = true;
+    const nodes = await buildBody(today, throughDate);
+    body.replaceChildren(...nodes);
+  }
+  details.addEventListener('toggle', () => { if (details.open) load(); });
+  if (open) await load(); // not used today (always opens closed), but keep correct if that changes
+
+  return details;
 }
