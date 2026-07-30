@@ -280,24 +280,25 @@ export async function renderManager(root) {
   });
   root.append(
     el('div', { class: 'panel-head' }, [
-      el('h4', {}, 'Plan the week with Claudia'),
+      el('h4', {}, '1. Plan the week'),
       cachedReview || hasApiKey() ? shareReview : null,
     ]),
     el('section', { class: 'panel' }, [
-      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reads the digest above (plus your interests and recent email) and proposes what to plan. Decide every item: add it with one tap, send it to a meeting (→ Meeting), or clear it (✓ Not needed) — when the count hits zero you get a shareable pre-read and the agenda below is seeded.' : 'Add a Claude API key in Settings and Claudia will propose what to plan each week.'),
+      el('p', { class: 'muted small', style: 'margin-top:0' }, hasApiKey() ? 'Claudia reads the digest above (plus your interests and recent email) and proposes what to plan. Decide every item: add it with one tap, send it to a meeting (→ Meeting), or clear it (✓ Not needed) — anything routed to a meeting is waiting in Step 2 below, ready to organize into an agenda.' : 'Add a Claude API key in Settings and Claudia will propose what to plan each week.'),
       reviewBtn,
       host,
     ])
   );
 
-  // ----- family meeting (moved from its own tab) -----
+  // ----- family meeting (moved from its own tab; step 2 of the flow above:
+  // organizes whatever landed here — typed directly, or routed via → Meeting) -----
   root.append(...(await meetingSection(rerender)));
 
   // jump-to menu for this long tab
   tableOfContents(root, [
     { label: 'Digest', at: 'The stretch ahead' },
-    { label: 'Plan week', at: 'Plan the week' },
-    { label: 'Meeting', at: 'Family meeting' },
+    { label: 'Plan week', at: '1. Plan the week' },
+    { label: 'Meeting', at: "2. This week's meeting" },
   ]);
 }
 

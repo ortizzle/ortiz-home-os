@@ -310,8 +310,12 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
   const week = await gatherWeekAhead();
 
   const meta = `${isToday ? 'Today' : DAY_NAMES[meetingDay(type)]} · ${fmtDay(meetingDate)}, ${meetingTime(type)} — ${attendeesFor(type).join(', ')}`;
+  // Embedded (Claudia tab): "2." — this is step 2 of the plan-then-organize
+  // flow (see manager.js), reading its heading against that numbering.
+  // Standalone (#/meeting, a legacy direct link — not part of that flow):
+  // unnumbered.
   const headEl = embedded
-    ? el('div', { class: 'panel-head', style: 'margin-top: 20px' }, [el('h4', {}, 'Family meeting')])
+    ? el('div', { class: 'panel-head', style: 'margin-top: 20px' }, [el('h4', {}, "2. This week's meeting")])
     : el('div', { class: 'view-head' }, [el('h1', {}, 'Family Meeting')]);
 
   // ----- meeting type: Family (kids, fun) or Admin (Chris + Kat, household ops) -----
@@ -567,10 +571,10 @@ export async function meetingSection(rerender, { embedded = true } = {}) {
       ...agendaNodes,
       cycleAgenda.length ? el('div', { class: 'hm-actions', style: 'margin-top: 10px' }, [shareBtn, concludeBtn]) : null,
 
-      el('h5', { class: 'meeting-unit-heading' }, 'Plan with Claudia'),
+      el('h5', { class: 'meeting-unit-heading' }, 'Organize with Claudia'),
       el('p', { class: 'muted small' },
         hasApiKey()
-          ? 'One tap takes what you’ve jotted above and organizes it into a run-of-show — grouped and ordered (Open → Topics → Decisions → Close), with any important gaps filled and, for Family, icebreakers + a closing activity. Nothing you typed is dropped; delete what you don’t want, then Share.'
+          ? 'One tap takes what’s on the agenda above — jotted here, or routed in from Step 1’s plan — and organizes it into a run-of-show — grouped and ordered (Open → Topics → Decisions → Close), with any important gaps filled and, for Family, icebreakers + a closing activity. Nothing you typed is dropped; delete what you don’t want, then Share.'
           : 'Optional: add a Claude API key in Settings to have Claudia organize the agenda. Everything above works without it.'),
       createBtn,
       statusHost,
