@@ -39,6 +39,44 @@ const start = today();
 const meetingDate = familyMeetingDate(data);
 const meetingLabel = fmtDay(meetingDate);
 
+// ----- the girls' school apps (skipped unless SCHOOL_GIST_IDS is set) -----
+// Read before the no-agenda branch: the School read goes out either way —
+// early in the school year the nudge email IS the Wednesday email, and a
+// test on Friday shouldn't wait for an agenda to exist.
+const schoolKids = await readSchoolKids();
+
+function schoolTextLines() {
+  const lines = ['SCHOOL'];
+  for (const k of schoolKids) {
+    const bits = [
+      k.upcoming.length ? k.upcoming.slice(0, 3).map((u) => upcomingLabel(start, u)).join('; ') : 'no tests on the radar',
+      k.hasActivity
+        ? `${k.streak ? `${k.streak}-day streak` : `last studied ${fmtDay(k.lastActive)}`}, ${k.minutesWeek}${k.goalWeek ? `/${k.goalWeek}` : ''} min this week${k.accuracy !== null ? `, ${k.accuracy}% accuracy` : ''}`
+        : 'no study activity in the app yet',
+    ];
+    lines.push(`- ${k.name}: ${bits.join(' · ')}`);
+    for (const r of k.recentScores.slice(0, 2)) lines.push(`    Scored: ${r.label} ${r.score}% (${fmtDay(r.date)})`);
+    for (const a of k.alerts) lines.push(`    ⚠️ ${a}`);
+  }
+  return lines;
+}
+
+function schoolHtmlRows() {
+  const rows = [h('School')];
+  schoolKids.forEach((k, i) => {
+    const title = `${ownerChip(k.name)} ${k.upcoming.length ? esc(k.upcoming.slice(0, 3).map((u) => upcomingLabel(start, u)).join(' · ')) : 'no tests on the radar'}`;
+    const subBits = [
+      k.hasActivity
+        ? `${k.streak ? `${k.streak}-day streak` : `last studied ${esc(fmtDay(k.lastActive))}`} · ${k.minutesWeek}${k.goalWeek ? `/${k.goalWeek}` : ''} min this week${k.accuracy !== null ? ` · ${k.accuracy}% accuracy` : ''}`
+        : 'no study activity in the app yet',
+      ...k.recentScores.slice(0, 2).map((r) => `Scored: ${esc(r.label)} ${r.score}% (${esc(fmtDay(r.date))})`),
+      ...k.alerts.map((a) => `⚠️ ${esc(a)}`),
+    ];
+    rows.push(row(title, { sub: subBits.join('<br>'), last: i === schoolKids.length - 1 }));
+  });
+  return rows;
+}
+
 // This cycle's Family agenda (Claudia's drafted run-of-show), tombstone-clean.
 const agenda = live(data, 'agenda')
   .filter((a) => (a.type || 'family') === 'family' && a.cycleDate === meetingDate)
