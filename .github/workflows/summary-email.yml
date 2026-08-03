@@ -29,6 +29,7 @@ jobs:
           DRY_RUN: ${{ github.event.inputs.dry_run }} # empty on schedule → real send
           GIST_ID: ${{ secrets.GIST_ID }}
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          SCHOOL_GIST_IDS: ${{ secrets.SCHOOL_GIST_IDS }} # optional; comma-separated Ad Astra + Wayfinder Gist IDs → adds the School section
           GMAIL_USER: ${{ secrets.GMAIL_USER }} # optional; defaults to chris.ortiz@gmail.com
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           KAT_EMAIL: ${{ secrets.KAT_EMAIL }} # so Kat gets the agenda too (unless SUMMARY_TO overrides)

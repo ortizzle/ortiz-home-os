@@ -7,6 +7,7 @@ import { getAll, get, put, remove as removeRec } from './store.js';
 import { addDays, fmtDay, parseDate, todayStr } from './ui.js';
 import { eventsForRange, canReadEmail, gmailRecent } from './gcal.js';
 import { STORES } from './grocery.js';
+import { getSchoolSummaries, schoolText } from './school.js';
 
 // The family's habits/preferences, fed to the house-manager AI. Editable in
 // Settings → "Notes for the assistant"; this is the default seed. FACTS no
@@ -469,6 +470,9 @@ export async function gatherContext({ start, days, email = false }) {
   // renewal landed and the real calendar reappeared everywhere else.
   const events = await eventsForRange(start, addDays(start, days)).catch(() => []);
   const emails = email && canReadEmail() ? await gmailRecent({ days: 7 }).catch(() => []) : [];
+  // The girls' school apps (read-only Gist pull, ~15-min cache). Null when not
+  // configured or unreachable — school data is an overlay, never a blocker.
+  const school = await getSchoolSummaries().catch(() => null);
 
   const eventsText = events
     .slice()
@@ -509,5 +513,5 @@ export async function gatherContext({ start, days, email = false }) {
     .sort((a, b) => (a.date < b.date ? -1 : 1));
   const mealsText = mealsInRange.map((m) => `- ${fmtDay(m.date)}: ${m.title}`).join('\n');
 
-  return { events, eventsText, choresText, groceriesText, agendaText, meetingDecisionsText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails) };
+  return { events, eventsText, choresText, groceriesText, agendaText, meetingDecisionsText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails), schoolText: school ? schoolText(school.kids) : '' };
 }

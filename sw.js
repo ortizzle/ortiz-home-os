@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v75-calendar-names';
+const CACHE = 'ohos-shell-v76-school-apps';
 const SHELL = [
   './',
   './index.html',
@@ -27,6 +27,7 @@ const SHELL = [
   './modules/manager.js',
   './modules/meals.js',
   './modules/diag.js',
+  './modules/school.js',
 ];
 
 self.addEventListener('install', (e) => {

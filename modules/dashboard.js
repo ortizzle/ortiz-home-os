@@ -12,6 +12,7 @@ import { analyzeDay, hasApiKey, AIError } from './ai.js';
 import { gatherContext, householdKnowledge, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions, logSuggestionDismissed, recentlyDeclinedText } from './hmcontext.js';
 import { addButtons } from './manager.js';
 import { buildSuggestions, errandWindow } from './suggest.js';
+import { schoolConfigured, getSchoolSummaries, upcomingLabel } from './school.js';
 
 const CART_SVG = '<svg viewBox="0 0 24 24"><path d="M3.5 4.5H6l2.3 10.5h9.4l2.3-8.5H7"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="16.5" cy="19" r="1.5"/></svg>';
 let briefInFlight = false;
@@ -175,6 +176,48 @@ export async function renderDashboard(root) {
       el('section', { class: 'panel' }, tomorrowAppts.map((a) => apptRow(a, rerender)))
     );
   }
+
+  // ----- school (the girls' study apps — read-only overlay) -----
+  root.append(...schoolSection(today));
+}
+
+// One line per kid from the school-app Gists. Renders a placeholder and fills
+// async so a Gist fetch (or timeout) never delays Home; the ~15-min summary
+// cache makes repeat renders effectively instant. Tapping a row opens that
+// kid's app.
+function schoolSection(today) {
+  if (!schoolConfigured()) return [];
+  const body = el('section', { class: 'panel' }, [el('p', { class: 'muted small' }, 'Reading the study apps…')]);
+  getSchoolSummaries()
+    .then((school) => {
+      if (!school?.kids?.length) {
+        body.replaceChildren(el('p', { class: 'muted small' }, "Couldn't reach the study apps — check the Gist IDs and token in Settings."));
+        return;
+      }
+      body.replaceChildren(
+        ...school.kids.map((k) => {
+          const next = k.upcoming[0];
+          const bits = [
+            next ? upcomingLabel(today, next) : 'no tests on the radar',
+            !k.hasActivity ? 'no study activity yet'
+              : k.streak ? `🔥 ${k.streak} days` : `last studied ${k.lastActive ? fmtDay(k.lastActive) : 'never'}`,
+            k.hasActivity ? `${k.minutesWeek}${k.goalWeek ? `/${k.goalWeek}` : ''} min this week` : null,
+          ].filter(Boolean);
+          return el('div', { class: 'event-row', onclick: () => window.open(k.url, '_blank', 'noopener') }, [
+            el('span', { class: 'event-title' }, [
+              el('strong', {}, k.name),
+              el('span', { class: 'event-who' }, ` · ${bits.join(' · ')}`),
+            ]),
+          ]);
+        }),
+        ...(school.stale ? [el('p', { class: 'muted small', style: 'margin: 6px 0 0' }, 'Study apps unreachable — showing the last good read.')] : [])
+      );
+    })
+    .catch(() => body.replaceChildren(el('p', { class: 'muted small' }, "Couldn't reach the study apps right now.")));
+  return [
+    el('div', { class: 'panel-head' }, [el('h4', {}, 'School')]),
+    body,
+  ];
 }
 
 // ---------- helpers ----------
@@ -309,6 +352,7 @@ async function runBrief(host, rerender, { today, settings }) {
       meetingDecisions: ctx.meetingDecisionsText,
       email: ctx.emailsText,
       declined,
+      school: ctx.schoolText,
     });
     logShownSuggestions(out.suggestions, 'brief').catch(() => {});
     await saveBrief(today, out);

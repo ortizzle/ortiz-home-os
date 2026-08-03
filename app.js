@@ -35,7 +35,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v75 · calendars can be renamed to first names';
+const APP_VERSION = 'v76 · school apps: tests + study read';
 
 // ---------- theme ----------
 
@@ -348,6 +348,8 @@ async function renderSettings(root) {
   const kidsInput = el('input', { class: 'input', placeholder: 'e.g. Sedona 11, River 9', value: s.kidsAges ?? DEFAULT_KIDS });
   const gistToken = el('input', { class: 'input', type: 'password', placeholder: 'GitHub token (gist scope)', value: s.gistToken || '' });
   const gistId = el('input', { class: 'input', placeholder: 'Gist ID', value: s.gistId || '' });
+  const adAstraGist = el('input', { class: 'input', placeholder: 'Ad Astra Gist ID', value: s.adAstraGistId || '' });
+  const wayfinderGist = el('input', { class: 'input', placeholder: 'Wayfinder Gist ID', value: s.wayfinderGistId || '' });
 
   const status = el('span', { class: 'sync-dot ' + (syncConfigured() ? 'on' : 'off') });
   const statusText = el('span', { class: 'muted' }, syncConfigured() ? 'Sync configured' : 'Local-only (no sync)');
@@ -491,6 +493,15 @@ async function renderSettings(root) {
       el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs, plus read-only access to recent Gmail so Claudia can factor email into your morning brief and answers. The app can only read — it never changes your calendar or sends mail. Google access expires hourly, but the app renews it silently in the background — you should only need to sign in again after clearing browser data or on a new device.'),
     ])),
 
+    // ----- the girls' school apps: read-only Gist IDs, same token as sync -----
+    disclosure('School apps (Ad Astra & Wayfinder)', el('section', { class: 'panel' }, [
+      el('label', { class: 'field-label' }, 'Sedona — Ad Astra Gist ID'),
+      adAstraGist,
+      el('label', { class: 'field-label' }, 'River — Wayfinder Gist ID'),
+      wayfinderGist,
+      el('p', { class: 'muted small' }, 'Read-only: Home OS pulls each app\'s synced data to show upcoming tests and how studying is going (Home, the digest, and Claudia\'s briefs). Uses the Household sync token below. The Gist IDs are in the school-apps setup doc — they\'re effectively passwords, so like the token they live only on this device and are never synced. Their mood check-ins and tutor questions are never read.'),
+    ])),
+
     // ----- sync infrastructure + actions -----
     disclosure('Household sync', el('section', { class: 'panel' }, [
       el('div', { class: 'sync-status' }, [status, statusText]),
@@ -530,6 +541,8 @@ async function renderSettings(root) {
       kidsAges: kidsInput.value.trim(),
       gistToken: gistToken.value.trim(),
       gistId: gistId.value.trim(),
+      adAstraGistId: adAstraGist.value.trim(),
+      wayfinderGistId: wayfinderGist.value.trim(),
     });
     toast('Settings saved', 'success');
     renderSettings(root);
@@ -732,7 +745,7 @@ const WATCHED_FILES = [
   './modules/store.js', './modules/ui.js', './modules/chores.js', './modules/grocery.js',
   './modules/calendar.js', './modules/suggest.js', './modules/dashboard.js', './modules/meeting.js',
   './modules/ai.js', './modules/gcal.js', './modules/hmcontext.js', './modules/manager.js',
-  './modules/meals.js', './modules/diag.js', './modules/digest.js',
+  './modules/meals.js', './modules/diag.js', './modules/digest.js', './modules/school.js',
 ];
 
 let bootSignature = null;

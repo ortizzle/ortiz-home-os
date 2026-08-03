@@ -246,6 +246,7 @@ export async function renderManager(root) {
           meetingDecisions: ctx.meetingDecisionsText,
           email: ctx.emailsText,
           follow,
+          school: ctx.schoolText,
         });
         logShownSuggestions(out.planItems, 'review').catch(() => {});
         await saveReview(out); // persists until the next run, shared with Kat

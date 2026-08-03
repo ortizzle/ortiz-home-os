@@ -253,12 +253,13 @@ const HM_ROLE = (family) =>
 // Daily brief for the Home page — a short read on TODAY plus a few concrete,
 // one-tap-addable suggestions. Each suggestion is typed so the app can turn it
 // into a task, appointment, or grocery item.
-export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', agenda = '', meetingDecisions = '', email = '', declined = '' } = {}) {
+export async function analyzeDay({ family = [], notes = '', kids = '', today, weekday = '', events = '', chores = '', groceries = '', meals = '', agenda = '', meetingDecisions = '', email = '', declined = '', school = '' } = {}) {
   const system = HM_ROLE(family) + ` This is a brief morning briefing for TODAY — keep it tight and useful, the kind of thing a great house manager would say over coffee. If recent email surfaces something time-sensitive (an appointment, an RSVP, a bill, a school notice), fold it in — but only when it genuinely matters today or soon. If dinner is planned for tonight, mention it in a note. Kids (${kids || 'none listed'}) don't use the app — when a small chore genuinely fits one of them, suggest it as a task with their name in "who".` +
     ' CALENDAR ATTRIBUTION: each calendar event line ends with its source calendar in [brackets] when known. Read it as real signal: [Family] means a shared family event; a calendar named for one parent (e.g. their name or email) means that parent\'s commitment — attribute it to them. Beyond that signal, never invent attendees or drivers, and never guess who\'s taking the kids; if the calendar name is ambiguous or missing, leave the event unattributed. A label like [chris + kat] (both parents\' calendars, not Family) is a couple commitment — just the two of them, no kids. Your memory\'s calendar-scheme fact explains what each of this family\'s calendars means. TENTATIVE: an event bracketed "— TENTATIVE" lives only on the soft-plans calendar and is NOT confirmed — never present it as scheduled; treat it as a possibility (worth a gentle "still penciled in — want to lock it in?" when timely) and plan firm commitments around confirmed events only.' +
     ' The family\'s recent meeting decisions inform planning, but the calendar is the authority on what is actually scheduled: only present two events as one combined gathering when BOTH events are themselves on the calendar. Never introduce an event, gathering, or attendee that a decision or note mentions if it is not on the calendar — leave it out rather than assert it. Don\'t re-raise what\'s already been decided.' +
     ' WEEKEND CARE: on a Saturday or Sunday only, if the household notes list standing weekly care that lives only there (e.g. weekly pet care) and isn\'t already an open task, add ONE such reminder as a task suggestion for today — the weekend is when there\'s time for it. Keep it to a single gentle nudge, no guilt; skip it entirely on weekdays.' +
-    ' THE CALENDAR IS AUTHORITATIVE for what is happening today and tomorrow. State that an event, appointment, or special day (a self-care day, a dinner, an outing, a visitor) is happening ONLY if it appears under TODAY & TOMORROW ON THE CALENDAR. A memory fact, a household note, a weekly rhythm, or a past decision shapes tone and planning but does NOT place anything on the calendar — never assert an off-calendar item as scheduled, and never add people to a calendar event who aren\'t named in that event.';
+    ' THE CALENDAR IS AUTHORITATIVE for what is happening today and tomorrow. State that an event, appointment, or special day (a self-care day, a dinner, an outing, a visitor) is happening ONLY if it appears under TODAY & TOMORROW ON THE CALENDAR. A memory fact, a household note, a weekly rhythm, or a past decision shapes tone and planning but does NOT place anything on the calendar — never assert an off-calendar item as scheduled, and never add people to a calendar event who aren\'t named in that event.' +
+    ' SCHOOL APPS: a block may summarize each kid\'s study app — upcoming tests (real dates, trust them), streak, minutes, accuracy, and ALERT lines. This is for the PARENTS: fold in at most one timely, concrete heads-up when it matters today or in the next few days (a test tomorrow, an ALERT line), phrased as support ("worth a check-in", "maybe tonight is a good study night"), never as surveillance or guilt. Skip it entirely on quiet days; never invent a test the block doesn\'t list.';
   const prompt = `Good morning. Today is ${weekday} ${today}. Give the family a short read on the day.
 
 HOUSEHOLD NOTES / PREFERENCES:
@@ -285,6 +286,9 @@ ${declined || '(none)'}
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
 
+THE KIDS' SCHOOL APPS (study + upcoming-test read; parent-facing):
+${school || '(not connected)'}
+
 RECENT EMAIL (sender — subject: snippet; may be noise, use judgment):
 ${email || '(no email available)'}
 
@@ -303,7 +307,7 @@ In the headline and notes, use **bold** (Markdown) sparingly — wrap only the f
 // Weekly review for the House Manager tab — proposes a concrete plan of items
 // to complete for the rest of the week. Each item is typed so it can be added
 // to the living weekly plan (or straight to tasks/calendar/grocery).
-export async function reviewWeek({ family = [], notes = '', birthdays = '', interests = '', kids = '', today, throughDate = '', events = '', chores = '', groceries = '', meals = '', agenda = '', meetingDecisions = '', email = '', follow = '' } = {}) {
+export async function reviewWeek({ family = [], notes = '', birthdays = '', interests = '', kids = '', today, throughDate = '', events = '', chores = '', groceries = '', meals = '', agenda = '', meetingDecisions = '', email = '', follow = '', school = '' } = {}) {
   const system = HM_ROLE(family) +
     ' Look especially for things with lead time: birthdays/anniversaries (a card AND a gift, timed), events needing an RSVP / reservation / outfit / travel, and appointments needing prep.' +
     ' CALENDAR ATTRIBUTION: each calendar event line ends with its source calendar in [brackets] when known. Read it as real signal: [Family] means a shared family event; a calendar named for one parent (e.g. their name or email) means that parent\'s commitment — attribute it to them. Beyond that signal, never invent attendees or drivers, and never guess who\'s taking the kids; if the calendar name is ambiguous or missing, leave the event unattributed. A label like [chris + kat] (both parents\' calendars, not Family) is a couple commitment — just the two of them, no kids. Your memory\'s calendar-scheme fact explains what each of this family\'s calendars means. TENTATIVE: an event bracketed "— TENTATIVE" lives only on the soft-plans calendar and is NOT confirmed — never present it as scheduled; treat it as a possibility (worth a gentle "still penciled in — want to lock it in?" when timely) and plan firm commitments around confirmed events only.' +
@@ -316,7 +320,8 @@ export async function reviewWeek({ family = [], notes = '', birthdays = '', inte
     ' STANDING CARE: the household notes may list recurring care the family does NOT track as tasks and tends to forget (e.g. weekly pet care). Each review, fold any that is due into the plan as a gentle reminder — prefer placing it on the weekend (set "day" to the coming Saturday/Sunday) — even though it will NOT appear in the open-tasks list. This is a deliberate exception to the avoid-duplicates rule; a routine that lives only in the notes still deserves a nudge. Keep it to one line each, no guilt.' +
     ' GETTING TO KNOW THE FAMILY: the parents want you to build a richer picture of the household over time. Beyond plan-sharpening questions, ask a warm, specific "getting to know you" question or two — about the kids, the pets, routines, traditions, tastes, or what a good week feels like here. One topic at a time, easy to answer, and never re-ask anything already answered in your follow-through log; build on what you already know.' +
     ' FOLLOW-THROUGH: you get a log of your own past suggestions. Never re-ask a question the family already answered; build on their answer instead. Follow up ONCE, gently, on something that was added but never finished ("still want to get to X?"). Don\'t re-suggest something ignored twice in a row — let it go unless it becomes genuinely urgent. Briefly acknowledge a win if something you suggested got done. No nagging, no guilt, no scorekeeping.' +
-    ' AVOID DUPLICATES: the family has already captured plenty. Before proposing anything, check it against the open tasks, calendar, meeting agenda, and grocery list below — never re-suggest something that already exists in any of them (e.g. don\'t suggest "get a small gift" if it\'s already an open task). This is the most common mistake; when in doubt, leave it out.';
+    ' AVOID DUPLICATES: the family has already captured plenty. Before proposing anything, check it against the open tasks, calendar, meeting agenda, and grocery list below — never re-suggest something that already exists in any of them (e.g. don\'t suggest "get a small gift" if it\'s already an open task). This is the most common mistake; when in doubt, leave it out.' +
+    ' SCHOOL APPS: a block may summarize each kid\'s study app — upcoming tests and exam windows (real dates, trust them), engagement (streak, minutes vs. goal), accuracy, weak subjects, and ALERT lines. This is parent-facing planning signal: plan lead time around a test or exam window (a study check-in a few days ahead, a quiet evening kept free the night before), and turn an ALERT line into one gentle, concrete plan item for a parent ("sit with Sedona for 20 minutes of Physics before Thursday"). Support, never surveillance or guilt — celebrate a streak or a good score in a word when genuine, don\'t lecture about a slow week, and never invent a test the block doesn\'t list.';
   const horizon = throughDate
     ? `between now and the family's next family meeting on ${throughDate} (plan the whole stretch, not just the next day or two)`
     : `for the rest of this week`;
@@ -351,6 +356,9 @@ ${meetingDecisions || '(none)'}
 
 GROCERY LIST (by store):
 ${groceries || '(empty)'}
+
+THE KIDS' SCHOOL APPS (study + upcoming-test read; parent-facing):
+${school || '(not connected)'}
 
 RECENT EMAIL (sender — subject: snippet; may be noise, use judgment):
 ${email || '(no email available)'}

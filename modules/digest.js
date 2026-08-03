@@ -10,6 +10,7 @@ import { el, disclosure, navigate, fmtDay, todayStr, addDays } from './ui.js';
 import { appointmentsFor } from './calendar.js';
 import { householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays, getSuggestionMemory } from './hmcontext.js';
 import { planningHorizon, collapseAppts } from './meeting.js';
+import { getSchoolSummaries, upcomingLabel } from './school.js';
 
 const CAP = 6; // per-list cap — the digest is a scan, not an archive
 const BDAY_DAYS = 35; // birthday lookahead (~5 weeks), wider than the horizon
@@ -41,12 +42,13 @@ async function buildBody(today, throughDate) {
   // (ISO strings, so max is lexical) — "Coming up" still cuts at throughDate,
   // but the birthday scan below gets the full ~5 weeks of calendar to read.
   const fetchEnd = [addDays(throughDate, 1), addDays(today, BDAY_DAYS + 1)].sort().at(-1);
-  const [appts, chores, agenda, memory, knowledge] = await Promise.all([
+  const [appts, chores, agenda, memory, knowledge, school] = await Promise.all([
     appointmentsFor(today, fetchEnd).catch(() => []),
     getAll('chores'),
     getAll('agenda'),
     getSuggestionMemory(),
     householdKnowledge(getSettings(), { today }),
+    getSchoolSummaries().catch(() => null),
   ]);
 
   const nodes = [];
@@ -77,6 +79,30 @@ async function buildBody(today, throughDate) {
     for (const b of bdays) {
       nodes.push(line([`🎂 `, el('strong', {}, b.name), ` — ${fmtDay(b.date)} (${b.daysAway === 0 ? 'today!' : b.daysAway === 1 ? 'tomorrow' : `in ${b.daysAway} days`})`]));
     }
+  }
+
+  // ----- school: each kid's study-app read (parent-only surface) -----
+  if (school?.kids?.length) {
+    nodes.push(sub('School'));
+    for (const k of school.kids) {
+      const bits = [];
+      if (k.upcoming.length) bits.push(k.upcoming.slice(0, 3).map((u) => upcomingLabel(today, u)).join(' · '));
+      else bits.push('no tests on the radar');
+      nodes.push(line([el('strong', {}, k.name), ` — ${bits.join(' · ')}`]));
+      if (k.hasActivity) {
+        const eng = [
+          k.streak ? `🔥 ${k.streak}-day streak` : `last studied ${k.lastActive ? fmtDay(k.lastActive) : 'never'}`,
+          `${k.minutesWeek}${k.goalWeek ? `/${k.goalWeek}` : ''} min this week`,
+          k.accuracy !== null ? `${k.accuracy}% accuracy` : null,
+          k.growthDue ? `${k.growthDue} to review` : null,
+        ].filter(Boolean).join(' · ');
+        nodes.push(line(`   ${eng}`));
+      } else {
+        nodes.push(line('   no study activity in the app yet'));
+      }
+      for (const a of k.alerts) nodes.push(line(`   ⚠️ ${a}`));
+    }
+    if (school.stale) nodes.push(line(`(study apps unreachable — showing the last good read)`));
   }
 
   // ----- tasks, your responsibilities first -----
