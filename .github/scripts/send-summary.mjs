@@ -82,18 +82,25 @@ const agenda = live(data, 'agenda')
   .filter((a) => (a.type || 'family') === 'family' && a.cycleDate === meetingDate)
   .sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity) || ((a.createdAt || '') < (b.createdAt || '') ? -1 : 1));
 
-// ----- no agenda yet → nudge (per the chosen behavior) -----
+// ----- no agenda yet → nudge (per the chosen behavior), plus the School read -----
 if (!agenda.length) {
   const subject = `Family meeting ${meetingLabel} — no agenda drafted yet`;
   const body =
     `No agenda for this week's Family meeting (${meetingLabel}) is in the app yet. ` +
     `Open Home OS, jot what you want to cover, and tap “Create the Family agenda” so ` +
     `Claudia can build the run-of-show — then it'll be here next time.`;
+  const text = [body];
+  if (schoolKids.length) text.push('', ...schoolTextLines());
+  text.push('', 'Open Home OS: https://ortizzle.github.io/ortiz-home-os/');
   await sendMail({
     to,
     subject,
-    text: `${body}\n\nOpen Home OS: https://ortizzle.github.io/ortiz-home-os/`,
-    html: page({ title: 'No agenda drafted yet', subtitle: `Family meeting · ${meetingLabel}`, body: note(body) }),
+    text: text.join('\n'),
+    html: page({
+      title: 'No agenda drafted yet',
+      subtitle: `Family meeting · ${meetingLabel}`,
+      body: note(body) + (schoolKids.length ? schoolHtmlRows().join('') : ''),
+    }),
   });
   console.log('nudge sent — no agenda for this cycle.');
   process.exit(0);
@@ -143,9 +150,6 @@ const dueTasks = live(data, 'chores')
   .filter((c) => !c.done && c.dueDate && c.dueDate >= start && c.dueDate < end)
   .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
 
-// ----- the girls' school apps (skipped unless SCHOOL_GIST_IDS is set) -----
-const schoolKids = await readSchoolKids();
-
 // ----- Claudia's latest weekly-review overview (bonus context) -----
 // Only if it's fresh (run within the last ~week). The review record is a
 // single "current" row that persists until the next run, so without this
@@ -169,20 +173,7 @@ if (appts.length || dueTasks.length) {
   for (const a of appts) textParts.push(`- ${fmtDay(a.date)}${a.startTime ? ' ' + a.startTime : ''}: ${a.title}${a.who ? ` (${a.who})` : ''}`);
   for (const c of dueTasks) textParts.push(`- ${fmtDay(c.dueDate)} · task: ${c.title}${c.assignee ? ` (${c.assignee})` : ''}`);
 }
-if (schoolKids.length) {
-  textParts.push('', 'SCHOOL');
-  for (const k of schoolKids) {
-    const bits = [
-      k.upcoming.length ? k.upcoming.slice(0, 3).map((u) => upcomingLabel(start, u)).join('; ') : 'no tests on the radar',
-      k.hasActivity
-        ? `${k.streak ? `${k.streak}-day streak` : `last studied ${fmtDay(k.lastActive)}`}, ${k.minutesWeek}${k.goalWeek ? `/${k.goalWeek}` : ''} min this week${k.accuracy !== null ? `, ${k.accuracy}% accuracy` : ''}`
-        : 'no study activity in the app yet',
-    ];
-    textParts.push(`- ${k.name}: ${bits.join(' · ')}`);
-    for (const r of k.recentScores.slice(0, 2)) textParts.push(`    Scored: ${r.label} ${r.score}% (${fmtDay(r.date)})`);
-    for (const a of k.alerts) textParts.push(`    ⚠️ ${a}`);
-  }
-}
+if (schoolKids.length) textParts.push('', ...schoolTextLines());
 if (overview) textParts.push('', "CLAUDIA'S WEEKLY READ", overview);
 textParts.push('', 'Open Home OS: https://ortizzle.github.io/ortiz-home-os/');
 
@@ -209,20 +200,7 @@ if (appts.length || dueTasks.length) {
   }
   wk.forEach((r, i) => htmlParts.push(row(r.title, { sub: r.sub, last: i === wk.length - 1 })));
 }
-if (schoolKids.length) {
-  htmlParts.push(h('School'));
-  schoolKids.forEach((k, i) => {
-    const title = `${ownerChip(k.name)} ${k.upcoming.length ? esc(k.upcoming.slice(0, 3).map((u) => upcomingLabel(start, u)).join(' · ')) : 'no tests on the radar'}`;
-    const subBits = [
-      k.hasActivity
-        ? `${k.streak ? `${k.streak}-day streak` : `last studied ${esc(fmtDay(k.lastActive))}`} · ${k.minutesWeek}${k.goalWeek ? `/${k.goalWeek}` : ''} min this week${k.accuracy !== null ? ` · ${k.accuracy}% accuracy` : ''}`
-        : 'no study activity in the app yet',
-      ...k.recentScores.slice(0, 2).map((r) => `Scored: ${esc(r.label)} ${r.score}% (${esc(fmtDay(r.date))})`),
-      ...k.alerts.map((a) => `⚠️ ${esc(a)}`),
-    ];
-    htmlParts.push(row(title, { sub: subBits.join('<br>'), last: i === schoolKids.length - 1 }));
-  });
-}
+if (schoolKids.length) htmlParts.push(...schoolHtmlRows());
 if (overview) {
   htmlParts.push(h("Claudia's weekly read"));
   htmlParts.push(quote(overview));
