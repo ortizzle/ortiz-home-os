@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v76-school-apps';
+const CACHE = 'ohos-shell-v77-availability-check';
 const SHELL = [
   './',
   './index.html',
