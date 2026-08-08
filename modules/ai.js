@@ -98,10 +98,23 @@ async function callClaude({ system, messages, maxTokens = 2048, tools, kind = 'o
     throw new AIError('No Claude API key set. Add one in Settings.');
   }
 
+  // Strip unpaired UTF-16 surrogates before sending. A .slice() on a Gmail
+  // snippet (or any field) can chop an emoji in half, leaving a lone surrogate
+  // that isn't valid UTF-8/JSON — Claude then rejects the whole request with
+  // "400 … The request body is not valid JSON: no low surrogate in string".
+  // Keep well-formed emoji (matched pairs); drop only the orphaned halves.
+  const cleanStr = (s) => typeof s !== 'string' ? s : s.replace(/[\uD800-\uDFFF]/g, (ch, i) => {
+    const code = ch.charCodeAt(0);
+    if (code <= 0xDBFF) { const n = s.charCodeAt(i + 1); return n >= 0xDC00 && n <= 0xDFFF ? ch : ''; } // high: needs a low after
+    const p = s.charCodeAt(i - 1); return p >= 0xD800 && p <= 0xDBFF ? ch : ''; // low: needs a high before
+  });
+  const cleanContent = (c) => typeof c === 'string' ? cleanStr(c)
+    : Array.isArray(c) ? c.map((p) => (p && typeof p.text === 'string' ? { ...p, text: cleanStr(p.text) } : p)) : c;
+
   let convo = messages;
   for (let hop = 0; hop < 5; hop++) {
-    const body = { model: MODEL, max_tokens: maxTokens, messages: convo, thinking: { type: 'disabled' } };
-    if (system) body.system = system;
+    const body = { model: MODEL, max_tokens: maxTokens, messages: convo.map((m) => ({ ...m, content: cleanContent(m.content) })), thinking: { type: 'disabled' } };
+    if (system) body.system = cleanStr(system);
     if (tools?.length) body.tools = tools;
 
     let res;

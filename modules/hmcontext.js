@@ -448,7 +448,7 @@ export async function getSuggestionMemory() {
 // a short snippet is enough for the AI to flag what needs attention.
 export function emailText(emails) {
   return (emails || [])
-    .map((e) => `- ${e.unread ? '(unread) ' : ''}${e.from} — ${e.subject}${e.snippet ? `: ${e.snippet.slice(0, 160)}` : ''}`)
+    .map((e) => `- ${e.unread ? '(unread) ' : ''}${e.from} — ${e.subject}${e.snippet ? `: ${[...e.snippet].slice(0, 160).join('')}` : ''}`)
     .join('\n');
 }
 

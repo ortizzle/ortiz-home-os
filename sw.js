@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v77-availability-check';
+const CACHE = 'ohos-shell-v78-emoji-json-fix';
 const SHELL = [
   './',
   './index.html',
