@@ -176,13 +176,37 @@ function summaryPanel({ appts, dueTasks, exams, birthdays, today, spotlight, tog
       el('strong', {}, b.name), ` — ${fmtDay(b.date)}`,
     ]), 'birthday', 'tw-accent'));
   }
-  // The window's recurring beats (a series that lands 2+ times) — collapsed to
-  // one mention each so the rhythm reads at a glance. No stat pill maps to
-  // this one, so it never spotlights — it's context, not a countable thing.
+  // Split calendar appointments into "rhythm" (a series landing 2+ times —
+  // the recurring beats, collapsed to one mention each) and "one-off events"
+  // (everything else). Before this split, the "N events" pill had nowhere
+  // for those one-offs to actually show — you'd have to tap the pill (which
+  // only rings matching days/rows, doesn't list them) or dig into the
+  // calendar/rundown to see what they were.
   const bySeries = new Map();
   for (const a of appts) {
     const key = a.seriesId || 'title:' + (a.title || '').toLowerCase();
     (bySeries.get(key) || bySeries.set(key, []).get(key)).push(a);
+  }
+  const recurringKeys = new Set(
+    [...bySeries.entries()].filter(([, l]) => new Set(l.map((a) => a.date)).size >= 2).map(([k]) => k)
+  );
+  const EVENTS_CAP = 6;
+  const seenEventIds = new Set();
+  const oneOffEvents = appts.filter((a) => {
+    if (/\bbirthday\b/i.test(a.title || '')) return false;
+    const seriesKey = a.seriesId || 'title:' + (a.title || '').toLowerCase();
+    if (recurringKeys.has(seriesKey)) return false;
+    const dedupeKey = a.seriesId || a.id;
+    if (seenEventIds.has(dedupeKey)) return false;
+    seenEventIds.add(dedupeKey);
+    return true;
+  }).sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (oneOffEvents.length) {
+    const shown = oneOffEvents.slice(0, EVENTS_CAP);
+    const items = shown.map((a) => [el('strong', {}, a.title), ` — ${fmtDay(a.date)}`]);
+    const remaining = oneOffEvents.length - shown.length;
+    if (remaining > 0) items.push([`+${remaining} more — see the rundown below`]);
+    kids.push(line('Events', items, 'event', 'tw-accent'));
   }
   const rhythm = [...bySeries.values()].filter((l) => new Set(l.map((a) => a.date)).size >= 2).map((l) => l[0].title).slice(0, 4);
   if (rhythm.length) kids.push(line('Rhythm', rhythm.map((t) => [t]), null));

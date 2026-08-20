@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v85-show-watched-calendars';
+const CACHE = 'ohos-shell-v86-events-summary-line';
 const SHELL = [
   './',
   './index.html',
