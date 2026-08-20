@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v80-scroll-to-day';
+const CACHE = 'ohos-shell-v81-spotlight-pills';
 const SHELL = [
   './',
   './index.html',

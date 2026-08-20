@@ -6,6 +6,10 @@
 //      school exam); tapping a date shows that day's details inline.
 //   3. The rundown: This week / Next week as collapsible sections, collapsed
 //      by default (the summary + grid already carry the shape of the window).
+// Each stat pill in the summary (exam/task/birthday/event) is also a
+// spotlight toggle: tap one and every mention of that category highlights
+// together — the summary line, the matching calendar days, and the matching
+// rundown rows (see CAT_COLOR + matchesCat/toggleSpotlight below).
 // Replaced the Grocery tab in v79. Read-only glance view — capture and
 // editing stay on Home / Tasks / Calendar.
 
@@ -17,6 +21,11 @@ import { schoolConfigured, getSchoolSummaries } from './school.js';
 
 const WINDOW_DAYS = 14;
 const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+// Which color group each spotlight category uses — 'warn' (amber) for
+// time-pressure items, 'accent' (blue) for calendar-shaped ones. Shared by
+// every panel below so tapping a stat pill lights up its mentions
+// consistently across the summary, the grid, and the rundown.
+const CAT_COLOR = { exam: 'warn', task: 'warn', birthday: 'accent', event: 'accent' };
 
 function to12h(t) {
   if (!t) return '';
@@ -26,7 +35,7 @@ function to12h(t) {
 
 // Per-device UI state: which date is selected on the grid, which month is
 // shown, and which week sections are open. Survives re-renders, not reloads.
-const state = { selected: null, monthOf: null, openWeeks: new Set() };
+const state = { selected: null, monthOf: null, openWeeks: new Set(), spotlight: null };
 
 export async function renderTwoWeeks(root) {
   clear(root);
@@ -69,22 +78,51 @@ export async function renderTwoWeeks(root) {
   const examsOn = (d) => exams.filter((x) => x.date === d);
   const dayHasAnything = (d) => eventsOn(d).length || tasksOn(d).length || examsOn(d).length;
 
+  // Tap a stat pill (exam/task/birthday/event) to spotlight every mention of
+  // that category — the summary line, the matching calendar days, and the
+  // matching rundown rows all light up together. Tap again to clear.
+  const matchesCat = (d, cat) => {
+    if (cat === 'exam') return examsOn(d).length > 0;
+    if (cat === 'task') return tasksOn(d).length > 0;
+    if (cat === 'birthday') return birthdays.some((b) => b.date === d);
+    // 'event' excludes birthday-titled appointments — a birthday is a real
+    // calendar event too, but it spotlights under "birthday" (see dayRows'
+    // same split), never both, so the calendar ring always agrees with which
+    // row actually lit up.
+    if (cat === 'event') return eventsOn(d).some((a) => !/\bbirthday\b/i.test(a.title || ''));
+    return false;
+  };
+  const toggleSpotlight = (cat) => { state.spotlight = state.spotlight === cat ? null : cat; rerender(); };
+  const spotlight = state.spotlight;
+
   root.append(el('header', { class: 'view-head' }, [
     el('h1', {}, '2 Weeks'),
     el('p', { class: 'muted small', style: 'margin: 2px 0 0' }, 'The next 14 days at a glance — exams and plans to get ahead of.'),
   ]));
 
-  root.append(summaryPanel({ appts, dueTasks, exams, birthdays, today }));
-  root.append(calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything, family, rerender }));
-  root.append(...weekSections({ today, days, eventsOn, tasksOn, examsOn, exams, birthdays, family, rerender }));
+  root.append(summaryPanel({ appts, dueTasks, exams, birthdays, today, spotlight, toggleSpotlight }));
+  root.append(calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything, family, rerender, spotlight, matchesCat }));
+  root.append(...weekSections({ today, days, eventsOn, tasksOn, examsOn, exams, birthdays, family, rerender, spotlight, matchesCat }));
 }
 
 // ---------- 1) summary ----------
 
-function summaryPanel({ appts, dueTasks, exams, birthdays, today }) {
+function summaryPanel({ appts, dueTasks, exams, birthdays, today, spotlight, toggleSpotlight }) {
   const eventCount = new Set(appts.map((a) => a.seriesId || a.id)).size;
-  const stat = (n, label) => el('span', { class: 'tw-stat' }, `${n} ${label}${n === 1 ? '' : 's'}`);
-  const line = (key, node, cls = '') => el('div', { class: 'tw-sum-line' }, [
+  // Each pill doubles as a spotlight toggle — tap "2 exams" and every exam
+  // mention below (and on the calendar + in the rundown) highlights. A pill
+  // with nothing behind it is inert — no mentions to spotlight.
+  const stat = (n, label, cat) => {
+    const active = spotlight === cat;
+    return el('button', {
+      class: 'tw-stat' + (active ? ' active c-' + CAT_COLOR[cat] : ''),
+      disabled: n === 0 ? 'disabled' : null,
+      onclick: n === 0 ? null : () => toggleSpotlight(cat),
+    }, `${n} ${label}${n === 1 ? '' : 's'}`);
+  };
+  const line = (key, node, cat, cls = '') => el('div', {
+    class: 'tw-sum-line' + (cls ? ' ' + cls : '') + (cat && spotlight === cat ? ' spot-' + CAT_COLOR[cat] : ''),
+  }, [
     el('span', { class: 'tw-sum-key' + (cls ? ' ' + cls : '') }, key), el('span', {}, node),
   ]);
 
@@ -92,31 +130,32 @@ function summaryPanel({ appts, dueTasks, exams, birthdays, today }) {
   if (exams.length) {
     kids.push(line('School', exams.map((x, i) => el('span', {}, [
       i ? ' · ' : null, el('strong', {}, x.kid), ` ${x.label} — ${fmtDay(x.date)}`,
-    ])), 'tw-warn'));
+    ])), 'exam', 'tw-warn'));
   }
   if (birthdays.length) {
     kids.push(line('Plan for', birthdays.map((b, i) => el('span', {}, [
       i ? ' · ' : null, el('strong', {}, `${b.name}'s birthday`), ` ${fmtDay(b.date)} — get ahead of the gift`,
-    ]))));
+    ])), 'birthday'));
   }
   // The window's recurring beats (a series that lands 2+ times) — collapsed to
-  // one mention each so the rhythm reads at a glance.
+  // one mention each so the rhythm reads at a glance. No stat pill maps to
+  // this one, so it never spotlights — it's context, not a countable thing.
   const bySeries = new Map();
   for (const a of appts) {
     const key = a.seriesId || 'title:' + (a.title || '').toLowerCase();
     (bySeries.get(key) || bySeries.set(key, []).get(key)).push(a);
   }
   const rhythm = [...bySeries.values()].filter((l) => new Set(l.map((a) => a.date)).size >= 2).map((l) => l[0].title).slice(0, 4);
-  if (rhythm.length) kids.push(line('Rhythm', rhythm.join(' · ')));
+  if (rhythm.length) kids.push(line('Rhythm', rhythm.join(' · '), null));
   if (!kids.length) kids.push(el('p', { class: 'muted small', style: 'margin: 4px 0 0' }, 'A quiet stretch — nothing that needs lead time.'));
 
   return el('section', { class: 'panel' }, [
     el('div', { class: 'panel-head' }, [el('h4', {}, 'The next two weeks')]),
     el('div', { class: 'tw-stats' }, [
-      stat(eventCount, 'event'),
-      stat(dueTasks.length, 'task'),
-      stat(exams.length, 'exam'),
-      birthdays.length ? stat(birthdays.length, 'birthday') : null,
+      stat(eventCount, 'event', 'event'),
+      stat(dueTasks.length, 'task', 'task'),
+      stat(exams.length, 'exam', 'exam'),
+      birthdays.length ? stat(birthdays.length, 'birthday', 'birthday') : null,
     ]),
     ...kids,
   ]);
@@ -124,7 +163,7 @@ function summaryPanel({ appts, dueTasks, exams, birthdays, today }) {
 
 // ---------- 2) month calendar + selected-day details ----------
 
-function calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything, family, rerender }) {
+function calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything, family, rerender, spotlight, matchesCat }) {
   const [yy, mm] = state.monthOf.split('-').map(Number);
   const first = `${state.monthOf}-01`;
   const firstDow = parseDate(first).getDay();
@@ -153,6 +192,12 @@ function calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything,
     if (inWindow) {
       if (examsOn(iso).length) dots.push(el('span', { class: 'tw-dot exam' }));
       if (eventsOn(iso).length || tasksOn(iso).length) dots.push(el('span', { class: 'tw-dot' }));
+      // Spotlight active: ring the days that match, dim the ones that don't
+      // (but do have something on) so the matches actually stand out.
+      if (spotlight) {
+        if (matchesCat(iso, spotlight)) cls.push('spot-match', 'c-' + CAT_COLOR[spotlight]);
+        else if (dots.length) cls.push('spot-dim');
+      }
     }
     grid.push(el(inWindow ? 'button' : 'div', {
       class: cls.join(' '),
@@ -165,7 +210,7 @@ function calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything,
   cells.push(el('div', { class: 'tw-cal-grid' }, grid));
 
   const sel = state.selected;
-  const selRows = dayRows({ date: sel, events: eventsOn(sel), tasks: tasksOn(sel), exams: examsOn(sel), family });
+  const selRows = dayRows({ date: sel, events: eventsOn(sel), tasks: tasksOn(sel), exams: examsOn(sel), family, spotlight });
   return el('section', { class: 'panel', style: 'margin-top: 14px' }, [
     el('div', { class: 'tw-cal-head' }, [nav(-1, '‹'), el('h4', {}, monthLabel), nav(1, '›')]),
     ...cells,
@@ -182,7 +227,7 @@ function calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything,
 
 // ---------- 3) the rundown: collapsible weeks ----------
 
-function weekSections({ today, days, eventsOn, tasksOn, examsOn, exams, birthdays, family, rerender }) {
+function weekSections({ today, days, eventsOn, tasksOn, examsOn, exams, birthdays, family, rerender, spotlight, matchesCat }) {
   const weeks = [
     { key: 'w1', title: 'This week', days: days.slice(0, 7) },
     { key: 'w2', title: 'Next week', days: days.slice(7) },
@@ -195,14 +240,17 @@ function weekSections({ today, days, eventsOn, tasksOn, examsOn, exams, birthday
 
     const body = [];
     for (const d of w.days) {
-      const rows = dayRows({ date: d, events: eventsOn(d), tasks: tasksOn(d), exams: examsOn(d), family });
+      const rows = dayRows({ date: d, events: eventsOn(d), tasks: tasksOn(d), exams: examsOn(d), family, spotlight });
       if (!rows.length) continue; // the grid above already shows quiet days
       body.push(el('div', { class: 'tw-day-sub' }, d === today ? `Today · ${fmtDay(d)}` : fmtDay(d)));
       body.push(...rows);
     }
     if (!body.length) body.push(el('p', { class: 'muted small', style: 'padding: 4px 0 8px' }, 'Nothing scheduled this week yet.'));
 
-    const det = el('details', { class: 'tw-wk' }, [
+    // Tint the week's own summary row when it holds a spotlight match, so a
+    // still-collapsed section signals "there's one in here" before you open it.
+    const weekHasMatch = spotlight && w.days.some((d) => matchesCat(d, spotlight));
+    const det = el('details', { class: 'tw-wk' + (weekHasMatch ? ' spot-' + CAT_COLOR[spotlight] : '') }, [
       el('summary', {}, [
         el('span', {}, [el('span', { class: 'tw-wk-title' }, w.title), ' ', el('span', { class: 'tw-wk-sub' }, hints ? `${range} · ${hints}` : range)]),
         el('span', { class: 'tw-chev' }, '›'),
@@ -217,10 +265,11 @@ function weekSections({ today, days, eventsOn, tasksOn, examsOn, exams, birthday
 
 // ---------- shared row rendering ----------
 
-function dayRows({ date, events, tasks, exams, family }) {
+function dayRows({ date, events, tasks, exams, family, spotlight = null }) {
   const rows = [];
+  const rowCls = (base, cat) => base + (spotlight === cat ? ' spot-' + CAT_COLOR[cat] : '');
   for (const x of exams) {
-    rows.push(el('div', { class: 'tw-row exam' }, [
+    rows.push(el('div', { class: rowCls('tw-row exam', 'exam') }, [
       el('div', { class: 'tw-time allday' }, 'school'),
       el('div', {}, [
         el('div', { class: 'tw-title' }, `${x.kid} — ${x.label}${x.title ? ` (${x.title})` : ''}`),
@@ -233,7 +282,10 @@ function dayRows({ date, events, tasks, exams, family }) {
     const meta = who.length
       ? who.map((n) => el('span', { class: 'pill ' + ownerPillClass(n, family) }, n))
       : a.calendar ? [el('span', { class: 'pill' }, a.calendar + (a.tentative ? ' · tentative' : ''))] : [];
-    rows.push(el('div', { class: 'tw-row' }, [
+    // A birthday-titled event spotlights under "birthday" (matching the
+    // summary's gift heads-up), not the generic "event" bucket.
+    const cat = /\bbirthday\b/i.test(a.title || '') ? 'birthday' : 'event';
+    rows.push(el('div', { class: rowCls('tw-row', cat) }, [
       el('div', { class: 'tw-time' + (a.allDay ? ' allday' : '') }, a.allDay ? 'all day' : to12h(a.startTime)),
       el('div', {}, [
         el('div', { class: 'tw-title' }, a.title + (a.endDate && a.endDate > a.date && a.date !== date ? ' (cont.)' : '')),
@@ -242,7 +294,7 @@ function dayRows({ date, events, tasks, exams, family }) {
     ]));
   }
   for (const c of tasks) {
-    rows.push(el('div', { class: 'tw-row' }, [
+    rows.push(el('div', { class: rowCls('tw-row', 'task') }, [
       el('div', { class: 'tw-time allday' }, 'task'),
       el('div', {}, [
         el('div', { class: 'tw-title' }, c.title),
