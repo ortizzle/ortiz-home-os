@@ -7,7 +7,6 @@
 
 import { put, getSettings } from './store.js';
 import { el, clear, toast, todayStr, addDays, fmtDay, openModal, tableOfContents, shareText, SHARE_SVG, preserveScroll, richText, plainText } from './ui.js';
-import { addGroceryItem, STORES } from './grocery.js';
 import { reviewWeek, adviseQuestion, hasApiKey, AIError } from './ai.js';
 import { editChoreModal } from './chores.js';
 import { gatherContext, householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays, birthdaysText, DEFAULT_KIDS, getReview, saveReview, markReviewAdded, markReviewDismissed, markQuestionResolved, markReviewDived, logShownSuggestions, logSuggestionAdded, logSuggestionDismissed, logQuestionResolved, followUpText } from './hmcontext.js';
@@ -17,10 +16,10 @@ import { appointmentsFor } from './calendar.js';
 
 // Turn a suggestion into a real record. `type` decides the store.
 // Returns { store, rec } so callers can log where the suggestion landed.
-export async function applyAdd(type, { title, date, detail, store, who } = {}, today = todayStr()) {
+export async function applyAdd(type, { title, date, detail, who } = {}, today = todayStr()) {
   if (type === 'appointment') return { store: 'appointments', rec: await put('appointments', { title, date: date || today, allDay: true, startTime: null, endTime: null, who: who || null }) };
-  if (type === 'grocery') return { store: 'groceries', rec: await addGroceryItem(title, store || STORES[0]) };
-  // 'plan' (from a cached pre-v68 review) and 'task' both land in Tasks now.
+  // 'plan' (pre-v68), 'grocery' (pre-v79 cached reviews — the list feature is
+  // gone, so those land as tasks), and 'task' all land in Tasks now.
   return { store: 'chores', rec: await put('chores', { title, dueDate: date || null, assignee: who || null, notes: detail || null, done: false }) };
 }
 
@@ -49,8 +48,8 @@ export function addButtons(sugg, { today, onAdded, alreadyAdded = false } = {}) 
       onclick: async () => {
         // A task is the one thing that needs deciding who's on it and by when —
         // so open the task sheet prefilled from the suggestion and let the
-        // family confirm assignment + due date before it's saved. Everything
-        // else (grocery, calendar) adds in one tap as before.
+        // family confirm assignment + due date before it's saved. A calendar
+        // add lands in one tap as before.
         if (type === 'task') {
           editChoreModal(
             { title: sugg.title, dueDate: sugg.date || sugg.day || null, assignee: sugg.who || null, notes: sugg.detail || null },
@@ -74,8 +73,7 @@ export function addButtons(sugg, { today, onAdded, alreadyAdded = false } = {}) 
   const out = [];
   const t = sugg.suggestedType || sugg.type || 'task';
   if (t === 'appointment') out.push(mk('appointment', '+ Calendar'));
-  else if (t === 'grocery') out.push(mk('grocery', '+ Grocery'));
-  else out.push(mk('task', '+ Task')); // 'task', legacy 'plan', anything else
+  else out.push(mk('task', '+ Task')); // 'task', legacy 'plan'/'grocery', anything else
   return el('div', { class: 'hm-actions' }, out);
 }
 
@@ -240,8 +238,6 @@ export async function renderManager(root) {
           throughDate,
           events: ctx.eventsText,
           chores: ctx.choresText,
-          groceries: ctx.groceriesText,
-          meals: ctx.mealsText,
           agenda: ctx.agendaText,
           meetingDecisions: ctx.meetingDecisionsText,
           email: ctx.emailsText,
@@ -480,7 +476,7 @@ function questionRow(q, rerender, state) {
 
 // Human labels for the destinations the finalize summary reports.
 const DEST_LABELS = {
-  chores: 'tasks', appointments: 'calendar', plan: 'weekly plan', groceries: 'grocery list',
+  chores: 'tasks', appointments: 'calendar', plan: 'weekly plan', groceries: 'grocery list' /* legacy suggLog entries */,
   'agenda-family': 'family meeting', 'agenda-admin': 'admin meeting',
 };
 

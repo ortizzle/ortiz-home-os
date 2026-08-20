@@ -6,7 +6,6 @@
 import { getAll, get, put, remove as removeRec } from './store.js';
 import { addDays, fmtDay, parseDate, todayStr } from './ui.js';
 import { eventsForRange, canReadEmail, gmailRecent } from './gcal.js';
-import { STORES } from './grocery.js';
 import { getSchoolSummaries, schoolText } from './school.js';
 
 // The family's habits/preferences, fed to the house-manager AI. Editable in
@@ -455,11 +454,12 @@ export function emailText(emails) {
 // Returns text blocks for the AI prompt. `start` (YYYY-MM-DD) and `days`
 // bound the calendar window pulled from the live Google overlay. Pass
 // `email: true` to also pull recent Gmail (when the scope was granted).
-export async function gatherContext({ start, days, email = false }) {
-  const [chores, groceries, meals, agenda] = await Promise.all([
+// `splitAt: N` splits the calendar into eventsText (first N days — the
+// brief's focus) and horizonText (the rest — lead-time heads-up material);
+// without it everything lands in eventsText, as before.
+export async function gatherContext({ start, days, email = false, splitAt = null }) {
+  const [chores, agenda] = await Promise.all([
     getAll('chores'),
-    getAll('groceries'),
-    getAll('meals'),
     getAll('agenda'),
   ]);
   // eventsForRange() already checks the connection and self-heals with a
@@ -474,26 +474,28 @@ export async function gatherContext({ start, days, email = false }) {
   // configured or unreachable — school data is an overlay, never a blocker.
   const school = await getSchoolSummaries().catch(() => null);
 
-  const eventsText = events
+  const eventLine = (e) => {
+    // Source calendar in [brackets] — attribution signal the prompts teach
+    // Claudia to read (Family = shared; a parent's calendar = theirs).
+    const cal = e.calendar ? ` [${e.calendar}${e.tentative ? ' — TENTATIVE' : ''}]` : '';
+    return e.endDate && e.endDate > e.date
+      // Multi-day event (a trip/vacation) — show the full span so Claudia
+      // can plan lead-time around it (packing, prep, who's away when).
+      ? `- ${fmtDay(e.date)}–${fmtDay(e.endDate)} (MULTI-DAY / trip): ${e.title}${cal}`
+      : `- ${fmtDay(e.date)}${e.startTime ? ' ' + to12(e.startTime) : ' (all day)'}: ${e.title}${cal}`;
+  };
+  const sorted = events
     .slice()
-    .sort((a, b) => (a.date + (a.startTime || '') < b.date + (b.startTime || '') ? -1 : 1))
-    .map((e) => {
-      // Source calendar in [brackets] — attribution signal the prompts teach
-      // Claudia to read (Family = shared; a parent's calendar = theirs).
-      const cal = e.calendar ? ` [${e.calendar}${e.tentative ? ' — TENTATIVE' : ''}]` : '';
-      return e.endDate && e.endDate > e.date
-        // Multi-day event (a trip/vacation) — show the full span so Claudia
-        // can plan lead-time around it (packing, prep, who's away when).
-        ? `- ${fmtDay(e.date)}–${fmtDay(e.endDate)} (MULTI-DAY / trip): ${e.title}${cal}`
-        : `- ${fmtDay(e.date)}${e.startTime ? ' ' + to12(e.startTime) : ' (all day)'}: ${e.title}${cal}`;
-    })
-    .join('\n');
+    .sort((a, b) => (a.date + (a.startTime || '') < b.date + (b.startTime || '') ? -1 : 1));
+  // A multi-day event underway (or starting) inside the near window belongs to
+  // the near block even if it ends far out — "Kat is away" is a today fact.
+  const splitDate = splitAt != null ? addDays(start, splitAt) : null;
+  const near = splitDate ? sorted.filter((e) => e.date < splitDate) : sorted;
+  const far = splitDate ? sorted.filter((e) => e.date >= splitDate) : [];
+  const eventsText = near.map(eventLine).join('\n');
+  const horizonText = far.map(eventLine).join('\n');
 
   const choresText = chores.filter((c) => !c.done).map((c) => `- ${c.title}${c.dueDate ? ` (due ${c.dueDate})` : ''}`).join('\n');
-
-  const byStore = {};
-  for (const g of groceries.filter((x) => !x.gotAt)) { const s = g.store || STORES[0]; (byStore[s] ||= []).push(g.name); }
-  const groceriesText = Object.entries(byStore).map(([s, names]) => `${s}: ${names.join(', ')}`).join('\n');
 
   // Open (unreviewed) meeting-agenda items, so suggestions don't duplicate a
   // topic the family already queued for a meeting.
@@ -507,11 +509,5 @@ export async function gatherContext({ start, days, email = false }) {
     .map((a) => `- ${a.text}: ${a.decision}`)
     .join('\n');
 
-  const end = addDays(start, days);
-  const mealsInRange = meals
-    .filter((m) => m.date >= start && m.date < end)
-    .sort((a, b) => (a.date < b.date ? -1 : 1));
-  const mealsText = mealsInRange.map((m) => `- ${fmtDay(m.date)}: ${m.title}`).join('\n');
-
-  return { events, eventsText, choresText, groceriesText, agendaText, meetingDecisionsText, meals: mealsInRange, mealsText, emails, emailsText: emailText(emails), schoolText: school ? schoolText(school.kids) : '' };
+  return { events, eventsText, horizonText, choresText, agendaText, meetingDecisionsText, emails, emailsText: emailText(emails), schoolText: school ? schoolText(school.kids) : '' };
 }

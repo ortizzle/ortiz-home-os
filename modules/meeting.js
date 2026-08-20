@@ -14,7 +14,6 @@
 import { getAll, put, remove, getSettings, deviceName } from './store.js';
 import { el, clear, toast, navigate, todayStr, addDays, parseDate, dateStr, fmtDay, shareText, preserveScroll, openModal } from './ui.js';
 import { appointmentsFor } from './calendar.js';
-import { errandWindow } from './suggest.js';
 import { hasApiKey, draftMeeting, AIError } from './ai.js';
 import { householdKnowledge } from './hmcontext.js';
 
@@ -133,10 +132,9 @@ export async function planningHorizon(today = todayStr()) {
 async function gatherWeekAhead() {
   const today = todayStr();
   const end = addDays(today, 7);
-  const [appointments, chores, groceries] = await Promise.all([
+  const [appointments, chores] = await Promise.all([
     appointmentsFor(today, end),
     getAll('chores'),
-    getAll('groceries'),
   ]);
 
   const appts = appointments
@@ -145,8 +143,6 @@ async function gatherWeekAhead() {
   const dueChores = chores
     .filter((c) => c.dueDate && c.dueDate >= today && c.dueDate < end && !c.done)
     .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
-  const openGroceries = groceries.filter((g) => !g.gotAt);
-  const win = errandWindow(getSettings());
 
   const { oneoffs, recurring } = collapseAppts(appts);
   const lines = [];
@@ -162,11 +158,7 @@ async function gatherWeekAhead() {
     lines.push('Tasks due:');
     for (const c of dueChores) lines.push(`  - ${fmtDay(c.dueDate)}: ${c.title}${c.assignee ? ` (${c.assignee})` : ''}`);
   }
-  if (openGroceries.length) {
-    lines.push(`Grocery list: ${openGroceries.length} open item${openGroceries.length === 1 ? '' : 's'}${win ? ` (errand day is ${win})` : ''}.`);
-  }
-
-  return { appts, dueChores, openGroceries, summary: lines.join('\n') };
+  return { appts, dueChores, summary: lines.join('\n') };
 }
 
 // Which run-of-show section an agenda item belongs to. Manual adds and

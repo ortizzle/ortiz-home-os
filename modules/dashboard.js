@@ -1,20 +1,16 @@
-// dashboard.js — Home: the household's shared "today". Suggestions from the
-// rule engine, the errand-day banner, today's chores + appointments, and
-// quick capture. Counts and due-dates only — no streaks, no scores (a
-// household app that scores spouses is a divorce app).
+// dashboard.js — Home: the household's shared "today". Today's chores +
+// appointments and quick capture. Counts and due-dates only — no streaks,
+// no scores (a household app that scores spouses is a divorce app).
 
 import { getAll, put, getSettings } from './store.js';
 import { el, clear, navigate, toast, todayStr, addDays, fmtDay, fmtDue, preserveScroll, richText, plainText, shareText, SHARE_SVG } from './ui.js';
 import { choreRow } from './chores.js';
-import { addGroceryItem } from './grocery.js';
 import { editAppointmentModal, appointmentsFor, spansDay } from './calendar.js';
 import { analyzeDay, hasApiKey, AIError } from './ai.js';
 import { gatherContext, householdKnowledge, DEFAULT_KIDS, pinsFor, removePin, getBrief, saveBrief, markBriefAdded, markBriefDismissed, logShownSuggestions, logSuggestionDismissed, recentlyDeclinedText } from './hmcontext.js';
 import { addButtons } from './manager.js';
-import { buildSuggestions, errandWindow } from './suggest.js';
 import { schoolConfigured, getSchoolSummaries, upcomingLabel } from './school.js';
 
-const CART_SVG = '<svg viewBox="0 0 24 24"><path d="M3.5 4.5H6l2.3 10.5h9.4l2.3-8.5H7"/><circle cx="9.5" cy="19" r="1.5"/><circle cx="16.5" cy="19" r="1.5"/></svg>';
 let briefInFlight = false;
 let briefError = null; // last generation failure, shown until a retry succeeds
 
@@ -32,14 +28,13 @@ export async function renderDashboard(root) {
   const settings = getSettings();
 
   const tomorrow = addDays(today, 1);
-  const [chores, groceries, apptsWeek] = await Promise.all([
+  const [chores, apptsTwoWeeks] = await Promise.all([
     getAll('chores'),
-    getAll('groceries'),
-    appointmentsFor(today, addDays(today, 7)), // next 7 days (live + stored)
+    appointmentsFor(today, addDays(today, 14)), // next 14 days (live + stored)
   ]);
+  const apptsWeek = apptsTwoWeeks.filter((a) => a.date < addDays(today, 7));
 
   const byTime = (a, b) => ((a.allDay ? '' : a.startTime || '') < (b.allDay ? '' : b.startTime || '') ? -1 : 1);
-  const openGroceries = groceries.filter((g) => !g.gotAt);
   const dueToday = chores.filter((c) => c.dueDate === today && !c.done);
   const overdue = chores.filter((c) => c.dueDate && c.dueDate < today && !c.done);
   // spansDay, not a date match: a trip or camp week has to stay on Home for
@@ -48,7 +43,7 @@ export async function renderDashboard(root) {
   const todayAppts = apptsWeek.filter((a) => spansDay(a, today)).sort(byTime);
   const tomorrowAppts = apptsWeek.filter((a) => spansDay(a, tomorrow)).sort(byTime);
 
-  // ----- header + stats: tasks due · grocery items · upcoming events -----
+  // ----- header + stats: tasks due · upcoming events · the 2-week horizon -----
   root.append(
     el('p', { class: 'greeting' }, greeting()),
     el('div', { class: 'stat-row' }, [
@@ -56,51 +51,18 @@ export async function renderDashboard(root) {
         el('div', { class: 'stat-value' }, dueToday.length + overdue.length),
         el('div', { class: 'stat-label' }, 'tasks due'),
       ]),
-      el('button', { class: 'stat stat-btn', onclick: () => navigate('#/grocery') }, [
-        el('div', { class: 'stat-value' }, openGroceries.length),
-        el('div', { class: 'stat-label' }, 'grocery items'),
-      ]),
       el('button', { class: 'stat stat-btn', onclick: () => navigate('#/calendar') }, [
         // Count distinct events — a daily recurring camp is ONE thing on your
         // plate this week, not seven.
         el('div', { class: 'stat-value' }, new Set(apptsWeek.map((a) => a.seriesId || a.id)).size),
-        el('div', { class: 'stat-label' }, 'upcoming events'),
+        el('div', { class: 'stat-label' }, 'events this week'),
+      ]),
+      el('button', { class: 'stat stat-btn', onclick: () => navigate('#/twoweeks') }, [
+        el('div', { class: 'stat-value' }, new Set(apptsTwoWeeks.map((a) => a.seriesId || a.id)).size),
+        el('div', { class: 'stat-label' }, 'in 2 weeks'),
       ]),
     ])
   );
-
-  // ----- errand-day banner (the store-run moment) -----
-  const win = errandWindow(settings);
-  if (win && openGroceries.length) {
-    // Break the count down by store so you know where you're headed.
-    const byStore = {};
-    for (const g of openGroceries) {
-      const s = g.store || 'Costco';
-      byStore[s] = (byStore[s] || 0) + 1;
-    }
-    const breakdown = Object.entries(byStore).map(([s, n]) => `${s} ${n}`).join(' · ');
-    root.append(
-      el('button', { class: 'errand-banner', onclick: () => navigate('#/grocery') }, [
-        el('div', { class: 'errand-title', html: CART_SVG + `<span>Grocery run ${win} — ${openGroceries.length} item${openGroceries.length === 1 ? '' : 's'}</span>` }),
-        el('p', { class: 'errand-items' }, breakdown),
-      ])
-    );
-  }
-
-  // ----- suggestions (instant, rule-based) -----
-  const suggestions = buildSuggestions({ chores, groceries, appointments: apptsWeek, settings })
-    // the banner already covers the errand rule when it fires
-    .filter((s) => !(win && s.hash === '#/grocery'));
-  if (suggestions.length) {
-    root.append(
-      el('div', { class: 'suggestions' }, suggestions.map((s) =>
-        el('button', { class: 'suggestion' + (s.urgent ? ' urgent' : ''), onclick: () => navigate(s.hash) }, [
-          el('span', {}, s.text),
-          el('span', { class: 'suggestion-go' }, s.go + ' →'),
-        ])
-      ))
-    );
-  }
 
   // ----- quick capture -----
   let kind = 'chore';
@@ -121,8 +83,6 @@ export async function renderDashboard(root) {
     if (kind === 'chore') {
       // Quick chores land due-today so they show up immediately below.
       await put('chores', { title: text, dueDate: today, done: false });
-    } else if (kind === 'grocery') {
-      await addGroceryItem(text);
     } else {
       editAppointmentModal(null, today, rerender, { title: text });
       return; // modal flow re-renders on save
@@ -137,7 +97,6 @@ export async function renderDashboard(root) {
       el('h4', {}, 'Quick capture'),
       el('div', { class: 'capture-kind' }, [
         kindBtn('chore', 'Task', 'Add a task for today…'),
-        kindBtn('grocery', 'Grocery', 'Add to the grocery list…'),
         kindBtn('appt', 'Appointment', 'Appointment title, then details…'),
       ]),
       el('div', { class: 'capture-row' }, [
@@ -333,8 +292,11 @@ async function runBrief(host, rerender, { today, settings }) {
   briefInFlight = true;
   clear(host).append(el('div', { class: 'loading' }, [el('div', { class: 'spinner' }), el('span', {}, 'Claudia is reading your day…')]));
   try {
+    // 14-day pull, split: today+tomorrow stay the brief's focus (eventsText);
+    // days 2–13 arrive as a separate horizon block so Claudia can flag exams
+    // and plans that need lead time without the brief ballooning.
     const [ctx, declined] = await Promise.all([
-      gatherContext({ start: today, days: 2, email: true }),
+      gatherContext({ start: today, days: 14, email: true, splitAt: 2 }),
       recentlyDeclinedText(),
     ]);
     const weekday = new Date().toLocaleDateString(undefined, { weekday: 'long' });
@@ -345,9 +307,8 @@ async function runBrief(host, rerender, { today, settings }) {
       today,
       weekday,
       events: ctx.eventsText,
+      horizon: ctx.horizonText,
       chores: ctx.choresText,
-      groceries: ctx.groceriesText,
-      meals: ctx.mealsText,
       agenda: ctx.agendaText,
       meetingDecisions: ctx.meetingDecisionsText,
       email: ctx.emailsText,

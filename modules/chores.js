@@ -3,9 +3,18 @@
 
 import { getAll, get, put, remove, now, uid, deviceName, getSettings } from './store.js';
 import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText, SHARE_SVG, ownerPillClass } from './ui.js';
-import { parseImport } from './grocery.js';
 import { suggestSubtasks, hasApiKey, AIError } from './ai.js';
 import { gatherContext, householdKnowledge } from './hmcontext.js';
+
+// Parse a pasted list (Keep, Notes, anywhere) into one item per line —
+// bullets and checkboxes stripped. Lived in grocery.js until v79 removed
+// the grocery feature; the Tasks import box keeps the bridge alive.
+function parseImport(text) {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^\s*[-*•○☐☑☒]?\s*(\[\s*[xX]?\s*\])?\s*/, '').trim())
+    .filter(Boolean);
+}
 
 const CHECK_SVG = '<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
 const TIMER_SVG = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12.5" r="8.5"/><path d="M12 8v4.5l3 2"/><path d="M9.5 2.5h5"/></svg>';

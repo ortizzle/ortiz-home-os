@@ -1,7 +1,7 @@
 # Ortiz Home OS
 
 The Ortiz household's shared home manager — one task list, the family
-calendar, the grocery list (with Costco-day nudges), family meetings, and
+calendar, the two-week planning horizon, family meetings, and
 **Claudia**, the AI house manager who reads it all. Third app in the Ortiz OS
 family, alongside [Learning OS](https://ortizzle.github.io/deep-learning-os/)
 and [Focus OS](https://ortizzle.github.io/ortiz-focus-os/).
@@ -44,11 +44,13 @@ node .claude/serve.js   # serves on http://localhost:8125
 - **Attribution over guessing.** Google events carry their source calendar
   ([Family] = shared, a parent's calendar = theirs); duplicates resolve to
   the Family copy. Claudia reads that signal instead of guessing.
-- **Deterministic where possible.** Errand-day nudges, due dates, birthdays,
-  and the digest are computed, not asked of the AI; Claudia interprets on
-  top of them.
-- **Google Keep has no consumer API** — the grocery list lives here, with a
-  paste-import bridge for lists voiced into Keep.
+- **Deterministic where possible.** Due dates, birthdays, the 2 Weeks
+  summary, and the digest are computed, not asked of the AI; Claudia
+  interprets on top of them.
+- **Two weeks is the planning horizon.** The 2 Weeks tab (summary + month
+  grid + collapsible week rundowns) and Claudia's brief both look 14 days
+  out, so exams and plans that need lead time surface early. (Groceries
+  moved out of the app in v79; the Keep paste-import lives on in Tasks.)
 
 ## Working on this repo
 

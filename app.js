@@ -15,13 +15,12 @@ import {
 } from './modules/store.js';
 import { renderDashboard } from './modules/dashboard.js';
 import { renderChores } from './modules/chores.js';
-import { renderGrocery } from './modules/grocery.js';
+import { renderTwoWeeks } from './modules/twoweeks.js';
 import { renderCalendar } from './modules/calendar.js';
 import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
 import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestionMemory, seedMemory, MEMORY_CATS } from './modules/hmcontext.js';
 import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars, getCalendarLabelOverrides, setCalendarLabelOverrides, guessCalName } from './modules/gcal.js';
-import { errandWindow } from './modules/suggest.js';
 import { getUsage, estimateCost, resetUsage } from './modules/ai.js';
 import { pushSupported, getPushState, enablePush, disablePush } from './modules/push.js';
 import { diagnosticsSection } from './modules/diag.js';
@@ -35,7 +34,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v76 · school apps: tests + study read';
+const APP_VERSION = 'v79 · 2 Weeks tab replaces grocery';
 
 // ---------- theme ----------
 
@@ -61,7 +60,8 @@ darkQuery.addEventListener('change', () => {
 const routes = [
   { re: /^#\/home$/, tab: 'home', fn: () => renderDashboard(view) },
   { re: /^#\/tasks$/, tab: 'tasks', fn: () => renderChores(view) },
-  { re: /^#\/grocery$/, tab: 'grocery', fn: () => renderGrocery(view) },
+  { re: /^#\/twoweeks$/, tab: 'twoweeks', fn: () => renderTwoWeeks(view) },
+  { re: /^#\/grocery$/, tab: 'twoweeks', fn: () => renderTwoWeeks(view) }, // legacy alias (old links/bookmarks)
   { re: /^#\/calendar$/, tab: 'calendar', fn: () => renderCalendar(view, { mode: 'day', date: todayStr() }) },
   { re: /^#\/calendar\/(day|week)\/(\d{4}-\d{2}-\d{2})$/, tab: 'calendar', fn: (m) => renderCalendar(view, { mode: m[1], date: m[2] }) },
   { re: /^#\/manager$/, tab: 'manager', fn: () => renderManager(view) },
@@ -85,15 +85,11 @@ function setTabBadge(name, count) {
   if (count > 0) tab.append(el('span', { class: 'tab-badge' }, count > 99 ? '99+' : count));
 }
 
-// Tab count badges, both deliberately "act now" signals rather than a constant
-// nag:
-//   Grocery — open-item count, only in the errand window (about-to-be-at-Costco).
-//   Tasks   — open tasks that are overdue or due today; clears once you're
-//             caught up for the day (Upcoming/Someday don't count).
+// Tab count badge — deliberately an "act now" signal rather than a constant
+// nag: open tasks that are overdue or due today; clears once you're caught up
+// for the day (Upcoming/Someday don't count).
 async function refreshBadges() {
-  const [groceries, chores] = await Promise.all([getAll('groceries'), getAll('chores')]);
-  const groceryOpen = errandWindow(getSettings()) ? groceries.filter((g) => !g.gotAt).length : 0;
-  setTabBadge('grocery', groceryOpen);
+  const chores = await getAll('chores');
   const today = todayStr();
   const dueNow = chores.filter((c) => !c.done && c.dueDate && c.dueDate <= today).length;
   setTabBadge('tasks', dueNow);
@@ -354,17 +350,6 @@ async function renderSettings(root) {
   const status = el('span', { class: 'sync-dot ' + (syncConfigured() ? 'on' : 'off') });
   const statusText = el('span', { class: 'muted' }, syncConfigured() ? 'Sync configured' : 'Local-only (no sync)');
 
-  let errandDays = [...(s.errandDays || [6])];
-  const dayRow = el('div', { class: 'day-row' }, DAY_LABELS.map((label, i) =>
-    el('button', {
-      class: 'day-dot' + (errandDays.includes(i) ? ' on' : ''),
-      onclick: (e) => {
-        errandDays = errandDays.includes(i) ? errandDays.filter((d) => d !== i) : [...errandDays, i];
-        e.currentTarget.classList.toggle('on');
-      },
-    }, label)
-  ));
-
   const themePref = s.theme || 'auto';
   const themeBtn = (value, label) =>
     el('button', {
@@ -383,8 +368,6 @@ async function renderSettings(root) {
     disclosure('This device', el('section', { class: 'panel' }, [
       el('label', { class: 'field-label' }, 'Your name (stamps who added/did what)'),
       deviceNameInput,
-      el('label', { class: 'field-label' }, 'Errand day(s) — when the grocery list surfaces'),
-      dayRow,
     ])),
 
     disclosure('Appearance', el('section', { class: 'panel' }, [
@@ -526,7 +509,6 @@ async function renderSettings(root) {
   async function onSave() {
     saveSettings({
       deviceName: deviceNameInput.value.trim(),
-      errandDays: errandDays.sort(),
       familyMembers: familyInput.value.trim(),
       meetingDay: Number(meetingDaySel.value),
       adminMeetingDay: Number(adminDaySel.value),
@@ -742,10 +724,10 @@ async function boot() {
 // is caught automatically, with no release-time step to forget.
 const WATCHED_FILES = [
   './app.js', './styles.css', './modules/push.js',
-  './modules/store.js', './modules/ui.js', './modules/chores.js', './modules/grocery.js',
-  './modules/calendar.js', './modules/suggest.js', './modules/dashboard.js', './modules/meeting.js',
+  './modules/store.js', './modules/ui.js', './modules/chores.js', './modules/twoweeks.js',
+  './modules/calendar.js', './modules/dashboard.js', './modules/meeting.js',
   './modules/ai.js', './modules/gcal.js', './modules/hmcontext.js', './modules/manager.js',
-  './modules/meals.js', './modules/diag.js', './modules/digest.js', './modules/school.js',
+  './modules/diag.js', './modules/digest.js', './modules/school.js',
 ];
 
 let bootSignature = null;

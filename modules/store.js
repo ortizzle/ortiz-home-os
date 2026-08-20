@@ -15,13 +15,13 @@ export const SCHEMA_VERSION = 1;
 export const STORES = [
   'maintenance',
   'chores',
-  'groceries',
+  'groceries', // legacy — v79 removed the grocery feature; kept so existing data survives in the Gist and old snapshots still merge
   'vendors',
   'appointments',
   'goals',
   'agenda',
   'plan', // legacy — v68 merged Plans into Tasks; kept so old snapshots still merge and migrate (see app.js migratePlans)
-  'meals', // planned dinners: {date, title, detail}
+  'meals', // legacy — v79 removed dinner planning; kept for the same reason as groceries
   'suggLog', // AI follow-through memory: what was suggested, added, done
   'briefs', // Claudia's daily brief, one per date — shared, so both phones see the same read
   'pins', // notes pinned to a brief date
