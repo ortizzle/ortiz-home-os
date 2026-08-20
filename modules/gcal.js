@@ -389,6 +389,17 @@ function addDaysStr(dateStr, n) {
 // Self-heals: an expired token with an existing grant renews silently first
 // (calls usually run right after a user tap, so the popup is allowed and
 // auto-closes) — the hourly expiry stops being something you notice.
+// Calendars this device's Google account couldn't read on the most recent
+// LIVE fetch (a cache hit leaves this as whatever the last live fetch found —
+// it isn't re-verified every render). A 403/etc. on one calendar used to be
+// swallowed with zero signal, so a permission problem (e.g. this account
+// never accepted the share, or lost access) silently dropped that calendar's
+// events from every view forever with nothing to point at. Views can read
+// this to tell the family which calendar to go check, instead of just
+// quietly showing fewer events than are actually on the calendar.
+let lastCalendarIssues = [];
+export function getLastCalendarIssues() { return lastCalendarIssues; }
+
 export async function eventsForRange(start, end, { force = false } = {}) {
   if (!isConnected() && !(await silentRenew())) return [];
   const key = `${start}|${end}`;
@@ -398,6 +409,7 @@ export async function eventsForRange(start, end, { force = false } = {}) {
   const timeMin = new Date(`${start}T00:00:00`).toISOString();
   const timeMax = new Date(`${end}T00:00:00`).toISOString();
   const out = [];
+  const issues = [];
   // De-dupe the same event appearing on multiple selected calendars — both a
   // true shared/invited event (same iCalUID on each calendar) AND a plain
   // copy-pasted duplicate (different id/iCalUID, identical title+date+time).
@@ -453,7 +465,11 @@ export async function eventsForRange(start, end, { force = false } = {}) {
       } while (pageToken);
     } catch (err) {
       if (err.code === 'expired' || err.code === 'not-connected') throw err;
-      // A calendar this account can't read (e.g. not subscribed) — skip it.
+      // A calendar this account can't read (e.g. not subscribed, access
+      // revoked, or a share never accepted) — skip it so the rest of the
+      // render still works, but remember which one so it can be surfaced
+      // instead of just silently vanishing.
+      issues.push({ id: cal, name: nameOf(cal) });
     }
   }
   // Finalize labels now that every copy has been seen. Family wins as the
@@ -467,6 +483,7 @@ export async function eventsForRange(start, end, { force = false } = {}) {
     a.calendar = fam || (a.calendars.join(' + ') || null);
     a.tentative = a.calendars.length > 0 && a.calendars.every((n) => /social/i.test(n));
   }
+  lastCalendarIssues = issues;
   cache.set(key, { at: Date.now(), events: out });
   return out;
 }

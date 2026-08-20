@@ -18,6 +18,7 @@ import { el, clear, navigate, todayStr, addDays, parseDate, fmtDay, ownerPillCla
 import { appointmentsFor, spansDay } from './calendar.js';
 import { householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays } from './hmcontext.js';
 import { schoolConfigured, getSchoolSummaries } from './school.js';
+import { getLastCalendarIssues } from './gcal.js';
 
 const WINDOW_DAYS = 14;
 const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -99,6 +100,17 @@ export async function renderTwoWeeks(root) {
     el('h1', {}, '2 Weeks'),
     el('p', { class: 'muted small', style: 'margin: 2px 0 0' }, 'The next 14 days at a glance — exams and plans to get ahead of.'),
   ]));
+
+  // A calendar this device's Google account can't read gets silently skipped
+  // deep in gcal.js — no error, just fewer events than actually exist, with
+  // nothing pointing at why. Surface it here instead of leaving it a mystery.
+  const calIssues = getLastCalendarIssues();
+  if (calIssues.length) {
+    root.append(el('div', { class: 'panel', style: 'background: var(--warn-soft); border-color: var(--warn); margin-bottom: 14px;' }, [
+      el('p', { class: 'small', style: 'margin: 0; color: var(--warn); font-weight: 600;' }, `Couldn't read events from: ${calIssues.map((i) => i.name).join(', ')}`),
+      el('p', { class: 'small', style: 'margin: 4px 0 0; color: var(--text-2);' }, 'That calendar may not be shared with this device’s Google account, or the share was never accepted. Events on it won’t show anywhere in the app until that’s fixed on Google’s side.'),
+    ]));
+  }
 
   root.append(summaryPanel({ appts, dueTasks, exams, birthdays, today, spotlight, toggleSpotlight }));
   root.append(calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything, family, rerender, spotlight, matchesCat }));
