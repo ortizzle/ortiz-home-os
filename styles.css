@@ -801,6 +801,11 @@ select.input { appearance: none; }
 .tw-sum-key { flex: 0 0 72px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); padding-top: 2px; }
 .tw-sum-key.tw-warn { color: var(--warn); }
 .tw-sum-key.tw-accent { color: var(--accent); }
+/* one bullet per item, not a run-on "a · b · c" sentence — flex:1 so the
+   list actually claims the row's remaining width instead of shrink-wrapping */
+.tw-sum-line .meeting-list { flex: 1; padding-left: 18px; }
+.tw-sum-line .meeting-list li { margin: 0; font-size: 13.5px; line-height: 1.45; }
+.tw-sum-line .meeting-list li + li { margin-top: 3px; }
 /* spotlight: a tapped stat pill highlights every matching mention */
 .tw-sum-line.spot-warn { background: var(--warn-soft); border-top: none; border-radius: 8px; margin: 2px -8px; padding: 7px 8px; }
 .tw-sum-line.spot-accent { background: var(--accent-soft); border-top: none; border-radius: 8px; margin: 2px -8px; padding: 7px 8px; }

@@ -120,24 +120,27 @@ function summaryPanel({ appts, dueTasks, exams, birthdays, today, spotlight, tog
       onclick: n === 0 ? null : () => toggleSpotlight(cat),
     }, `${n} ${label}${n === 1 ? '' : 's'}`);
   };
-  const line = (key, node, cat, cls = '') => el('div', {
+  // Body is a bulleted list, one line per item — a run-on "Sedona Math · River
+  // Reading" sentence reads odd once there's more than one of anything.
+  const line = (key, items, cat, cls = '') => el('div', {
     class: 'tw-sum-line' + (cls ? ' ' + cls : '') + (cat && spotlight === cat ? ' spot-' + CAT_COLOR[cat] : ''),
   }, [
-    el('span', { class: 'tw-sum-key' + (cls ? ' ' + cls : '') }, key), el('span', {}, node),
+    el('span', { class: 'tw-sum-key' + (cls ? ' ' + cls : '') }, key),
+    el('ul', { class: 'meeting-list' }, items.map((item) => el('li', {}, item))),
   ]);
 
   const kids = [];
   if (exams.length) {
-    kids.push(line('School', exams.map((x, i) => el('span', {}, [
-      i ? ' · ' : null, el('strong', {}, x.kid), ` ${x.label} — ${fmtDay(x.date)}`,
-    ])), 'exam', 'tw-warn'));
+    kids.push(line('School', exams.map((x) => [
+      el('strong', {}, x.kid), ` ${x.label} — ${fmtDay(x.date)}`,
+    ]), 'exam', 'tw-warn'));
   }
   if (birthdays.length) {
     // Its own explicit key (not the vaguer "Plan for") since birthdays are
     // the only thing that ever lands here — same pattern as School's line.
-    kids.push(line('Birthdays', birthdays.map((b, i) => el('span', {}, [
-      i ? ' · ' : null, el('strong', {}, b.name), ` — ${fmtDay(b.date)}, get ahead of the gift`,
-    ])), 'birthday', 'tw-accent'));
+    kids.push(line('Birthdays', birthdays.map((b) => [
+      el('strong', {}, b.name), ` — ${fmtDay(b.date)}, get ahead of the gift`,
+    ]), 'birthday', 'tw-accent'));
   }
   // The window's recurring beats (a series that lands 2+ times) — collapsed to
   // one mention each so the rhythm reads at a glance. No stat pill maps to
@@ -148,7 +151,7 @@ function summaryPanel({ appts, dueTasks, exams, birthdays, today, spotlight, tog
     (bySeries.get(key) || bySeries.set(key, []).get(key)).push(a);
   }
   const rhythm = [...bySeries.values()].filter((l) => new Set(l.map((a) => a.date)).size >= 2).map((l) => l[0].title).slice(0, 4);
-  if (rhythm.length) kids.push(line('Rhythm', rhythm.join(' · '), null));
+  if (rhythm.length) kids.push(line('Rhythm', rhythm.map((t) => [t]), null));
   if (!kids.length) kids.push(el('p', { class: 'muted small', style: 'margin: 4px 0 0' }, 'A quiet stretch — nothing that needs lead time.'));
 
   return el('section', { class: 'panel' }, [
