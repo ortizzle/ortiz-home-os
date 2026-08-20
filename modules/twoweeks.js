@@ -133,9 +133,11 @@ function summaryPanel({ appts, dueTasks, exams, birthdays, today, spotlight, tog
     ])), 'exam', 'tw-warn'));
   }
   if (birthdays.length) {
-    kids.push(line('Plan for', birthdays.map((b, i) => el('span', {}, [
-      i ? ' · ' : null, el('strong', {}, `${b.name}'s birthday`), ` ${fmtDay(b.date)} — get ahead of the gift`,
-    ])), 'birthday'));
+    // Its own explicit key (not the vaguer "Plan for") since birthdays are
+    // the only thing that ever lands here — same pattern as School's line.
+    kids.push(line('Birthdays', birthdays.map((b, i) => el('span', {}, [
+      i ? ' · ' : null, el('strong', {}, b.name), ` — ${fmtDay(b.date)}, get ahead of the gift`,
+    ])), 'birthday', 'tw-accent'));
   }
   // The window's recurring beats (a series that lands 2+ times) — collapsed to
   // one mention each so the rhythm reads at a glance. No stat pill maps to

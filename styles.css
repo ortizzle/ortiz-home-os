@@ -800,6 +800,7 @@ select.input { appearance: none; }
 .tw-sum-line:first-of-type { border-top: none; }
 .tw-sum-key { flex: 0 0 72px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-3); padding-top: 2px; }
 .tw-sum-key.tw-warn { color: var(--warn); }
+.tw-sum-key.tw-accent { color: var(--accent); }
 /* spotlight: a tapped stat pill highlights every matching mention */
 .tw-sum-line.spot-warn { background: var(--warn-soft); border-top: none; border-radius: 8px; margin: 2px -8px; padding: 7px 8px; }
 .tw-sum-line.spot-accent { background: var(--accent-soft); border-top: none; border-radius: 8px; margin: 2px -8px; padding: 7px 8px; }
