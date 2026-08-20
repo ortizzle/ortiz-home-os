@@ -10,7 +10,7 @@
 // editing stay on Home / Tasks / Calendar.
 
 import { getAll, getSettings } from './store.js';
-import { el, clear, navigate, todayStr, addDays, parseDate, fmtDay, ownerPillClass } from './ui.js';
+import { el, clear, navigate, todayStr, addDays, parseDate, fmtDay, ownerPillClass, preserveScroll } from './ui.js';
 import { appointmentsFor, spansDay } from './calendar.js';
 import { householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays } from './hmcontext.js';
 import { schoolConfigured, getSchoolSummaries } from './school.js';
@@ -34,7 +34,11 @@ export async function renderTwoWeeks(root) {
   const end = addDays(today, WINDOW_DAYS); // exclusive
   if (!state.selected || state.selected < today || state.selected >= end) state.selected = today;
   if (!state.monthOf) state.monthOf = state.selected.slice(0, 7);
-  const rerender = () => renderTwoWeeks(root);
+  // Every generic rerender (month nav, etc.) is a full clear+rebuild, so
+  // without this it drops you back at the top of the page each time —
+  // preserveScroll restores exactly where you were. The date-tap handler
+  // below layers its own intentional scroll (to the selected day) on top.
+  const rerender = preserveScroll(() => renderTwoWeeks(root));
 
   const settings = getSettings();
   const family = (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean);
@@ -152,7 +156,10 @@ function calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything,
     }
     grid.push(el(inWindow ? 'button' : 'div', {
       class: cls.join(' '),
-      ...(inWindow ? { onclick: () => { state.selected = iso; rerender(); } } : {}),
+      // Jump to the selected-day panel below, not just re-render in place —
+      // otherwise tapping a date on the grid leaves you staring at the grid
+      // while the details you asked for landed off-screen underneath it.
+      ...(inWindow ? { onclick: async () => { state.selected = iso; await rerender(); document.getElementById('tw-selday')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } } : {}),
     }, [el('span', { class: 'tw-cal-num' }, String(d)), dots.length ? el('span', { class: 'tw-dots' }, dots) : null]));
   }
   cells.push(el('div', { class: 'tw-cal-grid' }, grid));
@@ -162,7 +169,10 @@ function calendarPanel({ today, end, eventsOn, tasksOn, examsOn, dayHasAnything,
   return el('section', { class: 'panel', style: 'margin-top: 14px' }, [
     el('div', { class: 'tw-cal-head' }, [nav(-1, '‹'), el('h4', {}, monthLabel), nav(1, '›')]),
     ...cells,
-    el('div', { class: 'tw-selday' }, [
+    // id + toc-anchor: scroll target for the date-tap handler above. Reuses
+    // the app's existing scroll-margin-top rule so the sticky topbar doesn't
+    // cover the heading when we land here.
+    el('div', { class: 'tw-selday toc-anchor', id: 'tw-selday' }, [
       el('h5', {}, sel === today ? `Today · ${fmtDay(sel)}` : fmtDay(sel)),
       ...(selRows.length ? selRows : [el('p', { class: 'muted small', style: 'margin: 4px 0 0' }, 'Nothing scheduled.')]),
       el('a', { class: 'link small', href: `#/calendar/day/${sel}`, style: 'display: inline-block; margin-top: 8px' }, 'Open in Calendar →'),
