@@ -292,6 +292,19 @@ async function apiGet(url) {
 }
 
 // The calendars this account can read (for the Settings picker).
+// The currently-selected calendars resolved to display names (same
+// resolution eventsForRange uses — label override, else a guessed name).
+// For views that want to show which calendars the app is actually watching
+// on THIS device, so "why don't I see calendar X" is answerable by looking,
+// not by guessing or asking.
+export async function selectedCalendarInfo() {
+  const ids = getSelectedCalendars();
+  const names = await calendarNames();
+  const overrides = getCalendarLabelOverrides();
+  const nameOf = (id) => overrides[id] || guessCalName((names && names[id]) || id || '');
+  return ids.map((id) => ({ id, name: nameOf(id) }));
+}
+
 export async function listCalendars() {
   const data = await apiGet('https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader&maxResults=250');
   return (data.items || []).map((c) => ({

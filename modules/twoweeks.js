@@ -18,7 +18,7 @@ import { el, clear, navigate, todayStr, addDays, parseDate, fmtDay, ownerPillCla
 import { appointmentsFor, spansDay } from './calendar.js';
 import { householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays } from './hmcontext.js';
 import { schoolConfigured, getSchoolSummaries } from './school.js';
-import { getLastCalendarIssues } from './gcal.js';
+import { getLastCalendarIssues, selectedCalendarInfo, isConnected } from './gcal.js';
 
 const WINDOW_DAYS = 14;
 const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -52,11 +52,15 @@ export async function renderTwoWeeks(root) {
 
   const settings = getSettings();
   const family = (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean);
-  const [appts, chores, school, knowledge] = await Promise.all([
+  const [appts, chores, school, knowledge, watching] = await Promise.all([
     appointmentsFor(today, end),
     getAll('chores'),
     schoolConfigured() ? getSchoolSummaries().catch(() => null) : null,
     householdKnowledge(settings),
+    // Which calendars this device is actually watching, resolved to names —
+    // so "why don't I see calendar X" is answerable by looking at the tab,
+    // not by guessing. Only meaningful once Google's connected.
+    isConnected() ? selectedCalendarInfo().catch(() => []) : Promise.resolve([]),
   ]);
 
   const dueTasks = chores
@@ -96,9 +100,25 @@ export async function renderTwoWeeks(root) {
   const toggleSpotlight = (cat) => { state.spotlight = state.spotlight === cat ? null : cat; rerender(); };
   const spotlight = state.spotlight;
 
+  // Which calendars this device is actually watching, spelled out plainly —
+  // "why don't I see calendar X" should be answerable by glancing here, not
+  // by guessing or asking. Only shown once Google's connected (the Calendar
+  // tab already owns the "not connected yet" prompt).
+  const watchingLine = !isConnected() ? null
+    : !watching.length
+      ? el('p', { class: 'muted small', style: 'margin: 6px 0 0' }, [
+          'No calendars selected — Google is connected but nothing is chosen to show. ',
+          el('a', { class: 'link', href: '#/settings', onclick: (e) => { e.preventDefault(); navigate('#/settings'); } }, 'Choose calendars →'),
+        ])
+      : el('p', { class: 'muted small', style: 'margin: 6px 0 0' }, [
+          `Watching: ${watching.slice(0, 3).map((w) => w.name).join(', ')}${watching.length > 3 ? ` +${watching.length - 3} more` : ''} · `,
+          el('a', { class: 'link', href: '#/settings', onclick: (e) => { e.preventDefault(); navigate('#/settings'); } }, 'Manage →'),
+        ]);
+
   root.append(el('header', { class: 'view-head' }, [
     el('h1', {}, '2 Weeks'),
     el('p', { class: 'muted small', style: 'margin: 2px 0 0' }, 'The next 14 days at a glance — exams and plans to get ahead of.'),
+    watchingLine,
   ]));
 
   // A calendar this device's Google account can't read gets silently skipped
@@ -150,8 +170,10 @@ function summaryPanel({ appts, dueTasks, exams, birthdays, today, spotlight, tog
   if (birthdays.length) {
     // Its own explicit key (not the vaguer "Plan for") since birthdays are
     // the only thing that ever lands here — same pattern as School's line.
+    // "get ahead of the gift" on every single line ran the list long for no
+    // reason — the section header already says what this list is for.
     kids.push(line('Birthdays', birthdays.map((b) => [
-      el('strong', {}, b.name), ` — ${fmtDay(b.date)}, get ahead of the gift`,
+      el('strong', {}, b.name), ` — ${fmtDay(b.date)}`,
     ]), 'birthday', 'tw-accent'));
   }
   // The window's recurring beats (a series that lands 2+ times) — collapsed to
