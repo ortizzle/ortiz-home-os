@@ -34,7 +34,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v86 · 2 Weeks: one-off events get their own summary line';
+const APP_VERSION = 'v87 · Reopening after a while now lands on Home';
 
 // ---------- theme ----------
 
@@ -714,6 +714,19 @@ async function boot() {
     if (document.visibilityState === 'visible') checkForUpdate();
   });
   setInterval(checkForUpdate, 20 * 60_000);
+
+  // Same suspend-not-close behavior as above means "reopening" the app can
+  // just resume it exactly where it was left, hours or days ago, with no
+  // fresh load to reset the tab. A gap this long is someone opening the app
+  // again, not glancing away for a second — send them back to Home rather
+  // than wherever the suspended session happened to be sitting.
+  const REOPEN_GAP_MS = 5 * 60_000;
+  let hiddenAt = document.hidden ? Date.now() : null;
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') { hiddenAt = Date.now(); return; }
+    if (hiddenAt && Date.now() - hiddenAt > REOPEN_GAP_MS) navigate('#/home');
+    hiddenAt = null;
+  });
 }
 
 // Every source file that makes up a running session — mirrors sw.js's SHELL
