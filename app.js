@@ -34,7 +34,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v87 · Reopening after a while now lands on Home';
+const APP_VERSION = 'v88 · Claudia knows Kat does girls\' pickup, not Chris';
 
 // ---------- theme ----------
 

@@ -39,6 +39,7 @@ const MEMORY_SEEDS = [
   { id: 'm-care', cat: 'rhythms', text: "Weekly care the family forgets: clean Sunny's terrarium + brush the dogs' teeth — nudge on weekends; not tracked as tasks." },
   { id: 'm-222', cat: 'rhythms', text: 'Chris & Kat 2-2-2 rhythm: date night every 2 weeks, weekend getaway every ~2 months, destination trip every ~2 years — keep it on the calendar, ideas welcome.' },
   { id: 'm-dance', cat: 'rhythms', text: "Monday 'dance party': Eshe and her sister Akilah come to the house for dance exercise — it's Kat and both girls at home; sits on Chris's calendar but isn't Chris's event." },
+  { id: 'm-pickup', cat: 'logistics', text: "Girls' pickup: a recurring 'pick up the girls' item sits on Chris's calendar, but Kat is almost always the one who actually does it. Chris only picks up when there's a conflict on Kat's calendar or they've explicitly arranged it that way — don't assume Chris is doing pickup just because it's on his calendar." },
   { id: 'm-calendars', cat: 'logistics', text: "Calendar scheme: 'Family' = confirmed family events. 'Social' = soft/tentative plans — not real until moved to Family or a named calendar; an event ONLY on Social is a possibility worth flagging, never a scheduled fact. River's and Sedona's calendars = that girl's school/sports/activities. Chris's and Kat's calendars = that parent's own commitments; an event on BOTH parents' calendars (not Family) is a couple thing — just the two of them." },
 ];
 
