@@ -34,7 +34,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v88 · Claudia knows Kat does girls\' pickup, not Chris';
+const APP_VERSION = 'v89 · App always opens on Home';
 
 // ---------- theme ----------
 
@@ -663,9 +663,10 @@ async function boot() {
   }
   await migratePlans().catch((err) => console.warn('plan migration failed', err));
 
-  // First run: get the device name set so attribution works from record one.
+  // First run: nudge toward setting a device name (for attribution) without
+  // hijacking where the app opens — Home is always the landing tab.
   if (!getSettings().deviceName && !location.hash) {
-    navigate('#/settings');
+    toast('Tip: set a device name in Settings so we know who made each change.', 'info');
   }
 
   window.addEventListener('hashchange', router);
