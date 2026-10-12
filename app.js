@@ -11,6 +11,7 @@ import {
   pullFromGist,
   pushToGist,
   onSyncStatus,
+  onWrite,
   exportSnapshot,
 } from './modules/store.js';
 import { renderDashboard } from './modules/dashboard.js';
@@ -34,7 +35,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v90 · Pickup is settled: Kat, no daily double-check';
+const APP_VERSION = 'v91 · Google Drive copy';
 
 // ---------- theme ----------
 
@@ -501,6 +502,11 @@ async function renderSettings(root) {
       el('button', { class: 'btn', onclick: onExport }, 'Export JSON'),
     ]),
 
+    Drive ? el('section', { class: 'panel drive-panel' }, [
+      Drive.settingsBlock({ labelClass: 'field-label', buttonClass: 'btn', hintClass: 'muted small' }),
+      el('p', { class: 'muted small' }, 'Same household data as Export JSON and the Gist — never your tokens, Gist IDs, API key, or anything else in these settings.'),
+    ]) : null,
+
     diagnosticsSection(APP_VERSION),
 
     el('p', { class: 'muted small center', style: 'margin-top: 18px' }, `Ortiz Home OS ${APP_VERSION}`)
@@ -610,6 +616,46 @@ async function chooseCalendars(afterSave) {
   ]);
 }
 
+// ---------- Google Drive copy (ortiz-drive.js, shared across the suite) ----------
+// The module's getData is synchronous but IndexedDB isn't, so the payload is a
+// cached snapshot refreshed after every write (and sync merge). It's the
+// Export JSON snapshot minus its top-level updatedAt — that stamp changes on
+// every export and would defeat the module's "unchanged → no upload"
+// fingerprint. Settings (tokens, Gist IDs, API key) live in localStorage and
+// never reach it. Separate from gcal.js's Google token on purpose: the
+// module keeps its own drive.file token under ortizdrive:* keys.
+const Drive = window.OrtizDrive || null;
+let driveSnap = null;
+let driveTimer = null;
+async function refreshDriveSnap() {
+  const { schemaVersion, data } = await exportSnapshot();
+  driveSnap = { schemaVersion, data };
+}
+function driveSoon() {
+  if (!Drive) return;
+  clearTimeout(driveTimer);
+  driveTimer = setTimeout(() => refreshDriveSnap().then(() => Drive.check()).catch(() => {}), 2000);
+}
+function mountDriveBar() {
+  const slot = view.querySelector('.drive-slot');
+  if (slot) Drive?.mountBar(slot, { className: 'btn drive-bar' });
+}
+async function initDrive() {
+  if (!Drive) return;
+  await refreshDriveSnap().catch((err) => console.warn('Drive snapshot failed', err));
+  Drive.init({
+    app: 'Home OS',
+    prefix: 'home-os',
+    getData: () => {
+      if (!driveSnap) throw new Error('data not loaded');
+      return driveSnap;
+    },
+    toast: (msg) => toast(msg),
+    onChange: mountDriveBar,
+  });
+  onWrite(driveSoon);
+}
+
 // ---------- boot ----------
 
 // v68: Plans merged into Tasks. Any plan record — local, or arriving later
@@ -649,6 +695,7 @@ async function boot() {
   onSyncStatus((st) => {
     const dot = document.getElementById('header-sync');
     if (dot) dot.className = 'header-sync ' + st;
+    if (st === 'synced') driveSoon();
   });
 
   // A storage failure must degrade, never blank the app.
@@ -662,6 +709,7 @@ async function boot() {
     toast(`Storage error — some data may be unavailable (${err?.message || err})`, 'error');
   }
   await migratePlans().catch((err) => console.warn('plan migration failed', err));
+  await initDrive();
 
   // First run: nudge toward setting a device name (for attribution) without
   // hijacking where the app opens — Home is always the landing tab.
@@ -741,7 +789,7 @@ const WATCHED_FILES = [
   './modules/store.js', './modules/ui.js', './modules/chores.js', './modules/twoweeks.js',
   './modules/calendar.js', './modules/dashboard.js', './modules/meeting.js',
   './modules/ai.js', './modules/gcal.js', './modules/hmcontext.js', './modules/manager.js',
-  './modules/diag.js', './modules/digest.js', './modules/school.js',
+  './modules/diag.js', './modules/digest.js', './modules/school.js', './ortiz-drive.js',
 ];
 
 let bootSignature = null;
