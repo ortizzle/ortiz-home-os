@@ -67,6 +67,16 @@ export function deviceName() {
   return (getSettings().deviceName || '').trim() || null;
 }
 
+// Every local write (edits AND sync merges) — the Drive copy re-checks off this.
+const writeListeners = new Set();
+export function onWrite(fn) {
+  writeListeners.add(fn);
+  return () => writeListeners.delete(fn);
+}
+function emitWrite() {
+  writeListeners.forEach((fn) => fn());
+}
+
 // ---------- IndexedDB core ----------
 
 function openDb() {
@@ -131,6 +141,7 @@ export async function put(store, record, { touch = true } = {}) {
   }
   await reqToPromise((await tx(store, 'readwrite')).put(rec));
   scheduleSync();
+  emitWrite();
   return rec;
 }
 
@@ -143,6 +154,7 @@ export async function remove(store, id) {
     await put('tombstones', { id: `${store}:${id}`, store, recordId: id, deletedAt: now() });
   }
   scheduleSync();
+  emitWrite();
 }
 
 // ---------- snapshot (versioned, migration-ready) ----------

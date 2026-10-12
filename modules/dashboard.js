@@ -44,8 +44,11 @@ export async function renderDashboard(root) {
   const tomorrowAppts = apptsWeek.filter((a) => spansDay(a, tomorrow)).sort(byTime);
 
   // ----- header + stats: tasks due · upcoming events · the 2-week horizon -----
+  const driveSlot = el('div', { class: 'drive-slot' });
+  window.OrtizDrive?.mountBar(driveSlot, { className: 'btn drive-bar' });
   root.append(
     el('p', { class: 'greeting' }, greeting()),
+    driveSlot,
     el('div', { class: 'stat-row' }, [
       el('button', { class: 'stat stat-btn', onclick: () => navigate('#/tasks') }, [
         el('div', { class: 'stat-value' }, dueToday.length + overdue.length),

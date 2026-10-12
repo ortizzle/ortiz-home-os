@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v90-pickup-settled';
+const CACHE = 'ohos-shell-v91-drive-copy';
 const SHELL = [
   './',
   './index.html',
@@ -26,6 +26,7 @@ const SHELL = [
   './modules/manager.js',
   './modules/diag.js',
   './modules/school.js',
+  './ortiz-drive.js',
 ];
 
 self.addEventListener('install', (e) => {
