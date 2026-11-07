@@ -7,6 +7,7 @@ import { getAll, get, put, remove as removeRec } from './store.js';
 import { addDays, fmtDay, parseDate, todayStr } from './ui.js';
 import { eventsForRange, canReadEmail, gmailRecent } from './gcal.js';
 import { getSchoolSummaries, schoolText } from './school.js';
+import { getKatTasks, kattasksText } from './gtasks.js';
 
 // The family's habits/preferences, fed to the house-manager AI. Editable in
 // Settings → "Notes for the assistant"; this is the default seed. FACTS no
@@ -476,9 +477,12 @@ export function emailText(emails) {
 // brief's focus) and horizonText (the rest — lead-time heads-up material);
 // without it everything lands in eventsText, as before.
 export async function gatherContext({ start, days, email = false, splitAt = null }) {
-  const [chores, agenda] = await Promise.all([
+  const [chores, agenda, katTasks] = await Promise.all([
     getAll('chores'),
     getAll('agenda'),
+    // The shared mirror (see gtasks.js) — populated by whichever device
+    // connected with Kat's own Google account, read here on ANY device.
+    getKatTasks().catch(() => []),
   ]);
   // eventsForRange() already checks the connection and self-heals with a
   // silent token renewal if needed — an outer isConnected() gate here would
@@ -527,5 +531,5 @@ export async function gatherContext({ start, days, email = false, splitAt = null
     .map((a) => `- ${a.text}: ${a.decision}`)
     .join('\n');
 
-  return { events, eventsText, horizonText, choresText, agendaText, meetingDecisionsText, emails, emailsText: emailText(emails), schoolText: school ? schoolText(school.kids) : '' };
+  return { events, eventsText, horizonText, choresText, agendaText, meetingDecisionsText, emails, emailsText: emailText(emails), schoolText: school ? schoolText(school.kids) : '', kattasksText: kattasksText(katTasks) };
 }

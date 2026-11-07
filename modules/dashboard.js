@@ -317,6 +317,7 @@ async function runBrief(host, rerender, { today, settings }) {
       email: ctx.emailsText,
       declined,
       school: ctx.schoolText,
+      kattasks: ctx.kattasksText,
     });
     logShownSuggestions(out.suggestions, 'brief').catch(() => {});
     await saveBrief(today, out);

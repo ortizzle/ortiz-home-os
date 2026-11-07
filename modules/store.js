@@ -8,7 +8,7 @@ const DB_NAME = 'ortiz-home-os';
 // redesigned same-day (Claudia's proposal now merges straight into the
 // agenda instead) — the empty object store is harmless leftover on any
 // phone that already upgraded; just no longer read or synced.
-const DB_VERSION = 8; // v2: 'agenda'; v3: 'plan'; v4: 'meals'+'suggLog'; v5: 'briefs'+'pins'+'reviews'; v7: 'meetingState'; v8: 'memory'
+const DB_VERSION = 9; // v2: 'agenda'; v3: 'plan'; v4: 'meals'+'suggLog'; v5: 'briefs'+'pins'+'reviews'; v7: 'meetingState'; v8: 'memory'; v9: 'kattasks'
 export const SCHEMA_VERSION = 1;
 
 // Object stores that hold household records.
@@ -28,6 +28,7 @@ export const STORES = [
   'reviews', // Claudia's weekly review — one shared "current" record
   'meetingState', // per-type meeting cycle state (concluded marker) — synced so both phones agree
   'memory', // Claudia's memory: lean typed facts, fed to every prompt (see hmcontext.js)
+  'kattasks', // mirror of Kat's Google Tasks (read-only, synced so every device + Claudia can see it — see modules/gtasks.js)
   'tombstones',
 ];
 

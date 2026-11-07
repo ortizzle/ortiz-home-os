@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v91-drive-copy';
+const CACHE = 'ohos-shell-v92-kat-google-tasks';
 const SHELL = [
   './',
   './index.html',
@@ -22,6 +22,7 @@ const SHELL = [
   './modules/meeting.js',
   './modules/ai.js',
   './modules/gcal.js',
+  './modules/gtasks.js',
   './modules/hmcontext.js',
   './modules/manager.js',
   './modules/diag.js',

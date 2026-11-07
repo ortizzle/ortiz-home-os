@@ -11,10 +11,15 @@ const CLIENT_ID = '305346848345-0q6ojf9t6eqhguh4pb3f2gm5p7rhhmtq.apps.googleuser
 // gmail.readonly: read message metadata + snippets so the house manager can
 // factor recent email into the morning brief and answer questions about it.
 // (A restricted scope — fine for our two test users; the app never sends mail.)
+// tasks.readonly: read Google Tasks lists + tasks — whoever connects on
+// their own device (e.g. Kat, on her phone) lets the app read their task
+// list the same read-only way it reads their calendar. The app never writes
+// to Google Tasks.
 const SCOPE =
   'https://www.googleapis.com/auth/calendar.readonly ' +
   'https://www.googleapis.com/auth/calendar.events ' +
-  'https://www.googleapis.com/auth/gmail.readonly';
+  'https://www.googleapis.com/auth/gmail.readonly ' +
+  'https://www.googleapis.com/auth/tasks.readonly';
 const GSI_SRC = 'https://accounts.google.com/gsi/client';
 const TOKEN_KEY = 'ohos.gcalToken';
 const WRITE_CAL_KEY = 'ohos.gcalWriteCal';
@@ -105,6 +110,12 @@ export function canWrite() {
 export function canReadEmail() {
   const t = readToken();
   return !!t && /gmail\.readonly|gmail\.metadata/.test(t.scope || '');
+}
+// Whether the granted token includes Google Tasks read access. False for
+// tokens minted before the tasks scope was added — a reconnect grants it.
+export function canReadTasks() {
+  const t = readToken();
+  return !!t && /tasks(\.readonly)?(\s|$)/.test(t.scope || '');
 }
 // Explicit user action: forget the grant entirely.
 export function disconnect() { localStorage.removeItem(TOKEN_KEY); clearCache(); writableCache = null; }
@@ -542,6 +553,61 @@ export async function gmailRecent({ days = 7, max = 12 } = {}) {
       if (err.code === 'expired' || err.code === 'no-gmail') throw err;
       // A single message that won't load — skip it, keep the rest.
     }
+  }
+  return out;
+}
+
+// ---------- Google Tasks (read-only: whoever connects sees only their own) ----------
+// Google Tasks has no sharing/delegation like Calendar does — a task list is
+// visible only to the account that owns it. So this only ever returns
+// something on the device of whoever connected with their own Google
+// account (e.g. Kat, on her phone). Nothing is ever written back.
+
+async function tasksGet(url) {
+  const t = readToken();
+  if (!t) throw new GcalError('Not connected to Google', 'not-connected');
+  const res = await fetch(url, { headers: { Authorization: 'Bearer ' + t.accessToken } });
+  if (res.status === 401) { expireToken(); throw new GcalError('Google sign-in expired', 'expired'); }
+  if (res.status === 403) throw new GcalError('No Tasks access — disconnect and reconnect to grant it', 'no-tasks');
+  if (!res.ok) throw new GcalError(`Tasks API ${res.status}`, 'api');
+  return res.json();
+}
+
+export async function listTaskLists() {
+  const data = await tasksGet('https://tasks.googleapis.com/tasks/v1/users/@me/lists?maxResults=100');
+  return (data.items || []).map((l) => ({ id: l.id, title: l.title || 'Tasks' }));
+}
+
+// Every NOT-completed task across every one of this account's task lists —
+// title, due date (Google only ever gives a date, never a time, for Tasks),
+// and notes. Returns [] when not connected or the scope wasn't granted, so
+// callers can always await it safely, same as eventsForRange().
+export async function fetchGoogleTasks() {
+  if (!canReadTasks()) return [];
+  if (!isConnected() && !(await silentRenew())) return [];
+  const lists = await listTaskLists();
+  const out = [];
+  for (const list of lists) {
+    let pageToken = null;
+    do {
+      const data = await tasksGet(
+        `https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(list.id)}/tasks` +
+        `?showCompleted=false&showHidden=false&maxResults=100` +
+        (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '')
+      );
+      for (const t of data.items || []) {
+        if (t.status === 'completed' || t.deleted || t.hidden) continue;
+        out.push({
+          id: t.id,
+          title: (t.title || '(untitled)').trim(),
+          due: t.due ? t.due.slice(0, 10) : null, // RFC3339 date-only, local wall date
+          notes: (t.notes || '').trim() || null,
+          listId: list.id,
+          listTitle: list.title,
+        });
+      }
+      pageToken = data.nextPageToken || null;
+    } while (pageToken);
   }
   return out;
 }

@@ -243,6 +243,7 @@ export async function renderManager(root) {
           email: ctx.emailsText,
           follow,
           school: ctx.schoolText,
+          kattasks: ctx.kattasksText,
         });
         logShownSuggestions(out.planItems, 'review').catch(() => {});
         await saveReview(out); // persists until the next run, shared with Kat

@@ -2,9 +2,11 @@
 // grammar as Focus OS tasks.
 
 import { getAll, get, put, remove, now, uid, deviceName, getSettings } from './store.js';
-import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText, SHARE_SVG, ownerPillClass } from './ui.js';
+import { el, clear, toast, openModal, todayStr, fmtDue, fmtDay, preserveScroll, disclosure, shareText, SHARE_SVG, ownerPillClass } from './ui.js';
 import { suggestSubtasks, hasApiKey, AIError } from './ai.js';
 import { gatherContext, householdKnowledge } from './hmcontext.js';
+import { getKatTasks } from './gtasks.js';
+import { isConnected as gcalConnected, canReadTasks as gcalCanTasks } from './gcal.js';
 
 // Parse a pasted list (Keep, Notes, anywhere) into one item per line —
 // bullets and checkboxes stripped. Lived in grocery.js until v79 removed
@@ -496,9 +498,45 @@ function byNewest(a, b) {
   return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1;
 }
 
+// Kat's Google Tasks — a separate, clearly-labeled, read-only section (never
+// merged into the household chores list, so it's always obvious whose list
+// is whose and who owns editing it — that stays in Google Tasks itself).
+// Shows nothing at all when Google isn't connected on this device; once it
+// is, shows either the live tasks, a quiet "nothing due" state, or a nudge
+// to reconnect for Tasks access — same three states as the list itself.
+function kattasksPanel(tasks) {
+  if (!gcalConnected()) return null;
+  if (!gcalCanTasks()) {
+    return el('section', { class: 'panel' }, [
+      el('div', { class: 'panel-head' }, [el('h4', {}, "Kat's Tasks (Google)")]),
+      el('p', { class: 'muted small', style: 'margin: 0' }, 'Reconnect Google in Settings to see Kat\'s Google Tasks here (read-only — this only ever reads whoever connects, on their own phone).'),
+    ]);
+  }
+  const today = todayStr();
+  return el('section', { class: 'panel' }, [
+    el('div', { class: 'panel-head' }, [
+      el('h4', {}, "Kat's Tasks (Google)"),
+      el('a', { class: 'link small', href: 'https://tasks.google.com/', target: '_blank', rel: 'noopener' }, 'Open Google Tasks →'),
+    ]),
+    tasks.length
+      ? el('div', {}, tasks.map((t) => el('div', { class: 'task-row' }, [
+          el('div', { class: 'task-main' }, [
+            el('span', { class: 'task-name' }, t.title),
+            el('span', { class: 'task-meta' }, [
+              t.due ? el('span', { class: 'pill' + (t.due < today ? ' pill-overdue' : '') }, fmtDue(t.due)) : null,
+              t.listTitle ? el('span', { class: 'pill' }, t.listTitle) : null,
+            ].filter(Boolean)),
+          ]),
+        ])))
+      : el('p', { class: 'muted small', style: 'margin: 0' }, "Nothing on Kat's Google Tasks right now."),
+    el('p', { class: 'muted small', style: 'margin: 8px 0 0' }, 'Read-only — manage these in Google Tasks; checking one off there removes it from here on the next sync.'),
+  ]);
+}
+
 export async function renderChores(root) {
   clear(root);
   let chores = await getAll('chores');
+  const katTasks = await getKatTasks();
   // Done tasks have an end state: kept ~60 days for reference (the Done
   // disclosure shows the recent 20), then pruned so the store doesn't grow
   // forever. Open tasks are never touched.
@@ -535,6 +573,11 @@ export async function renderChores(root) {
       ]),
     ])
   );
+
+  // Shown (or not) regardless of the household list below — Kat's device
+  // having nothing yet entered as a chore shouldn't hide her Google Tasks.
+  const katPanel = kattasksPanel(katTasks);
+  if (katPanel) root.append(katPanel);
 
   if (!chores.length) {
     root.append(

@@ -21,7 +21,8 @@ import { renderCalendar } from './modules/calendar.js';
 import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
 import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestionMemory, seedMemory, MEMORY_CATS } from './modules/hmcontext.js';
-import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars, getCalendarLabelOverrides, setCalendarLabelOverrides, guessCalName } from './modules/gcal.js';
+import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, canReadTasks as gcalCanTasks, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars, getCalendarLabelOverrides, setCalendarLabelOverrides, guessCalName } from './modules/gcal.js';
+import { syncKatTasksToStore } from './modules/gtasks.js';
 import { getUsage, estimateCost, resetUsage } from './modules/ai.js';
 import { pushSupported, getPushState, enablePush, disablePush } from './modules/push.js';
 import { diagnosticsSection } from './modules/diag.js';
@@ -35,7 +36,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v91 · Google Drive copy';
+const APP_VERSION = 'v92 · Kat\'s Google Tasks (read-only)';
 
 // ---------- theme ----------
 
@@ -431,29 +432,33 @@ async function renderSettings(root) {
     notificationsSection(),
 
     // ----- integrations -----
-    disclosure('Google (Calendar + Email, optional)', el('section', { class: 'panel' }, [
+    disclosure('Google (Calendar + Email + Tasks, optional)', el('section', { class: 'panel' }, [
       el('div', { class: 'sync-status' }, [
         el('span', { class: 'sync-dot ' + (gcalConnected() ? 'on' : 'off') }),
         el('span', { class: 'muted' }, gcalConnected()
-          ? (gcalCanEmail() ? 'Connected — calendar + email (read-only)' : 'Connected — calendar only')
+          ? `Connected — calendar${gcalCanEmail() ? ' + email' : ''}${gcalCanTasks() ? ' + tasks' : ''} (read-only)`
           : (gcalEverConnected() ? 'Session expired — renews on next use, or reconnect (one tap)' : 'Not connected')),
       ]),
       gcalConnected() && !gcalCanEmail()
         ? el('p', { class: 'muted small', style: 'color: var(--accent)' }, 'Reconnect to grant Gmail read access so Claudia can factor recent email into your brief and answers.')
         : null,
+      gcalConnected() && !gcalCanTasks()
+        ? el('p', { class: 'muted small', style: 'color: var(--accent)' }, 'Reconnect to grant Google Tasks read access — on your OWN device, this shows your Google Tasks list in the app and to Claudia (this is per-account: it only ever reads whoever connects, on their own phone).')
+        : null,
       gcalConnected()
         ? el('div', { class: 'settings-actions' }, [
             el('button', { class: 'btn btn-primary', onclick: () => chooseCalendars(() => renderSettings(root)) }, 'Choose calendars'),
-            gcalCanEmail() ? null : el('button', {
+            (gcalCanEmail() && gcalCanTasks()) ? null : el('button', {
               class: 'btn btn-primary',
               onclick: async (e) => {
                 const b = e.currentTarget;
+                const label = b.textContent;
                 b.disabled = 'disabled';
                 b.textContent = 'Reconnecting…';
                 try { await gcalConnect(); toast('Reconnected', 'success'); renderSettings(root); }
-                catch (err) { toast(err instanceof GcalError ? `Couldn't reconnect: ${err.message}` : 'Cancelled', 'warn'); b.disabled = null; b.textContent = 'Reconnect for email'; }
+                catch (err) { toast(err instanceof GcalError ? `Couldn't reconnect: ${err.message}` : 'Cancelled', 'warn'); b.disabled = null; b.textContent = label; }
               },
-            }, 'Reconnect for email'),
+            }, !gcalCanEmail() && !gcalCanTasks() ? 'Reconnect for email + tasks' : !gcalCanEmail() ? 'Reconnect for email' : 'Reconnect for tasks'),
             el('button', { class: 'btn', onclick: () => { gcalDisconnect(); toast('Disconnected'); renderSettings(root); } }, 'Disconnect'),
           ])
         : el('button', {
@@ -474,7 +479,7 @@ async function renderSettings(root) {
               }
             },
           }, gcalEverConnected() ? 'Reconnect Google (one tap)' : 'Connect Google Calendar'),
-      el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs, plus read-only access to recent Gmail so Claudia can factor email into your morning brief and answers. The app can only read — it never changes your calendar or sends mail. Google access expires hourly, but the app renews it silently in the background — you should only need to sign in again after clearing browser data or on a new device.'),
+      el('p', { class: 'muted small' }, 'Read-only overlay of your family Google Calendar (Family + Personal Schedule) on the Calendar and Meeting tabs, read-only access to recent Gmail so Claudia can factor email into your morning brief and answers, and read-only access to YOUR OWN Google Tasks (shown on the Tasks tab, and fed to Claudia). The app can only read — it never changes your calendar, sends mail, or edits your tasks. Google access expires hourly, but the app renews it silently in the background — you should only need to sign in again after clearing browser data, on a new device, or once now to pick up Tasks access.'),
     ])),
 
     // ----- the girls' school apps: read-only Gist IDs, same token as sync -----
@@ -725,6 +730,12 @@ async function boot() {
   // and email are simply live again without anyone tapping anything.
   gcalSilentRenew().then((ok) => { if (ok) router(); }).catch(() => {});
 
+  // On whichever device connected with Tasks access (Kat's), mirror her
+  // Google Tasks into the shared store so every device — and Claudia — can
+  // see them. A cheap no-op everywhere else (syncKatTasksToStore bails
+  // immediately without a network call when this device lacks the scope).
+  syncKatTasksToStore().then((changed) => { if (changed) router(); }).catch(() => {});
+
   // Two-user household: without this, a task Chris marks done on his phone
   // sits in the Gist until Kat's phone happens to relaunch or she taps Sync
   // Now — her already-open session just keeps showing the stale state. Pull
@@ -735,7 +746,11 @@ async function boot() {
   // news.
   async function backgroundSync() {
     if (!syncConfigured() || document.visibilityState !== 'visible') return;
-    const changed = await pullFromGist();
+    const pulled = await pullFromGist();
+    // On Kat's device this also re-checks her live Google Tasks — a cheap
+    // no-op on any device without Tasks access.
+    const tasksChanged = await syncKatTasksToStore().catch(() => false);
+    const changed = pulled || tasksChanged;
     if (!changed) return;
     // The other phone may still be on pre-merge code and pushing plan records.
     await migratePlans().catch(() => {});
@@ -788,7 +803,7 @@ const WATCHED_FILES = [
   './app.js', './styles.css', './modules/push.js',
   './modules/store.js', './modules/ui.js', './modules/chores.js', './modules/twoweeks.js',
   './modules/calendar.js', './modules/dashboard.js', './modules/meeting.js',
-  './modules/ai.js', './modules/gcal.js', './modules/hmcontext.js', './modules/manager.js',
+  './modules/ai.js', './modules/gcal.js', './modules/gtasks.js', './modules/hmcontext.js', './modules/manager.js',
   './modules/diag.js', './modules/digest.js', './modules/school.js', './ortiz-drive.js',
 ];
 
