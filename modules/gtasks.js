@@ -19,7 +19,7 @@
 //     Claudia can see her list. The Home OS list is excluded — those are
 //     already household tasks, and mirroring them would count each twice.
 
-import { getAll, put, remove, now } from './store.js';
+import { getAll, get, put, remove, now, deviceName } from './store.js';
 import {
   canReadTasks, canWriteTasks, fetchGoogleTasks, listTaskLists, listTasksIn,
   createTaskList, insertTask, patchTask, deleteTask,
@@ -166,14 +166,49 @@ async function syncMirror(excludeListIds) {
   for (const t of live) {
     const id = idFor(t.id);
     const existing = mirrored.find((m) => m.id === id);
-    if (existing && existing.title === t.title && existing.due === t.due && existing.notes === t.notes && existing.listTitle === t.listTitle) continue;
-    await put('kattasks', { id, title: t.title, due: t.due, notes: t.notes, listTitle: t.listTitle, source: SOURCE });
+    if (existing && existing.title === t.title && existing.due === t.due && existing.notes === t.notes && existing.listTitle === t.listTitle && existing.listId === t.listId) continue;
+    // Carry a pending check-off across a content refresh — dropping it here
+    // would silently undo a tap made on another phone.
+    const pending = existing?.doneRequested ? { doneRequested: true, doneRequestedAt: existing.doneRequestedAt, doneRequestedBy: existing.doneRequestedBy } : {};
+    await put('kattasks', { id, googleId: t.id, listId: t.listId, title: t.title, due: t.due, notes: t.notes, listTitle: t.listTitle, source: SOURCE, ...pending });
     changed = true;
   }
   for (const m of mirrored) {
     if (!liveIds.has(m.id)) { await remove('kattasks', m.id); changed = true; }
   }
   return changed;
+}
+
+// Check-offs made in the app (on any phone) ride the sync as `doneRequested`
+// on the mirror record; only Kat's phone can reach her Google account, so it
+// applies them here, then drops the record — completed tasks aren't mirrored.
+async function applyPendingCompletions() {
+  const pending = (await getAll('kattasks')).filter((t) => t.source === SOURCE && t.doneRequested);
+  let changed = false;
+  for (const t of pending) {
+    const googleId = t.googleId || t.id.replace(/^gtask:/, '');
+    if (!t.listId) continue; // pre-v97 record; the next mirror pass fills listId in
+    try {
+      await patchTask(t.listId, googleId, { done: true });
+    } catch (err) {
+      if (err.code !== 'not-found') throw err; // already gone in Google — just drop it
+    }
+    await remove('kattasks', t.id);
+    changed = true;
+  }
+  return changed;
+}
+
+// Tick (or untick, before it has synced) one of Kat's own Google Tasks from
+// the app. On her phone it goes straight through to Google; on any other
+// phone it waits for her phone's next sync.
+export async function setKatTaskDone(id, done) {
+  const rec = await get('kattasks', id);
+  if (!rec) return;
+  await put('kattasks', done
+    ? { ...rec, doneRequested: true, doneRequestedAt: now(), doneRequestedBy: deviceName() }
+    : { ...rec, doneRequested: false, doneRequestedAt: null, doneRequestedBy: null });
+  if (done && isKatDevice() && canWriteTasks()) await syncKatTasksToStore().catch(() => {});
 }
 
 // The whole round, on boot and in the background-sync loop. Best-effort and
@@ -205,6 +240,12 @@ export function syncKatTasksToStore() {
     } else {
       errors.push('Read-only access only — reconnect Google to let the app keep the Home OS list.');
     }
+    if (canWriteTasks()) {
+      try { changed = (await applyPendingCompletions()) || changed; } catch (err) {
+        console.warn('Applying check-offs to Google Tasks failed', err);
+        errors.push(`Checking off tasks: ${err.message}`);
+      }
+    }
     try { changed = (await syncMirror(exclude)) || changed; } catch (err) {
       console.warn('Google Tasks mirror failed', err);
       errors.push(`Reading her lists: ${err.message}`);
@@ -217,10 +258,14 @@ export function syncKatTasksToStore() {
   return inFlight;
 }
 
-// Sorted, soonest-due first (no due date last).
-export async function getKatTasks() {
+// Sorted, soonest-due first (no due date last). Tasks already checked off in
+// the app (waiting to reach Google) are left out unless `includePending` —
+// to Claudia and 2 Weeks they're done; the Tasks list shows them ticked.
+export async function getKatTasks({ includePending = false } = {}) {
   const all = await getAll('kattasks');
-  return all.filter((t) => t.source === SOURCE).sort((a, b) => (a.due || '9999-99-99') < (b.due || '9999-99-99') ? -1 : 1);
+  return all
+    .filter((t) => t.source === SOURCE && (includePending || !t.doneRequested))
+    .sort((a, b) => (a.due || '9999-99-99') < (b.due || '9999-99-99') ? -1 : 1);
 }
 
 // Compact prompt block, same spirit as school.js's schoolText().

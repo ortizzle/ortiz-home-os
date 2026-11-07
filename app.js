@@ -36,7 +36,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v96 · Kat\'s Google Tasks collapsed by default';
+const APP_VERSION = 'v97 · Check off Kat\'s Google Tasks in the app';
 
 // ---------- theme ----------
 
@@ -582,7 +582,7 @@ function katTasksBlock(root) {
   const status = !on
     ? 'Turn on only on Kat\'s phone, signed into her Google account.'
     : gcalCanWriteTasks()
-      ? `Linked. Household tasks assigned to Kat stay in step with a "${HOME_OS_LIST}" list in her Google Tasks — checked off in either place, done in both. Her other lists show read-only on Tasks, 2 Weeks, and to Claudia, on every phone.`
+      ? `Linked. Household tasks assigned to Kat stay in step with a "${HOME_OS_LIST}" list in her Google Tasks — checked off in either place, done in both. Her other lists show on Tasks (where they can be checked off too), 2 Weeks, and to Claudia, on every phone.`
       : 'Almost there — reconnect Google (button below) to grant Google Tasks access.';
   // Last sync result, so a failure shows up here instead of only in the console.
   const st = on ? getKatTasksStatus() : null;

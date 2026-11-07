@@ -5,8 +5,8 @@ import { getAll, get, put, remove, now, uid, deviceName, getSettings } from './s
 import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText, SHARE_SVG, ownerPillClass } from './ui.js';
 import { suggestSubtasks, hasApiKey, AIError } from './ai.js';
 import { gatherContext, householdKnowledge } from './hmcontext.js';
-import { getKatTasks, isKatDevice, HOME_OS_LIST } from './gtasks.js';
-import { canReadTasks as gcalCanTasks } from './gcal.js';
+import { getKatTasks, isKatDevice, setKatTaskDone, HOME_OS_LIST } from './gtasks.js';
+import { canReadTasks as gcalCanTasks, canWriteTasks as gcalCanWriteTasks } from './gcal.js';
 
 // Parse a pasted list (Keep, Notes, anywhere) into one item per line —
 // bullets and checkboxes stripped. Lived in grocery.js until v79 removed
@@ -499,15 +499,15 @@ function byNewest(a, b) {
   return (b.createdAt || '') < (a.createdAt || '') ? -1 : 1;
 }
 
-// Kat's Google Tasks — a separate, clearly-labeled, read-only section (never
-// merged into the household list, so it's obvious whose list is whose; she
-// edits them in Google Tasks). Reads the SYNCED mirror, so it shows on every
-// phone, not just hers. Collapsed by default — it's reference, not the work
-// list — and stays open across re-renders once opened (ticking a household
-// task rebuilds the whole view). The setup nudge only appears on the phone
-// switched on as Kat's (Settings → Google) when it still lacks Tasks access.
+// Kat's Google Tasks — her own lists, in a separate, clearly-labeled section
+// (never merged into the household list, so it's obvious whose list is
+// whose). She manages them in Google Tasks or through Muse, and can tick
+// them off here too. Reads the SYNCED mirror, so it shows on every phone.
+// Collapsed by default, and stays open across re-renders once opened
+// (ticking any task rebuilds the whole view). The setup nudge only appears
+// on the phone switched on as Kat's when it still lacks Tasks access.
 let katPanelOpen = false;
-function kattasksPanel(tasks) {
+function kattasksPanel(tasks, onchange) {
   const kat = isKatDevice();
   if (!tasks.length && !kat) return null;
   if (kat && !gcalCanTasks()) {
@@ -517,22 +517,38 @@ function kattasksPanel(tasks) {
     ]);
   }
   const today = todayStr();
-  const det = disclosure(`Kat's Google Tasks (${tasks.length})`, el('section', { class: 'panel' }, [
+  const openCount = tasks.filter((t) => !t.doneRequested).length;
+  const katHere = kat && gcalCanWriteTasks();
+  const det = disclosure(`Kat's Google Tasks (${openCount})`, el('section', { class: 'panel' }, [
     tasks.length
-      ? el('div', {}, tasks.map((t) => el('div', { class: 'task-row' }, [
+      ? el('div', {}, tasks.map((t) => el('div', { class: 'task-row' + (t.doneRequested ? ' done' : '') }, [
+          // Ticking marks it done here at once; it completes in Google on Kat's
+          // phone's next sync (immediately when this IS her phone). Unticking
+          // only works until then — after that it's done in Google too.
+          el('button', {
+            class: 'task-check',
+            'aria-label': t.doneRequested ? 'Mark not done' : 'Mark done',
+            html: t.doneRequested ? CHECK_SVG : '',
+            onclick: async () => {
+              await setKatTaskDone(t.id, !t.doneRequested);
+              if (!t.doneRequested && !katHere) toast("Checked off — it'll complete in Google Tasks next time Kat's phone opens the app");
+              onchange?.();
+            },
+          }),
           el('div', { class: 'task-main' }, [
             el('span', { class: 'task-name' }, t.title),
             el('span', { class: 'task-meta' }, [
-              t.due ? el('span', { class: 'pill' + (t.due < today ? ' pill-overdue' : '') }, fmtDue(t.due)) : null,
+              t.due ? el('span', { class: 'pill' + (!t.doneRequested && t.due < today ? ' pill-overdue' : '') }, fmtDue(t.due)) : null,
               t.listTitle ? el('span', { class: 'pill' }, t.listTitle) : null,
+              t.doneRequested ? el('span', { class: 'pill pill-done' }, 'done · syncing to Google') : null,
             ]),
           ]),
         ])))
       : el('p', { class: 'muted small', style: 'margin: 0' }, "Nothing on Kat's Google Tasks right now."),
     el('p', { class: 'muted small', style: 'margin: 8px 0 0' }, [
-      `Her own lists, read-only here — edit them in `,
+      `Her own lists. Check them off here, in `,
       el('a', { class: 'link', href: 'https://tasks.google.com/', target: '_blank', rel: 'noopener' }, 'Google Tasks'),
-      `. Household tasks assigned to Kat are in the household list and in a "${HOME_OS_LIST}" list in her Google Tasks; checking one off in either place checks it off in both.`,
+      `, or through Muse — they stay in step. Household tasks assigned to Kat are in the household list and in a "${HOME_OS_LIST}" list in her Google Tasks.`,
     ]),
   ]), { open: katPanelOpen });
   det.addEventListener('toggle', () => { katPanelOpen = det.open; });
@@ -542,7 +558,7 @@ function kattasksPanel(tasks) {
 export async function renderChores(root) {
   clear(root);
   let chores = await getAll('chores');
-  const katTasks = await getKatTasks();
+  const katTasks = await getKatTasks({ includePending: true });
   // Done tasks have an end state: kept ~60 days for reference (the Done
   // disclosure shows the recent 20), then pruned so the store doesn't grow
   // forever. Open tasks are never touched.
@@ -582,7 +598,7 @@ export async function renderChores(root) {
 
   // Shown (or not) regardless of the household list — an empty chore list
   // shouldn't hide Kat's Google Tasks.
-  const katPanel = kattasksPanel(katTasks);
+  const katPanel = kattasksPanel(katTasks, rerender);
 
   if (!chores.length) {
     root.append(

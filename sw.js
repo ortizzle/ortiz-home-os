@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v96-kat-tasks-collapsed';
+const CACHE = 'ohos-shell-v97-kat-tasks-checkable';
 const SHELL = [
   './',
   './index.html',
