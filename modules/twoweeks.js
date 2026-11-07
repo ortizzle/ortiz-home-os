@@ -19,6 +19,7 @@ import { appointmentsFor, spansDay } from './calendar.js';
 import { householdKnowledge, upcomingBirthdays, calendarBirthdays, mergeBirthdays } from './hmcontext.js';
 import { schoolConfigured, getSchoolSummaries } from './school.js';
 import { getLastCalendarIssues, selectedCalendarInfo, isConnected } from './gcal.js';
+import { getKatTasks } from './gtasks.js';
 
 const WINDOW_DAYS = 14;
 const DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -52,7 +53,7 @@ export async function renderTwoWeeks(root) {
 
   const settings = getSettings();
   const family = (settings.familyMembers || 'Chris, Kat, Sedona, River').split(',').map((s) => s.trim()).filter(Boolean);
-  const [appts, chores, school, knowledge, watching] = await Promise.all([
+  const [appts, chores, school, knowledge, watching, katTasks] = await Promise.all([
     appointmentsFor(today, end),
     getAll('chores'),
     schoolConfigured() ? getSchoolSummaries().catch(() => null) : null,
@@ -61,11 +62,19 @@ export async function renderTwoWeeks(root) {
     // so "why don't I see calendar X" is answerable by looking at the tab,
     // not by guessing. Only meaningful once Google's connected.
     isConnected() ? selectedCalendarInfo().catch(() => []) : Promise.resolve([]),
+    getKatTasks().catch(() => []),
   ]);
 
-  const dueTasks = chores
-    .filter((c) => !c.done && c.dueDate && c.dueDate >= today && c.dueDate < end)
-    .sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
+  // Household chores and Kat's Google Tasks (the synced mirror) share the
+  // "task" pill, grid dots, and rundown rows; `source: 'gtasks'` marks hers so
+  // rows can label them and the summary can give them their own line.
+  const katDue = katTasks
+    .filter((t) => t.due && t.due >= today && t.due < end)
+    .map((t) => ({ id: t.id, title: t.title, dueDate: t.due, assignee: 'Kat', source: 'gtasks' }));
+  const dueTasks = [
+    ...chores.filter((c) => !c.done && c.dueDate && c.dueDate >= today && c.dueDate < end),
+    ...katDue,
+  ].sort((a, b) => (a.dueDate < b.dueDate ? -1 : 1));
   // Every school item in the window, tagged with the kid it belongs to.
   const exams = (school?.kids || []).flatMap((k) =>
     (k.upcoming || [])
@@ -190,6 +199,13 @@ function summaryPanel({ appts, dueTasks, exams, birthdays, today, spotlight, tog
   const recurringKeys = new Set(
     [...bySeries.entries()].filter(([, l]) => new Set(l.map((a) => a.date)).size >= 2).map(([k]) => k)
   );
+  const katDueList = dueTasks.filter((t) => t.source === 'gtasks');
+  if (katDueList.length) {
+    const shown = katDueList.slice(0, 6);
+    const items = shown.map((t) => [el('strong', {}, t.title), ` — ${fmtDay(t.dueDate)}`]);
+    if (katDueList.length > shown.length) items.push([`+${katDueList.length - shown.length} more — see the rundown below`]);
+    kids.push(line("Kat's list", items, 'task', 'tw-warn'));
+  }
   const EVENTS_CAP = 6;
   const seenEventIds = new Set();
   const oneOffEvents = appts.filter((a) => {
@@ -363,6 +379,7 @@ function dayRows({ date, events, tasks, exams, family, spotlight = null }) {
         el('div', { class: 'tw-title' }, c.title),
         el('div', { class: 'tw-meta' }, [
           el('span', { class: 'pill pill-soon' }, 'due'),
+          c.source === 'gtasks' ? el('span', { class: 'pill' }, 'Google Tasks') : null,
           c.assignee ? el('span', { class: 'pill ' + ownerPillClass(c.assignee, family) }, c.assignee) : null,
         ]),
       ]),
