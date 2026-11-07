@@ -41,6 +41,13 @@ function getPushed() { try { return new Set(JSON.parse(lsGet(PUSHED_KEY)) || [])
 function savePushed(set) { lsSet(PUSHED_KEY, JSON.stringify([...set])); }
 
 export function isKatDevice() { return lsGet(KAT_DEVICE_KEY) === '1'; }
+
+// The last sync round's outcome on this device, for Settings. Failures used
+// to only reach the console, which left "nothing is showing up" with no clue
+// why — the same trap the calendar read-warning (v84) fixed.
+const STATUS_KEY = 'ohos.gtasksStatus';
+export function getKatTasksStatus() { try { return JSON.parse(lsGet(STATUS_KEY)); } catch { return null; } }
+function saveStatus(st) { lsSet(STATUS_KEY, JSON.stringify({ at: new Date().toISOString(), ...st })); }
 export function setKatDevice(on) { lsSet(KAT_DEVICE_KEY, on ? '1' : null); }
 export const HOME_OS_LIST = HOME_LIST_TITLE;
 
@@ -174,11 +181,16 @@ async function syncMirror(excludeListIds) {
 // device not switched on as Kat's. Returns whether anything changed.
 let inFlight = null;
 export function syncKatTasksToStore() {
-  if (!isKatDevice() || !canReadTasks()) return Promise.resolve(false);
+  if (!isKatDevice()) return Promise.resolve(false);
+  if (!canReadTasks()) {
+    saveStatus({ ok: false, error: 'Google isn\'t connected with Tasks access on this phone — reconnect Google below.' });
+    return Promise.resolve(false);
+  }
   if (inFlight) return inFlight;
   inFlight = (async () => {
     let changed = false;
     let exclude = [];
+    const errors = [];
     if (canWriteTasks()) {
       try {
         const r = await syncHomeList();
@@ -186,11 +198,20 @@ export function syncKatTasksToStore() {
         exclude = [r.homeListId];
       } catch (err) {
         console.warn('Home OS list sync failed', err);
+        errors.push(`Home OS list: ${err.message}`);
         const cached = lsGet(HOME_LIST_KEY);
         if (cached) exclude = [cached]; // still keep it out of the mirror
       }
+    } else {
+      errors.push('Read-only access only — reconnect Google to let the app keep the Home OS list.');
     }
-    try { changed = (await syncMirror(exclude)) || changed; } catch (err) { console.warn('Google Tasks mirror failed', err); }
+    try { changed = (await syncMirror(exclude)) || changed; } catch (err) {
+      console.warn('Google Tasks mirror failed', err);
+      errors.push(`Reading her lists: ${err.message}`);
+    }
+    const linked = (await getAll('chores')).filter((c) => c.gtaskId && !c.done).length;
+    const mirrored = (await getAll('kattasks')).filter((t) => t.source === SOURCE).length;
+    saveStatus({ ok: !errors.length, error: errors.join(' · ') || null, linked, mirrored });
     return changed;
   })().finally(() => { inFlight = null; });
   return inFlight;

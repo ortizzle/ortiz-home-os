@@ -577,9 +577,15 @@ async function tasksFetch(url, { method = 'GET', body } = {}) {
   if (body) headers['Content-Type'] = 'application/json';
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (res.status === 401) { expireToken(); throw new GcalError('Google sign-in expired', 'expired'); }
-  if (res.status === 403) throw new GcalError('No Tasks access — reconnect Google to grant it', 'no-tasks');
   if (res.status === 404) throw new GcalError('Task not found', 'not-found');
-  if (!res.ok) throw new GcalError(`Tasks API ${res.status}`, 'api');
+  if (!res.ok) {
+    // Keep Google's own explanation — a 403 can mean the scope wasn't granted
+    // OR that the Tasks API isn't enabled for this app's Cloud project, and
+    // only the message tells those apart.
+    let detail = '';
+    try { detail = (await res.json())?.error?.message || ''; } catch {}
+    throw new GcalError(`Google Tasks ${res.status}${detail ? ': ' + detail : ''}`, res.status === 403 ? 'no-tasks' : 'api');
+  }
   return res.status === 204 ? null : res.json();
 }
 const TASKS_API = 'https://tasks.googleapis.com/tasks/v1';

@@ -4,7 +4,7 @@
 // (Cache-first caused a real stuck-update bug in Ortiz Learning OS — keep
 // this strategy.)
 
-const CACHE = 'ohos-shell-v94-gtasks-two-way';
+const CACHE = 'ohos-shell-v95-gtasks-status';
 const SHELL = [
   './',
   './index.html',

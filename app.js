@@ -22,7 +22,7 @@ import { renderManager } from './modules/manager.js';
 import { renderMeeting } from './modules/meeting.js';
 import { DEFAULT_HOUSEHOLD_NOTES, DEFAULT_FOOD_NOTES, DEFAULT_KIDS, getSuggestionMemory, seedMemory, MEMORY_CATS } from './modules/hmcontext.js';
 import { isConnected as gcalConnected, everConnected as gcalEverConnected, silentRenew as gcalSilentRenew, canReadEmail as gcalCanEmail, canWriteTasks as gcalCanWriteTasks, connect as gcalConnect, disconnect as gcalDisconnect, GcalError, listCalendars, getSelectedCalendars, setSelectedCalendars, getCalendarLabelOverrides, setCalendarLabelOverrides, guessCalName } from './modules/gcal.js';
-import { syncKatTasksToStore, isKatDevice, setKatDevice, HOME_OS_LIST } from './modules/gtasks.js';
+import { syncKatTasksToStore, isKatDevice, setKatDevice, getKatTasksStatus, HOME_OS_LIST } from './modules/gtasks.js';
 import { getUsage, estimateCost, resetUsage } from './modules/ai.js';
 import { pushSupported, getPushState, enablePush, disablePush } from './modules/push.js';
 import { diagnosticsSection } from './modules/diag.js';
@@ -36,7 +36,7 @@ const view = document.getElementById('view');
 // Format: 'vNN · one or two words on what shipped' (e.g. 'v59 · owner colors')
 // so the label itself says what changed, not just that something did. Keep
 // the number in step with the sw.js CACHE version when shipping.
-const APP_VERSION = 'v94 · Kat\'s tasks ↔ Google Tasks (Home OS list)';
+const APP_VERSION = 'v95 · Google Tasks sync status + Sync now';
 
 // ---------- theme ----------
 
@@ -453,7 +453,7 @@ async function renderSettings(root) {
                 const label = b.textContent;
                 b.disabled = 'disabled';
                 b.textContent = 'Reconnecting…';
-                try { await gcalConnect(); toast('Reconnected', 'success'); renderSettings(root); }
+                try { await gcalConnect(); toast('Reconnected', 'success'); if (isKatDevice()) await syncKatTasksToStore().catch(() => {}); renderSettings(root); }
                 catch (err) { toast(err instanceof GcalError ? `Couldn't reconnect: ${err.message}` : 'Cancelled', 'warn'); b.disabled = null; b.textContent = label; }
               },
             }, !gcalCanEmail() ? 'Reconnect for email' : 'Reconnect for Google Tasks'),
@@ -469,6 +469,7 @@ async function renderSettings(root) {
               try {
                 await gcalConnect();
                 toast('Google Calendar connected', 'success');
+                if (isKatDevice()) await syncKatTasksToStore().catch(() => {});
                 renderSettings(root);
               } catch (err) {
                 toast(err instanceof GcalError ? `Couldn't connect: ${err.message}` : 'Connection cancelled', 'warn');
@@ -583,10 +584,27 @@ function katTasksBlock(root) {
     : gcalCanWriteTasks()
       ? `Linked. Household tasks assigned to Kat stay in step with a "${HOME_OS_LIST}" list in her Google Tasks — checked off in either place, done in both. Her other lists show read-only on Tasks, 2 Weeks, and to Claudia, on every phone.`
       : 'Almost there — reconnect Google (button below) to grant Google Tasks access.';
+  // Last sync result, so a failure shows up here instead of only in the console.
+  const st = on ? getKatTasksStatus() : null;
+  const when = st?.at ? new Date(st.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '';
+  const stLine = !st ? null : st.ok
+    ? el('p', { class: 'muted small', style: 'margin: 0 0 8px' }, `Last sync ${when} — ${st.linked} household task${st.linked === 1 ? '' : 's'} in the Home OS list, ${st.mirrored} from her other lists.`)
+    : el('p', { class: 'small', style: 'margin: 0 0 8px; color: var(--warn); font-weight: 600' }, `Last sync ${when} failed — ${st.error}`);
+  const syncNow = on ? el('button', {
+    class: 'btn',
+    onclick: async (e) => {
+      const b = e.currentTarget;
+      b.disabled = 'disabled';
+      b.textContent = 'Syncing…';
+      await syncKatTasksToStore().catch(() => {});
+      renderSettings(root);
+    },
+  }, 'Sync Google Tasks now') : null;
   return el('div', { style: 'margin: 10px 0' }, [
     el('label', { class: 'field-label' }, 'Google Tasks'),
     el('p', { class: 'muted small', style: on && !gcalCanWriteTasks() ? 'color: var(--accent); margin: 0 0 8px' : 'margin: 0 0 8px' }, status),
-    toggle,
+    stLine,
+    el('div', { class: 'settings-actions' }, [toggle, syncNow]),
   ]);
 }
 
