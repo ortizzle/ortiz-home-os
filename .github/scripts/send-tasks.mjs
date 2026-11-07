@@ -66,15 +66,24 @@ if (!open.length) {
 // ----- text + html -----
 const textLines = [`Open tasks — ${dateLabel}`, ''];
 const htmlParts = [];
+const linkedCount = open.filter((c) => c.gtaskId).length;
+if (linkedCount) {
+  const msg = 'Tasks marked "already in Google Tasks" are synced by Home OS into the "Home OS" list in Google Tasks, and checking them off there checks them off here. Don\'t add them to Google Tasks again.';
+  textLines.push(msg, '');
+  htmlParts.push(note(msg));
+}
 
 for (const [who, list] of orderedGroups) {
   textLines.push(`${who} (${list.length}):`);
   htmlParts.push(ownerHeading(who, list.length));
   list.forEach((c, i) => {
     const d = dueBits(c);
-    textLines.push(`  - ${c.title}${d.text ? ` [${d.text}]` : ''}`);
+    // Linked to Kat's Google Tasks by the app itself ("Home OS" list) — say
+    // so, so neither Kat nor her assistant adds it to Google a second time.
+    const inGoogle = Boolean(c.gtaskId);
+    textLines.push(`  - ${c.title}${d.text ? ` [${d.text}]` : ''}${inGoogle ? ' (already in Google Tasks → Home OS)' : ''}`);
     const title = `${esc(c.title)}${d.kind ? ' ' + chip(d.chip, d.kind) : ''}`;
-    htmlParts.push(row(title, { last: i === list.length - 1 }));
+    htmlParts.push(row(title, { last: i === list.length - 1, sub: inGoogle ? 'Already in Google Tasks → Home OS list' : '' }));
   });
   textLines.push('');
 }

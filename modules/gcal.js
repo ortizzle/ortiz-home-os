@@ -11,15 +11,15 @@ const CLIENT_ID = '305346848345-0q6ojf9t6eqhguh4pb3f2gm5p7rhhmtq.apps.googleuser
 // gmail.readonly: read message metadata + snippets so the house manager can
 // factor recent email into the morning brief and answer questions about it.
 // (A restricted scope — fine for our two test users; the app never sends mail.)
-// tasks.readonly: read Google Tasks lists + tasks — whoever connects on
-// their own device (e.g. Kat, on her phone) lets the app read their task
-// list the same read-only way it reads their calendar. The app never writes
-// to Google Tasks.
+// tasks: read + write Google Tasks. Only ever USED on the device flagged as
+// Kat's (see gtasks.js): it reads her lists into the shared mirror, and keeps
+// one dedicated "Home OS" list in step with her household tasks. Every other
+// list is only ever read.
 const SCOPE =
   'https://www.googleapis.com/auth/calendar.readonly ' +
   'https://www.googleapis.com/auth/calendar.events ' +
   'https://www.googleapis.com/auth/gmail.readonly ' +
-  'https://www.googleapis.com/auth/tasks.readonly';
+  'https://www.googleapis.com/auth/tasks';
 const GSI_SRC = 'https://accounts.google.com/gsi/client';
 const TOKEN_KEY = 'ohos.gcalToken';
 const WRITE_CAL_KEY = 'ohos.gcalWriteCal';
@@ -115,7 +115,13 @@ export function canReadEmail() {
 // tokens minted before the tasks scope was added — a reconnect grants it.
 export function canReadTasks() {
   const t = readToken();
-  return !!t && /tasks(\.readonly)?(\s|$)/.test(t.scope || '');
+  return !!t && /auth\/tasks(\.readonly)?(\s|$)/.test(t.scope || '');
+}
+// Write access (the full `tasks` scope, not just .readonly) — needed to keep
+// the "Home OS" list in step. A readonly-era grant needs one reconnect.
+export function canWriteTasks() {
+  const t = readToken();
+  return !!t && /auth\/tasks(\s|$)/.test(t.scope || '');
 }
 // Explicit user action: forget the grant entirely.
 export function disconnect() { localStorage.removeItem(TOKEN_KEY); clearCache(); writableCache = null; }
@@ -557,57 +563,112 @@ export async function gmailRecent({ days = 7, max = 12 } = {}) {
   return out;
 }
 
-// ---------- Google Tasks (read-only: whoever connects sees only their own) ----------
+// ---------- Google Tasks ----------
 // Google Tasks has no sharing/delegation like Calendar does — a task list is
-// visible only to the account that owns it. So this only ever returns
-// something on the device of whoever connected with their own Google
-// account (e.g. Kat, on her phone). Nothing is ever written back.
+// visible only to the account that owns it, so all of this only does anything
+// on the device signed into that account. gtasks.js decides WHICH device
+// (Kat's, by an explicit per-device switch) and what to do with it; this
+// section is just the API.
 
-async function tasksGet(url) {
+async function tasksFetch(url, { method = 'GET', body } = {}) {
   const t = readToken();
   if (!t) throw new GcalError('Not connected to Google', 'not-connected');
-  const res = await fetch(url, { headers: { Authorization: 'Bearer ' + t.accessToken } });
+  const headers = { Authorization: 'Bearer ' + t.accessToken };
+  if (body) headers['Content-Type'] = 'application/json';
+  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
   if (res.status === 401) { expireToken(); throw new GcalError('Google sign-in expired', 'expired'); }
-  if (res.status === 403) throw new GcalError('No Tasks access — disconnect and reconnect to grant it', 'no-tasks');
+  if (res.status === 403) throw new GcalError('No Tasks access — reconnect Google to grant it', 'no-tasks');
+  if (res.status === 404) throw new GcalError('Task not found', 'not-found');
   if (!res.ok) throw new GcalError(`Tasks API ${res.status}`, 'api');
-  return res.json();
+  return res.status === 204 ? null : res.json();
+}
+const TASKS_API = 'https://tasks.googleapis.com/tasks/v1';
+
+// Google Tasks only stores a date for `due` (the time part is ignored), sent
+// as RFC3339 midnight UTC; reading it back, the first 10 chars are the date.
+const toGoogleDue = (date) => (date ? `${date}T00:00:00.000Z` : null);
+
+function normTask(t, list) {
+  return {
+    id: t.id,
+    title: (t.title || '(untitled)').trim(),
+    due: t.due ? t.due.slice(0, 10) : null,
+    notes: (t.notes || '').trim() || null,
+    status: t.status, // 'needsAction' | 'completed'
+    completed: t.completed || null,
+    updated: t.updated || null,
+    listId: list.id,
+    listTitle: list.title,
+  };
 }
 
 export async function listTaskLists() {
-  const data = await tasksGet('https://tasks.googleapis.com/tasks/v1/users/@me/lists?maxResults=100');
+  const data = await tasksFetch(`${TASKS_API}/users/@me/lists?maxResults=100`);
   return (data.items || []).map((l) => ({ id: l.id, title: l.title || 'Tasks' }));
 }
 
-// Every NOT-completed task across every one of this account's task lists —
-// title, due date (Google only ever gives a date, never a time, for Tasks),
-// and notes. Returns [] when not connected or the scope wasn't granted, so
-// callers can always await it safely, same as eventsForRange().
-export async function fetchGoogleTasks() {
+// Every task in one list. `includeCompleted` is for the Home OS list, where a
+// check-off on Google's side has to be seen to flow back into the app.
+export async function listTasksIn(list, { includeCompleted = false } = {}) {
+  const out = [];
+  let pageToken = null;
+  do {
+    const data = await tasksFetch(
+      `${TASKS_API}/lists/${encodeURIComponent(list.id)}/tasks?maxResults=100` +
+      (includeCompleted ? '&showCompleted=true&showHidden=true' : '&showCompleted=false&showHidden=false') +
+      (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '')
+    );
+    for (const t of data.items || []) {
+      if (t.deleted) continue;
+      if (!includeCompleted && (t.status === 'completed' || t.hidden)) continue;
+      out.push(normTask(t, list));
+    }
+    pageToken = data.nextPageToken || null;
+  } while (pageToken);
+  return out;
+}
+
+// Every NOT-completed task across this account's lists, minus `excludeListIds`
+// (the Home OS list — those tasks already live in the app as household tasks,
+// so mirroring them too would show each one twice). [] when not connected or
+// the scope wasn't granted, so callers can always await it safely.
+export async function fetchGoogleTasks({ excludeListIds = [] } = {}) {
   if (!canReadTasks()) return [];
   if (!isConnected() && !(await silentRenew())) return [];
-  const lists = await listTaskLists();
+  const lists = (await listTaskLists()).filter((l) => !excludeListIds.includes(l.id));
   const out = [];
-  for (const list of lists) {
-    let pageToken = null;
-    do {
-      const data = await tasksGet(
-        `https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(list.id)}/tasks` +
-        `?showCompleted=false&showHidden=false&maxResults=100` +
-        (pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : '')
-      );
-      for (const t of data.items || []) {
-        if (t.status === 'completed' || t.deleted || t.hidden) continue;
-        out.push({
-          id: t.id,
-          title: (t.title || '(untitled)').trim(),
-          due: t.due ? t.due.slice(0, 10) : null, // RFC3339 date-only, local wall date
-          notes: (t.notes || '').trim() || null,
-          listId: list.id,
-          listTitle: list.title,
-        });
-      }
-      pageToken = data.nextPageToken || null;
-    } while (pageToken);
-  }
+  for (const list of lists) out.push(...(await listTasksIn(list)));
   return out;
+}
+
+export async function createTaskList(title) {
+  const l = await tasksFetch(`${TASKS_API}/users/@me/lists`, { method: 'POST', body: { title } });
+  return { id: l.id, title: l.title };
+}
+
+export async function insertTask(listId, { title, notes, due }) {
+  const body = { title, notes: notes || undefined, due: toGoogleDue(due) || undefined };
+  return normTask(await tasksFetch(`${TASKS_API}/lists/${encodeURIComponent(listId)}/tasks`, { method: 'POST', body }), { id: listId, title: '' });
+}
+
+// Partial update. `done` maps to Google's status; clearing `completed` is
+// required when reopening, or Google keeps the task checked.
+export async function patchTask(listId, taskId, { title, notes, due, done } = {}) {
+  const body = {};
+  if (title !== undefined) body.title = title;
+  if (notes !== undefined) body.notes = notes || '';
+  if (due !== undefined) body.due = toGoogleDue(due);
+  if (done !== undefined) {
+    body.status = done ? 'completed' : 'needsAction';
+    if (!done) body.completed = null;
+  }
+  return normTask(await tasksFetch(`${TASKS_API}/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body }), { id: listId, title: '' });
+}
+
+export async function deleteTask(listId, taskId) {
+  try {
+    await tasksFetch(`${TASKS_API}/lists/${encodeURIComponent(listId)}/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' });
+  } catch (err) {
+    if (err.code !== 'not-found') throw err; // already gone is the goal
+  }
 }

@@ -2,11 +2,11 @@
 // grammar as Focus OS tasks.
 
 import { getAll, get, put, remove, now, uid, deviceName, getSettings } from './store.js';
-import { el, clear, toast, openModal, todayStr, fmtDue, fmtDay, preserveScroll, disclosure, shareText, SHARE_SVG, ownerPillClass } from './ui.js';
+import { el, clear, toast, openModal, todayStr, fmtDue, preserveScroll, disclosure, shareText, SHARE_SVG, ownerPillClass } from './ui.js';
 import { suggestSubtasks, hasApiKey, AIError } from './ai.js';
 import { gatherContext, householdKnowledge } from './hmcontext.js';
-import { getKatTasks } from './gtasks.js';
-import { isConnected as gcalConnected, canReadTasks as gcalCanTasks } from './gcal.js';
+import { getKatTasks, isKatDevice, HOME_OS_LIST } from './gtasks.js';
+import { canReadTasks as gcalCanTasks } from './gcal.js';
 
 // Parse a pasted list (Keep, Notes, anywhere) into one item per line —
 // bullets and checkboxes stripped. Lived in grocery.js until v79 removed
@@ -55,6 +55,7 @@ export function choreRow(chore, { onchange, showDue = true } = {}) {
     meta.push(el('span', { class: 'pill' + (done === chore.subtasks.length ? ' pill-done' : '') }, `☑ ${done}/${chore.subtasks.length}`));
   }
   if (chore.assignee) meta.push(el('span', { class: `pill ${ownerPillClass(chore.assignee, familyMembers())}` }, chore.assignee));
+  if (chore.gtaskId && !chore.done) meta.push(el('span', { class: 'pill', title: `Also in Kat's Google Tasks (${HOME_OS_LIST} list)` }, 'In Google Tasks'));
   if (chore.notes && chore.notes.trim()) meta.push(el('span', { class: 'pill pill-note', title: 'Has a note', 'aria-label': 'Has a note', html: NOTE_SVG }));
   if (chore.focusSeconds) meta.push(el('span', { class: 'pill' }, `⏱ ${fmtFocusPill(chore.focusSeconds)}`));
   if (chore.done && chore.doneBy) meta.push(el('span', { class: 'pill pill-done' }, `done · ${chore.doneBy}`));
@@ -499,17 +500,17 @@ function byNewest(a, b) {
 }
 
 // Kat's Google Tasks — a separate, clearly-labeled, read-only section (never
-// merged into the household chores list, so it's always obvious whose list
-// is whose and who owns editing it — that stays in Google Tasks itself).
-// Shows nothing at all when Google isn't connected on this device; once it
-// is, shows either the live tasks, a quiet "nothing due" state, or a nudge
-// to reconnect for Tasks access — same three states as the list itself.
+// merged into the household list, so it's obvious whose list is whose; she
+// edits them in Google Tasks). Reads the SYNCED mirror, so it shows on every
+// phone, not just hers. The setup nudge only appears on the phone switched on
+// as Kat's (Settings → Google) when it still lacks Tasks access.
 function kattasksPanel(tasks) {
-  if (!gcalConnected()) return null;
-  if (!gcalCanTasks()) {
+  const kat = isKatDevice();
+  if (!tasks.length && !kat) return null;
+  if (kat && !gcalCanTasks()) {
     return el('section', { class: 'panel' }, [
       el('div', { class: 'panel-head' }, [el('h4', {}, "Kat's Tasks (Google)")]),
-      el('p', { class: 'muted small', style: 'margin: 0' }, 'Reconnect Google in Settings to see Kat\'s Google Tasks here (read-only — this only ever reads whoever connects, on their own phone).'),
+      el('p', { class: 'muted small', style: 'margin: 0' }, 'Reconnect Google in Settings to link your Google Tasks.'),
     ]);
   }
   const today = todayStr();
@@ -525,11 +526,11 @@ function kattasksPanel(tasks) {
             el('span', { class: 'task-meta' }, [
               t.due ? el('span', { class: 'pill' + (t.due < today ? ' pill-overdue' : '') }, fmtDue(t.due)) : null,
               t.listTitle ? el('span', { class: 'pill' }, t.listTitle) : null,
-            ].filter(Boolean)),
+            ]),
           ]),
         ])))
       : el('p', { class: 'muted small', style: 'margin: 0' }, "Nothing on Kat's Google Tasks right now."),
-    el('p', { class: 'muted small', style: 'margin: 8px 0 0' }, 'Read-only — manage these in Google Tasks; checking one off there removes it from here on the next sync.'),
+    el('p', { class: 'muted small', style: 'margin: 8px 0 0' }, `Her own lists, read-only here. Household tasks assigned to Kat appear in the list below and in a "${HOME_OS_LIST}" list in her Google Tasks; checking one off in either place checks it off in both.`),
   ]);
 }
 
