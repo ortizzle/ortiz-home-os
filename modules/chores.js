@@ -502,8 +502,11 @@ function byNewest(a, b) {
 // Kat's Google Tasks — a separate, clearly-labeled, read-only section (never
 // merged into the household list, so it's obvious whose list is whose; she
 // edits them in Google Tasks). Reads the SYNCED mirror, so it shows on every
-// phone, not just hers. The setup nudge only appears on the phone switched on
-// as Kat's (Settings → Google) when it still lacks Tasks access.
+// phone, not just hers. Collapsed by default — it's reference, not the work
+// list — and stays open across re-renders once opened (ticking a household
+// task rebuilds the whole view). The setup nudge only appears on the phone
+// switched on as Kat's (Settings → Google) when it still lacks Tasks access.
+let katPanelOpen = false;
 function kattasksPanel(tasks) {
   const kat = isKatDevice();
   if (!tasks.length && !kat) return null;
@@ -514,11 +517,7 @@ function kattasksPanel(tasks) {
     ]);
   }
   const today = todayStr();
-  return el('section', { class: 'panel' }, [
-    el('div', { class: 'panel-head' }, [
-      el('h4', {}, "Kat's Tasks (Google)"),
-      el('a', { class: 'link small', href: 'https://tasks.google.com/', target: '_blank', rel: 'noopener' }, 'Open Google Tasks →'),
-    ]),
+  const det = disclosure(`Kat's Google Tasks (${tasks.length})`, el('section', { class: 'panel' }, [
     tasks.length
       ? el('div', {}, tasks.map((t) => el('div', { class: 'task-row' }, [
           el('div', { class: 'task-main' }, [
@@ -530,8 +529,14 @@ function kattasksPanel(tasks) {
           ]),
         ])))
       : el('p', { class: 'muted small', style: 'margin: 0' }, "Nothing on Kat's Google Tasks right now."),
-    el('p', { class: 'muted small', style: 'margin: 8px 0 0' }, `Her own lists, read-only here. Household tasks assigned to Kat appear in the list below and in a "${HOME_OS_LIST}" list in her Google Tasks; checking one off in either place checks it off in both.`),
-  ]);
+    el('p', { class: 'muted small', style: 'margin: 8px 0 0' }, [
+      `Her own lists, read-only here — edit them in `,
+      el('a', { class: 'link', href: 'https://tasks.google.com/', target: '_blank', rel: 'noopener' }, 'Google Tasks'),
+      `. Household tasks assigned to Kat are in the household list and in a "${HOME_OS_LIST}" list in her Google Tasks; checking one off in either place checks it off in both.`,
+    ]),
+  ]), { open: katPanelOpen });
+  det.addEventListener('toggle', () => { katPanelOpen = det.open; });
+  return det;
 }
 
 export async function renderChores(root) {
@@ -575,10 +580,9 @@ export async function renderChores(root) {
     ])
   );
 
-  // Shown (or not) regardless of the household list below — Kat's device
-  // having nothing yet entered as a chore shouldn't hide her Google Tasks.
+  // Shown (or not) regardless of the household list — an empty chore list
+  // shouldn't hide Kat's Google Tasks.
   const katPanel = kattasksPanel(katTasks);
-  if (katPanel) root.append(katPanel);
 
   if (!chores.length) {
     root.append(
@@ -587,6 +591,7 @@ export async function renderChores(root) {
         el('p', { class: 'muted' }, 'One-off household tasks live here. For recurring reminders (filters, gutters…), add them straight to Calendar.'),
       ])
     );
+    if (katPanel) root.append(katPanel);
     return;
   }
 
@@ -665,6 +670,7 @@ export async function renderChores(root) {
 
   root.append(listHost);
   renderList();
+  if (katPanel) root.append(katPanel);
 
   // ----- Keep paste-import (Kat's list bridge) — collapsed: occasional use -----
   const importArea = el('textarea', { class: 'input', rows: 4, placeholder: 'Paste a to-do list from Google Keep — one item per line.\nBullets and checkboxes are fine.' });
